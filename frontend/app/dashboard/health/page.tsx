@@ -1,0 +1,134 @@
+"use client";
+import { useEffect, useState } from "react";
+import { api } from "@/lib/api";
+import { PageHeader, Btn, KpiCard, Table, Tr, Td, Loading, Card } from "@/components/ui";
+
+interface HealthSession {
+  id: number; title: string; topic?: string; region?: string;
+  facilitator?: string; session_date?: string; expected_attendance?: number; created_at: string;
+}
+
+interface HealthImpact {
+  total_sessions: number; total_attendees: number; avg_feedback_score: number;
+}
+
+const TOPICS = ["menstrual_hygiene", "maternal_care", "nutrition", "family_planning", "reproductive_health"];
+const TOPIC_COLOR: Record<string, string> = { menstrual_hygiene: "#7F77DD", maternal_care: "#1D9E75", nutrition: "#EF9F27", family_planning: "#378ADD", reproductive_health: "#D85A30" };
+
+export default function HealthPage() {
+  const [sessions, setSessions] = useState<HealthSession[]>([]);
+  const [impact, setImpact] = useState<HealthImpact | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [showModal, setShowModal] = useState(false);
+  const [form, setForm] = useState({ title: "", topic: "menstrual_hygiene", region: "Kigali", facilitator: "", session_date: "", duration_minutes: 90, expected_attendance: 25 });
+
+  const load = () => {
+    Promise.all([api.health.list(), api.analytics.healthImpact()]).then(([s, h]) => {
+      setSessions(s as HealthSession[]);
+      setImpact(h as HealthImpact);
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  };
+  useEffect(() => { load(); }, []);
+
+  const inp = { border: "1px solid #D3D1C7", borderRadius: 8, padding: "8px 12px", fontSize: 13, outline: "none", width: "100%" };
+  const REGIONS = ["Kigali", "Northern", "Southern", "Eastern", "Western"];
+
+  const handleCreate = async () => {
+    await api.health.create(form);
+    setShowModal(false);
+    load();
+  };
+
+  return (
+    <div>
+      <PageHeader title="Health Impact Tracker" sub="Monitor community health education sessions" action={<Btn onClick={() => setShowModal(true)}>+ New Session</Btn>} />
+
+      {impact && (
+        <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 24 }}>
+          <KpiCard label="Total Sessions" value={impact.total_sessions} color="#1D9E75" icon="🏥" />
+          <KpiCard label="Total Attendees" value={impact.total_attendees} sub="Community members reached" color="#185FA5" icon="👥" />
+          <KpiCard label="Avg Feedback Score" value={`${impact.avg_feedback_score}/5`} sub="Satisfaction rating" color="#7F77DD" icon="⭐" />
+        </div>
+      )}
+
+      {/* Topic breakdown */}
+      <Card title="Sessions by Topic">
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          {TOPICS.map(topic => {
+            const count = sessions.filter(s => s.topic === topic).length;
+            const color = TOPIC_COLOR[topic] || "#888";
+            return (
+              <div key={topic} style={{ flex: 1, minWidth: 120, border: `2px solid ${color}20`, borderLeft: `4px solid ${color}`, borderRadius: 10, padding: "12px 14px" }}>
+                <p style={{ fontSize: 20, fontWeight: 700, color, marginBottom: 4 }}>{count}</p>
+                <p style={{ fontSize: 12, color: "#666", textTransform: "capitalize" }}>{topic.replace(/_/g, " ")}</p>
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+
+      <div style={{ marginTop: 24, background: "#fff", border: "1px solid #E8E6E0", borderRadius: 14, overflow: "hidden" }}>
+        {loading ? <Loading /> : (
+          <Table headers={["Title", "Topic", "Region", "Facilitator", "Date", "Expected", "Created"]}>
+            {sessions.length === 0
+              ? <tr><td colSpan={7} style={{ padding: 40, textAlign: "center", color: "#888" }}>No health sessions recorded yet. Add your first session!</td></tr>
+              : sessions.map((s, i) => (
+                <Tr key={s.id} i={i}>
+                  <Td bold>{s.title}</Td>
+                  <td style={{ padding: "11px 14px" }}>
+                    {s.topic && <span style={{ background: `${TOPIC_COLOR[s.topic] || "#888"}20`, color: TOPIC_COLOR[s.topic] || "#888", padding: "2px 10px", borderRadius: 20, fontSize: 12, fontWeight: 500, textTransform: "capitalize" }}>
+                      {s.topic.replace(/_/g, " ")}
+                    </span>}
+                  </td>
+                  <Td>{s.region || "—"}</Td>
+                  <Td>{s.facilitator || "—"}</Td>
+                  <Td>{s.session_date ? new Date(s.session_date).toLocaleDateString() : "—"}</Td>
+                  <Td>{s.expected_attendance || "—"}</Td>
+                  <Td>{new Date(s.created_at).toLocaleDateString()}</Td>
+                </Tr>
+              ))}
+          </Table>
+        )}
+      </div>
+
+      {showModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
+          <div style={{ background: "#fff", borderRadius: 16, padding: 28, width: "100%", maxWidth: 480, maxHeight: "90vh", overflowY: "auto" }}>
+            <h3 style={{ fontSize: 17, fontWeight: 700, marginBottom: 20 }}>New Health Session</h3>
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 500, color: "#666", display: "block", marginBottom: 5 }}>Session Title *</label>
+                <input style={inp} value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} />
+              </div>
+              {([["topic", "Topic", TOPICS], ["region", "Region", REGIONS]] as [string, string, string[]][]).map(([k, label, opts]) => (
+                <div key={k}>
+                  <label style={{ fontSize: 12, fontWeight: 500, color: "#666", display: "block", marginBottom: 5 }}>{label}</label>
+                  <select style={inp} value={(form as Record<string, string | number>)[k] as string} onChange={e => setForm(f => ({ ...f, [k]: e.target.value }))}>
+                    {opts.map(o => <option key={o} value={o}>{o.replace(/_/g, " ")}</option>)}
+                  </select>
+                </div>
+              ))}
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 500, color: "#666", display: "block", marginBottom: 5 }}>Facilitator</label>
+                <input style={inp} value={form.facilitator} onChange={e => setForm(f => ({ ...f, facilitator: e.target.value }))} />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 500, color: "#666", display: "block", marginBottom: 5 }}>Session Date</label>
+                <input style={inp} type="date" value={form.session_date} onChange={e => setForm(f => ({ ...f, session_date: e.target.value }))} />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 500, color: "#666", display: "block", marginBottom: 5 }}>Expected Attendance</label>
+                <input style={inp} type="number" value={form.expected_attendance} onChange={e => setForm(f => ({ ...f, expected_attendance: +e.target.value }))} />
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 20 }}>
+              <Btn variant="ghost" onClick={() => setShowModal(false)}>Cancel</Btn>
+              <Btn onClick={handleCreate}>Save Session</Btn>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
