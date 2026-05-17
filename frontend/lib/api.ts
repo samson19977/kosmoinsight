@@ -24,7 +24,8 @@ async function req<T>(path: string, opts: RequestInit = {}): Promise<T> {
 export const api = {
   customers: {
     list: (params?: Record<string, string>) => {
-      const q = params ? "?" + new URLSearchParams(params).toString() : "";
+      const merged = { limit: "1000", ...params };
+      const q = "?" + new URLSearchParams(merged).toString();
       return req<Customer[]>(`/api/customers${q}`);
     },
     get: (id: number) => req<Customer>(`/api/customers/${id}`),
@@ -34,9 +35,21 @@ export const api = {
     payments: (id: number) => req(`/api/customers/${id}/payments`),
   },
   payments: {
-    list: () => req<Payment[]>("/api/payments"),
+    list: (params?: Record<string, string>) => {
+      const merged = { limit: "2000", ...params };
+      const q = "?" + new URLSearchParams(merged).toString();
+      return req<Payment[]>(`/api/payments${q}`);
+    },
     create: (d: unknown) => req<Payment>("/api/payments", { method: "POST", body: JSON.stringify(d) }),
     update: (id: number, d: unknown) => req<Payment>(`/api/payments/${id}`, { method: "PATCH", body: JSON.stringify(d) }),
+    autoRisk: (customerId: number, payments: Payment[]) => {
+      const missed = payments.filter(p => p.status === "missed").length;
+      const total = payments.length;
+      return req("/api/predict/repayment-risk", {
+        method: "POST",
+        body: JSON.stringify({ customer_id: customerId, missed_payments: missed, total_payments: Math.max(total, 1), months_active: 3 }),
+      });
+    },
   },
   analytics: {
     dashboard: () => req<DashboardStats>("/api/analytics/dashboard"),
@@ -65,6 +78,7 @@ export const api = {
   health: {
     list: () => req("/api/health-sessions"),
     create: (d: unknown) => req("/api/health-sessions", { method: "POST", body: JSON.stringify(d) }),
+    delete: (id: number) => req(`/api/health-sessions/${id}`, { method: "DELETE" }),
   },
 };
 

@@ -17,7 +17,7 @@ def list_customers(
     status: Optional[str] = Query(None),
     risk_level: Optional[str] = Query(None),
     skip: int = 0,
-    limit: int = 50,
+    limit: int = 1000,
     db: Session = Depends(get_db),
     _=Depends(get_current_user),
 ):

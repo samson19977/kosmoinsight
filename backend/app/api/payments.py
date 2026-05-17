@@ -1,7 +1,7 @@
 """payments router"""
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from app.database import get_db
 from app.models import Payment
 from app.schemas import PaymentCreate, PaymentUpdate, PaymentOut
@@ -10,13 +10,27 @@ from app.auth import get_current_user
 router = APIRouter()
 
 @router.get("/", response_model=List[PaymentOut])
-def list_payments(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), _=Depends(get_current_user)):
-    return db.query(Payment).offset(skip).limit(limit).all()
+def list_payments(
+    skip: int = 0,
+    limit: int = 2000,  # high default so all payments load
+    customer_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user)
+):
+    q = db.query(Payment)
+    if customer_id:
+        q = q.filter(Payment.customer_id == customer_id)
+    return q.order_by(Payment.id.desc()).offset(skip).limit(limit).all()
 
 @router.post("/", response_model=PaymentOut, status_code=201)
 def create_payment(data: PaymentCreate, db: Session = Depends(get_db), _=Depends(get_current_user)):
     remaining = data.amount_due - data.amount_paid
-    status = "paid" if data.amount_paid >= data.amount_due else ("partial" if data.amount_paid > 0 else "pending")
+    if data.amount_paid >= data.amount_due:
+        status = "paid"
+    elif data.amount_paid > 0:
+        status = "partial"
+    else:
+        status = "pending"
     payment = Payment(**data.model_dump(), remaining_balance=remaining, status=status)
     db.add(payment)
     db.commit()
@@ -24,7 +38,12 @@ def create_payment(data: PaymentCreate, db: Session = Depends(get_db), _=Depends
     return payment
 
 @router.patch("/{payment_id}", response_model=PaymentOut)
-def update_payment(payment_id: int, data: PaymentUpdate, db: Session = Depends(get_db), _=Depends(get_current_user)):
+def update_payment(
+    payment_id: int,
+    data: PaymentUpdate,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user)
+):
     payment = db.query(Payment).filter(Payment.id == payment_id).first()
     if not payment:
         raise HTTPException(status_code=404, detail="Payment not found")
@@ -39,3 +58,11 @@ def update_payment(payment_id: int, data: PaymentUpdate, db: Session = Depends(g
     db.commit()
     db.refresh(payment)
     return payment
+
+@router.delete("/{payment_id}", status_code=204)
+def delete_payment(payment_id: int, db: Session = Depends(get_db), _=Depends(get_current_user)):
+    payment = db.query(Payment).filter(Payment.id == payment_id).first()
+    if not payment:
+        raise HTTPException(status_code=404, detail="Payment not found")
+    db.delete(payment)
+    db.commit()
