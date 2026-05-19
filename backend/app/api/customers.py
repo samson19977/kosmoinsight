@@ -1,3 +1,10 @@
+"""
+Customers API — Role rules:
+  GET list/view  → Admin, Staff, Analyst (everyone)
+  POST create    → Admin, Staff only
+  PATCH update   → Admin, Staff only
+  DELETE         → Admin ONLY
+"""
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
@@ -5,7 +12,7 @@ from typing import List, Optional
 from app.database import get_db
 from app.models import Customer, Payment
 from app.schemas import CustomerCreate, CustomerUpdate, CustomerOut
-from app.auth import get_current_user
+from app.auth import get_current_user, require_staff_or_admin, require_admin
 
 router = APIRouter()
 
@@ -19,7 +26,7 @@ def list_customers(
     skip: int = 0,
     limit: int = 1000,
     db: Session = Depends(get_db),
-    _=Depends(get_current_user),
+    _=Depends(get_current_user),  # ALL roles can view
 ):
     q = db.query(Customer)
     if search:
@@ -41,7 +48,7 @@ def list_customers(
 def create_customer(
     data: CustomerCreate,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user=Depends(require_staff_or_admin),  # Staff + Admin only
 ):
     customer = Customer(**data.model_dump(), created_by=current_user.id)
     db.add(customer)
@@ -51,7 +58,11 @@ def create_customer(
 
 
 @router.get("/{customer_id}", response_model=CustomerOut)
-def get_customer(customer_id: int, db: Session = Depends(get_db), _=Depends(get_current_user)):
+def get_customer(
+    customer_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),  # ALL roles
+):
     customer = db.query(Customer).filter(Customer.id == customer_id).first()
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
@@ -63,7 +74,7 @@ def update_customer(
     customer_id: int,
     data: CustomerUpdate,
     db: Session = Depends(get_db),
-    _=Depends(get_current_user),
+    _=Depends(require_staff_or_admin),  # Staff + Admin only
 ):
     customer = db.query(Customer).filter(Customer.id == customer_id).first()
     if not customer:
@@ -79,7 +90,7 @@ def update_customer(
 def delete_customer(
     customer_id: int,
     db: Session = Depends(get_db),
-    _=Depends(get_current_user),
+    _=Depends(require_admin),  # ADMIN ONLY
 ):
     customer = db.query(Customer).filter(Customer.id == customer_id).first()
     if not customer:

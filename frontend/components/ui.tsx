@@ -64,7 +64,7 @@ export function Sidebar() {
           </div>
           {!collapsed && <div style={{ minWidth: 0 }}>
             <div style={{ color: "#fff", fontSize: 12, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user?.name}</div>
-            <div style={{ color: "#888", fontSize: 10, textTransform: "capitalize" }}>{user?.role}</div>
+            <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", padding: "1px 6px", borderRadius: 4, marginTop: 2, display: "inline-block", background: user?.role === "admin" ? "#7F77DD" : user?.role === "staff" ? "#1D9E75" : "#185FA5", color: "#fff" }}>{user?.role}</div>
           </div>}
         </div>
         {!collapsed && <button onClick={logout} style={{ width: "100%", background: "#ffffff10", border: "none", borderRadius: 6, padding: "6px", color: "#888", fontSize: 12, cursor: "pointer" }}>Logout</button>}
