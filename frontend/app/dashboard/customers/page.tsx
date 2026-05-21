@@ -1,44 +1,18 @@
 "use client";
-
 import { useEffect, useState, FormEvent } from "react";
 import { api, Customer } from "@/lib/api";
-import {
-  PageHeader,
-  Btn,
-  Table,
-  Tr,
-  Td,
-  RiskBadge,
-  StatusBadge,
-  Loading,
-  InsightCard
-} from "@/components/ui";
+import { PageHeader, Btn, Table, Tr, Td, RiskBadge, StatusBadge, Loading, InsightCard } from "@/components/ui";
 
 const REGIONS = ["Kigali", "Northern", "Southern", "Eastern", "Western"];
-const PRODUCTS = [
-  "Menstrual Cup",
-  "Reusable Pads Kit",
-  "Maternal Health Kit",
-  "Solar Lamp",
-  "Clean Cookstove"
-];
+const PRODUCTS = ["Menstrual Cup", "Reusable Pads Kit", "Maternal Health Kit", "Solar Lamp", "Clean Cookstove"];
 const PLANS = ["weekly", "biweekly", "monthly"];
 
 /* ---------------- MODAL ---------------- */
-<<<<<<< HEAD
 function Modal({ onClose, onSave, initial }: {
-=======
-function Modal({
-  onClose,
-  onSave,
-  initial
-}: {
->>>>>>> b4cdb341bd3b8db079667f58aa251de443d565c1
   onClose: () => void;
   onSave: (d: Partial<Customer>) => Promise<void>;
   initial?: Partial<Customer>;
 }) {
-<<<<<<< HEAD
   const [form, setForm] = useState({
     name: "", phone: "", location: "", region: "Kigali",
     product_type: "Menstrual Cup", payment_plan: "monthly", notes: "",
@@ -49,43 +23,10 @@ function Modal({
   const inp = { width: "100%", border: "1px solid #D3D1C7", borderRadius: 8, padding: "8px 12px", fontSize: 13, outline: "none" };
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }));
-=======
-  const [form, setForm] = useState<any>({
-    name: "",
-    phone: "",
-    location: "",
-    region: "Kigali",
-    product_type: "Menstrual Cup",
-    payment_plan: "monthly",
-    notes: "",
-    ...initial
-  });
-
-  const [loading, setLoading] = useState(false);
-
-  const inp = {
-    width: "100%",
-    border: "1px solid #D3D1C7",
-    borderRadius: 8,
-    padding: "8px 12px",
-    fontSize: 13,
-    outline: "none"
-  };
-
-  const set =
-    (k: string) =>
-    (
-      e: React.ChangeEvent<
-        HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
-      >
-    ) =>
-      setForm((f: any) => ({ ...f, [k]: e.target.value }));
->>>>>>> b4cdb341bd3b8db079667f58aa251de443d565c1
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setLoading(true);
-<<<<<<< HEAD
     try { await onSave(form); onClose(); } catch { setLoading(false); }
   };
 
@@ -94,26 +35,11 @@ function Modal({
     ["name", "Full Name *", "text"],
     ["phone", "Phone *", "text"],
     ["location", "Location", "text"],
-=======
-    try {
-      await onSave(form);
-      onClose();
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fields: [string, string, string][] = [
-    ["name", "Full Name *", "text"],
-    ["phone", "Phone *", "text"],
-    ["location", "Location", "text"]
->>>>>>> b4cdb341bd3b8db079667f58aa251de443d565c1
   ];
 
   const selects: [string, string, string[]][] = [
     ["region", "Region", REGIONS],
     ["product_type", "Product Type", PRODUCTS],
-<<<<<<< HEAD
     ["payment_plan", "Payment Plan", PLANS],
   ];
 
@@ -130,79 +56,19 @@ function Modal({
             <div key={k}>
               <label style={{ fontSize: 12, fontWeight: 500, color: "#666", display: "block", marginBottom: 5 }}>{label}</label>
               <input style={inp} type={type} value={(form as Record<string, string>)[k] || ""} onChange={set(k)} required={label.includes("*")} />
-=======
-    ["payment_plan", "Payment Plan", PLANS]
-  ];
-
-  return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.4)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 1000
-      }}
-      onClick={(e) => e.target === e.currentTarget && onClose()}
-    >
-      <div
-        style={{
-          background: "#fff",
-          borderRadius: 16,
-          padding: 28,
-          width: "100%",
-          maxWidth: 480
-        }}
-      >
-        <h3 style={{ fontSize: 17, fontWeight: 700, marginBottom: 20 }}>
-          {initial?.id ? "Edit Customer" : "Add New Customer"}
-        </h3>
-
-        <form
-          onSubmit={submit}
-          style={{ display: "flex", flexDirection: "column", gap: 14 }}
-        >
-          {fields.map(([k, label, type]) => (
-            <div key={k}>
-              <label style={{ fontSize: 12, marginBottom: 5, display: "block" }}>
-                {label}
-              </label>
-              <input
-                style={inp}
-                type={type}
-                value={(form as any)[k] || ""}
-                onChange={set(k)}
-                required={label.includes("*")}
-              />
->>>>>>> b4cdb341bd3b8db079667f58aa251de443d565c1
             </div>
           ))}
 
           {selects.map(([k, label, opts]) => (
             <div key={k}>
-<<<<<<< HEAD
               <label style={{ fontSize: 12, fontWeight: 500, color: "#666", display: "block", marginBottom: 5 }}>{label}</label>
               <select style={inp} value={(form as Record<string, string>)[k]} onChange={set(k)}>
                 {opts.map(o => <option key={o} value={o}>{o}</option>)}
-=======
-              <label style={{ fontSize: 12, marginBottom: 5, display: "block" }}>
-                {label}
-              </label>
-              <select style={inp} value={(form as any)[k]} onChange={set(k)}>
-                {opts.map((o) => (
-                  <option key={o} value={o}>
-                    {o}
-                  </option>
-                ))}
->>>>>>> b4cdb341bd3b8db079667f58aa251de443d565c1
               </select>
             </div>
           ))}
 
           <div>
-<<<<<<< HEAD
             <label style={{ fontSize: 12, fontWeight: 500, color: "#666", display: "block", marginBottom: 5 }}>Notes</label>
             <textarea style={{ ...inp, minHeight: 70, resize: "vertical" }} value={(form as Record<string, string>).notes || ""} onChange={set("notes")} />
           </div>
@@ -210,26 +76,6 @@ function Modal({
           <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 6 }}>
             <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
             <Btn type="submit" onClick={() => {}}>{loading ? "Saving..." : "Save Customer"}</Btn>
-=======
-            <label style={{ fontSize: 12, marginBottom: 5, display: "block" }}>
-              Notes
-            </label>
-            <textarea
-              style={{ ...inp, minHeight: 70 }}
-              value={form.notes}
-              onChange={set("notes")}
-            />
-          </div>
-
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
-            <Btn variant="ghost" onClick={onClose}>
-              Cancel
-            </Btn>
-
-            <Btn type="submit">
-              {loading ? "Saving..." : "Save Customer"}
-            </Btn>
->>>>>>> b4cdb341bd3b8db079667f58aa251de443d565c1
           </div>
         </form>
       </div>
@@ -238,21 +84,11 @@ function Modal({
 }
 
 /* ---------------- DETAIL ---------------- */
-<<<<<<< HEAD
 function CustomerDetail({ customer, onClose, onRefresh }: {
-=======
-
-function CustomerDetail({
-  customer,
-  onClose,
-  onRefresh
-}: {
->>>>>>> b4cdb341bd3b8db079667f58aa251de443d565c1
   customer: Customer;
   onClose: () => void;
   onRefresh: () => void;
 }) {
-<<<<<<< HEAD
   const [payments, setPayments] = useState<Array<{ installment_number: number; amount_due: number; amount_paid: number; remaining_balance: number; status: string }>>([]);
   const [risk, setRisk] = useState<{ risk_score: number; risk_level: string; recommendation: string } | null>(null);
   const [loading, setLoading] = useState(false);
@@ -264,21 +100,10 @@ function CustomerDetail({
         setPayments(data.payments || []);
       })
       .catch(() => {});
-========
-  const [payments, setPayments] = useState<any[]>([]);
-  const [risk, setRisk] = useState<any>(null);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    api.customers
-      .payments(customer.id)
-      .then((d: any) => setPayments(d.payments || []));
->>>>>>> b4cdb341bd3b8db079667f58aa251de443d565c1
   }, [customer.id]);
 
   const runRisk = async () => {
     setLoading(true);
-<<<<<<< HEAD
     const missed = payments.filter(p => p.status === "missed").length;
     const monthsActive = Math.max(1, Math.floor((Date.now() - new Date(customer.join_date).getTime()) / 86400000 / 30));
 
@@ -294,25 +119,11 @@ function CustomerDetail({
         ? `Medium risk after ${monthsActive} month(s) active. Monitor payment consistency closely.`
         : "Low risk profile. Customer is maintaining good repayment habits.",
     });
-=======
-
-    const missed = payments.filter((p) => p.status === "missed").length;
-
-    const data = await api.predict.risk({
-      customer_id: customer.id,
-      missed_payments: missed,
-      total_payments: payments.length || 1,
-      months_active: 1
-    });
-
-    setRisk(data);
->>>>>>> b4cdb341bd3b8db079667f58aa251de443d565c1
     setLoading(false);
     onRefresh();
   };
 
   return (
-<<<<<<< HEAD
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}
       onClick={e => e.target === e.currentTarget && onClose()}>
       <div style={{ background: "#fff", borderRadius: 16, padding: 28, width: "100%", maxWidth: 640, maxHeight: "90vh", overflowY: "auto" }}>
@@ -336,29 +147,13 @@ function CustomerDetail({
             </div>
           ))}
         </div>
-=======
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.4)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center"
-      }}
-      onClick={(e) => e.target === e.currentTarget && onClose()}
-    >
-      <div style={{ background: "#fff", padding: 28, borderRadius: 16, width: 640 }}>
-        <h3>{customer.name}</h3>
 
-        <Btn small onClick={runRisk}>
-          {loading ? "Running..." : "Run Prediction"}
-        </Btn>
->>>>>>> b4cdb341bd3b8db079667f58aa251de443d565c1
-
-        <div style={{ marginTop: 20 }}>
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+            <h4 style={{ fontSize: 14, fontWeight: 600, color: "#1a1a1a" }}>🤖 AI Risk Analysis</h4>
+            <Btn small onClick={runRisk}>{loading ? "Running..." : "Run Prediction"}</Btn>
+          </div>
           {risk && (
-<<<<<<< HEAD
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               <div style={{ display: "flex", gap: 10 }}>
                 {([["Risk Score", `${(risk.risk_score * 100).toFixed(0)}%`, "#EEEDFE", "#3C3489"], ["Risk Level", risk.risk_level, "#FAEEDA", "#633806"], ["Confidence", "85%", "#E1F5EE", "#085041"]] as [string, string, string, string][]).map(([l, v, bg, c]) => (
@@ -409,25 +204,12 @@ function CustomerDetail({
         <div style={{ marginTop: 20, textAlign: "right" }}>
           <Btn variant="ghost" onClick={onClose}>Close</Btn>
         </div>
-=======
-            <InsightCard type="info" message={risk.recommendation} />
-          )}
-        </div>
-
-        <Btn variant="ghost" onClick={onClose}>
-          Close
-        </Btn>
->>>>>>> b4cdb341bd3b8db079667f58aa251de443d565c1
       </div>
     </div>
   );
 }
 
 /* ---------------- PAGE ---------------- */
-<<<<<<< HEAD
-=======
-
->>>>>>> b4cdb341bd3b8db079667f58aa251de443d565c1
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -438,12 +220,9 @@ export default function CustomersPage() {
 
   const load = () => {
     setLoading(true);
-
     const params: Record<string, string> = {};
     if (search) params.search = search;
-
     if (filter) {
-<<<<<<< HEAD
       if (["active", "completed", "suspended", "defaulted"].includes(filter)) params.status = filter;
       else params.risk_level = filter;
     }
@@ -457,24 +236,6 @@ export default function CustomersPage() {
 
   const handleCreate = async (d: Partial<Customer>) => { await api.customers.create(d); load(); };
   const handleDelete = async (id: number) => { if (confirm("Delete this customer?")) { await api.customers.delete(id); load(); } };
-=======
-      if (["active", "completed", "suspended", "defaulted"].includes(filter)) {
-        params.status = filter;
-      } else {
-        params.risk_level = filter;
-      }
-    }
-
-    api.customers
-      .list(params)
-      .then((d) => setCustomers(d as Customer[]))
-      .finally(() => setLoading(false));
-  };
-
-  useEffect(() => {
-    load();
-  }, [search, filter]);
->>>>>>> b4cdb341bd3b8db079667f58aa251de443d565c1
 
   return (
     <div>
@@ -484,7 +245,6 @@ export default function CustomersPage() {
         action={<Btn onClick={() => setShowModal(true)}>+ Add Customer</Btn>}
       />
 
-<<<<<<< HEAD
       <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
         <input
           placeholder="Search name, phone, region..."
@@ -495,25 +255,15 @@ export default function CustomersPage() {
         <select value={filter} onChange={e => setFilter(e.target.value)}
           style={{ border: "1px solid #D3D1C7", borderRadius: 8, padding: "9px 14px", fontSize: 14, background: "#fff", cursor: "pointer" }}>
           <option value="">All customers</option>
-=======
-      <div style={{ display: "flex", gap: 12 }}>
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search..."
-        />
-
-        <select value={filter} onChange={(e) => setFilter(e.target.value)}>
-          <option value="">All</option>
->>>>>>> b4cdb341bd3b8db079667f58aa251de443d565c1
           <option value="active">Active</option>
+          <option value="completed">Completed</option>
+          <option value="suspended">Suspended</option>
           <option value="high">High Risk</option>
           <option value="medium">Medium Risk</option>
           <option value="low">Low Risk</option>
         </select>
       </div>
 
-<<<<<<< HEAD
       <div style={{ background: "#fff", border: "1px solid #E8E6E0", borderRadius: 14, overflow: "hidden" }}>
         {loading ? <Loading /> : (
           <Table headers={["Name", "Phone", "Region", "Product", "Plan", "Status", "Risk", "Score", ""]}>
@@ -547,41 +297,9 @@ export default function CustomersPage() {
           </Table>
         )}
       </div>
-=======
-      {loading ? (
-        <Loading />
-      ) : (
-        <Table headers={["Name", "Phone", "Region", "Risk", ""]}>
-          {customers.map((c) => (
-            <Tr key={c.id}>
-              <Td>{c.name}</Td>
-              <Td>{c.phone}</Td>
-              <Td>{c.region}</Td>
-              <Td>
-                <RiskBadge level={c.risk_level} />
-              </Td>
-              <Td>
-                <Btn small onClick={() => setSelected(c)}>
-                  View
-                </Btn>
-              </Td>
-            </Tr>
-          ))}
-        </Table>
-      )}
->>>>>>> b4cdb341bd3b8db079667f58aa251de443d565c1
 
-      {showModal && (
-        <Modal onClose={() => setShowModal(false)} onSave={async () => {}} />
-      )}
-
-      {selected && (
-        <CustomerDetail
-          customer={selected}
-          onClose={() => setSelected(null)}
-          onRefresh={load}
-        />
-      )}
+      {showModal && <Modal onClose={() => setShowModal(false)} onSave={handleCreate} />}
+      {selected && <CustomerDetail customer={selected} onClose={() => setSelected(null)} onRefresh={load} />}
     </div>
   );
 }
