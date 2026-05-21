@@ -264,7 +264,7 @@ function CustomerDetail({
         setPayments(data.payments || []);
       })
       .catch(() => {});
-=======
+========
   const [payments, setPayments] = useState<any[]>([]);
   const [risk, setRisk] = useState<any>(null);
   const [loading, setLoading] = useState(false);
