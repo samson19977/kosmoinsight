@@ -25,7 +25,6 @@ const PRODUCTS = [
 const PLANS = ["weekly", "biweekly", "monthly"];
 
 /* ---------------- MODAL ---------------- */
-
 function Modal({
   onClose,
   onSave,
