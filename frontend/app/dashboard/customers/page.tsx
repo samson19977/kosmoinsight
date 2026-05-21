@@ -19,7 +19,7 @@ function Modal({ onClose, onSave, initial }: { onClose: () => void; onSave: (d: 
         <h3 style={{ fontSize: 17, fontWeight: 700, marginBottom: 20, color: "#1a1a1a" }}>{initial?.id ? "Edit Customer" : "Add New Customer"}</h3>
         <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           {[["name", "Full Name *", "text"], ["phone", "Phone *", "text"], ["location", "Location", "text"]].map(([k, label, type]) => (
-            <div key={k}>
+            <div key={String(k)}>
               <label style={{ fontSize: 12, fontWeight: 500, color: "#666", display: "block", marginBottom: 5 }}>{label}</label>
               <input style={inp} type={type} value={(form as Record<string, unknown>)[k] as string} onChange={set(k)} required={label.includes("*")} />
             </div>
