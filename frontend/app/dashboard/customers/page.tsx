@@ -55,7 +55,7 @@ function Modal({ onClose, onSave, initial }: {
           {fields.map(([k, label, type]) => (
             <div key={k}>
               <label style={{ fontSize: 12, fontWeight: 500, color: "#666", display: "block", marginBottom: 5 }}>{label}</label>
-              <input style={inp} type={type} value={String((form as Record<string, unknown>)[k] ?? "")} onChange={set(k)} required={label.includes("*")} />
+              <input style={inp} type={type} value={((form as Record<string, unknown>)[k] as string) || ""} onChange={set(k)} required={label.includes("*")} />
             </div>
           ))}
 
@@ -303,5 +303,6 @@ export default function CustomersPage() {
     </div>
   );
 }
+
 
 
