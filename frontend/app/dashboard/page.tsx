@@ -78,7 +78,7 @@ export default function DashboardPage() {
           <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 16, color: "#1a1a1a" }}>Risk Distribution</h3>
           <ResponsiveContainer width="100%" height={200}>
             <PieChart>
-              <Pie data={risk} cx="50%" cy="50%" outerRadius={70} dataKey="value" label={({ percent }) => `${(percent * 100).toFixed(0)}%`} labelLine={false}>
+              <Pie data={risk} cx="50%" cy="50%" outerRadius={70} dataKey="value" label={({ percent }) => `${((percent ?? 0) * 100).toFixed(0)}%`} labelLine={false}>
                 {risk.map((e, i) => <Cell key={i} fill={Object.values(COLORS)[i % 3]} />)}
               </Pie>
               <Tooltip />
@@ -127,3 +127,4 @@ export default function DashboardPage() {
     </div>
   );
 }
+
