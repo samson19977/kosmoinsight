@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import { useEffect, useState, FormEvent } from "react";
 import { api, Customer } from "@/lib/api";
 import { PageHeader, Btn, Table, Tr, Td, RiskBadge, StatusBadge, Loading, InsightCard } from "@/components/ui";
@@ -30,7 +30,7 @@ function Modal({ onClose, onSave, initial }: {
     try { await onSave(form); onClose(); } catch { setLoading(false); }
   };
 
-  // Typed tuples — fixes "Type 'string | string[]' is not assignable to type 'Key'" error
+  // Typed tuples â€” fixes "Type 'string | string[]' is not assignable to type 'Key'" error
   const fields: [string, string, string][] = [
     ["name", "Full Name *", "text"],
     ["phone", "Phone *", "text"],
@@ -55,14 +55,14 @@ function Modal({ onClose, onSave, initial }: {
           {fields.map(([k, label, type]) => (
             <div key={k}>
               <label style={{ fontSize: 12, fontWeight: 500, color: "#666", display: "block", marginBottom: 5 }}>{label}</label>
-              <input style={inp} type={type} value={(form as Record<string, string>)[k] || ""} onChange={set(k)} required={label.includes("*")} />
+              <input style={inp} type={type} value={(form as Record<string, unknown>)[k] || ""} onChange={set(k)} required={label.includes("*")} />
             </div>
           ))}
 
           {selects.map(([k, label, opts]) => (
             <div key={k}>
               <label style={{ fontSize: 12, fontWeight: 500, color: "#666", display: "block", marginBottom: 5 }}>{label}</label>
-              <select style={inp} value={(form as Record<string, string>)[k]} onChange={set(k)}>
+              <select style={inp} value={(form as Record<string, unknown>)[k]} onChange={set(k)}>
                 {opts.map(o => <option key={o} value={o}>{o}</option>)}
               </select>
             </div>
@@ -70,7 +70,7 @@ function Modal({ onClose, onSave, initial }: {
 
           <div>
             <label style={{ fontSize: 12, fontWeight: 500, color: "#666", display: "block", marginBottom: 5 }}>Notes</label>
-            <textarea style={{ ...inp, minHeight: 70, resize: "vertical" }} value={(form as Record<string, string>).notes || ""} onChange={set("notes")} />
+            <textarea style={{ ...inp, minHeight: 70, resize: "vertical" }} value={(form as Record<string, unknown>).notes || ""} onChange={set("notes")} />
           </div>
 
           <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 6 }}>
@@ -131,7 +131,7 @@ function CustomerDetail({ customer, onClose, onRefresh }: {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
           <div>
             <h3 style={{ fontSize: 18, fontWeight: 700, color: "#1a1a1a", marginBottom: 4 }}>{customer.name}</h3>
-            <p style={{ fontSize: 13, color: "#888" }}>{customer.phone} · {customer.region}</p>
+            <p style={{ fontSize: 13, color: "#888" }}>{customer.phone} Â· {customer.region}</p>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <StatusBadge status={customer.status} />
@@ -140,7 +140,7 @@ function CustomerDetail({ customer, onClose, onRefresh }: {
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 20 }}>
-          {([["Product", customer.product_type || "—"], ["Plan", customer.payment_plan || "—"], ["Location", customer.location || "—"], ["Risk Score", `${(customer.risk_score * 100).toFixed(0)}%`]] as [string, string][]).map(([l, v]) => (
+          {([["Product", customer.product_type || "â€”"], ["Plan", customer.payment_plan || "â€”"], ["Location", customer.location || "â€”"], ["Risk Score", `${(customer.risk_score * 100).toFixed(0)}%`]] as [string, string][]).map(([l, v]) => (
             <div key={l} style={{ background: "#FAFAF8", borderRadius: 8, padding: "12px 14px" }}>
               <p style={{ fontSize: 11, color: "#888", fontWeight: 500, marginBottom: 4 }}>{l}</p>
               <p style={{ fontSize: 15, fontWeight: 600, color: "#1a1a1a", textTransform: "capitalize" }}>{v}</p>
@@ -150,7 +150,7 @@ function CustomerDetail({ customer, onClose, onRefresh }: {
 
         <div style={{ marginBottom: 20 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-            <h4 style={{ fontSize: 14, fontWeight: 600, color: "#1a1a1a" }}>🤖 AI Risk Analysis</h4>
+            <h4 style={{ fontSize: 14, fontWeight: 600, color: "#1a1a1a" }}>ðŸ¤– AI Risk Analysis</h4>
             <Btn small onClick={runRisk}>{loading ? "Running..." : "Run Prediction"}</Btn>
           </div>
           {risk && (
@@ -303,3 +303,4 @@ export default function CustomersPage() {
     </div>
   );
 }
+
