@@ -7,25 +7,28 @@ const REGIONS = ["Kigali", "Northern", "Southern", "Eastern", "Western"];
 const PRODUCTS = ["Menstrual Cup", "Reusable Pads Kit", "Maternal Health Kit", "Solar Lamp", "Clean Cookstove"];
 const PLANS = ["weekly", "biweekly", "monthly"];
 
+type FormState = {
+  name: string; phone: string; location: string; region: string;
+  product_type: string; payment_plan: string; notes: string;
+  id?: number; status?: string; risk_score?: number; risk_level?: string; join_date?: string;
+};
+
 /* ---------------- MODAL ---------------- */
 function Modal({ onClose, onSave, initial }: {
   onClose: () => void;
   onSave: (d: Partial<Customer>) => Promise<void>;
   initial?: Partial<Customer>;
 }) {
-  const [form, setForm] = useState<{
-    name: string; phone: string; location: string; region: string;
-    product_type: string; payment_plan: string; notes: string;
-    id?: number; status?: string; risk_score?: number; risk_level?: string; join_date?: string;
-  }>({
+  const [form, setForm] = useState<FormState>({
     name: "", phone: "", location: "", region: "Kigali",
     product_type: "Menstrual Cup", payment_plan: "monthly", notes: "",
     ...initial
   });
   const [loading, setLoading] = useState(false);
 
-  const inp = { width: "100%", border: "1px solid #D3D1C7", borderRadius: 8, padding: "8px 12px", fontSize: 13, outline: "none" };
-  const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
+  const inp: React.CSSProperties = { width: "100%", border: "1px solid #D3D1C7", borderRadius: 8, padding: "8px 12px", fontSize: 13, outline: "none" };
+
+  const set = (k: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }));
 
   const submit = async (e: FormEvent) => {
@@ -34,13 +37,13 @@ function Modal({ onClose, onSave, initial }: {
     try { await onSave(form); onClose(); } catch { setLoading(false); }
   };
 
-  const fields: [string, string, string][] = [
+  const fields: [keyof FormState, string, string][] = [
     ["name", "Full Name *", "text"],
     ["phone", "Phone *", "text"],
     ["location", "Location", "text"],
   ];
 
-  const selects: [string, string, string[]][] = [
+  const selects: [keyof FormState, string, string[]][] = [
     ["region", "Region", REGIONS],
     ["product_type", "Product Type", PRODUCTS],
     ["payment_plan", "Payment Plan", PLANS],
@@ -58,14 +61,14 @@ function Modal({ onClose, onSave, initial }: {
           {fields.map(([k, label, type]) => (
             <div key={k}>
               <label style={{ fontSize: 12, fontWeight: 500, color: "#666", display: "block", marginBottom: 5 }}>{label}</label>
-              <input style={inp} type={type} value={String(form[k as keyof typeof form] ?? "")} onChange={set(k)} required={label.includes("*")} />
+              <input style={inp} type={type} value={String(form[k] ?? "")} onChange={set(k)} required={label.includes("*")} />
             </div>
           ))}
 
           {selects.map(([k, label, opts]) => (
             <div key={k}>
               <label style={{ fontSize: 12, fontWeight: 500, color: "#666", display: "block", marginBottom: 5 }}>{label}</label>
-              <select style={inp} value={String(form[k as keyof typeof form] ?? "")} onChange={set(k)}>
+              <select style={inp} value={String(form[k] ?? "")} onChange={set(k)}>
                 {opts.map(o => <option key={o} value={o}>{o}</option>)}
               </select>
             </div>
@@ -78,7 +81,9 @@ function Modal({ onClose, onSave, initial }: {
 
           <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 6 }}>
             <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
-            <Btn type="submit" onClick={() => {}}>{loading ? "Saving..." : "Save Customer"}</Btn>
+            <button type="submit" style={{ background: "#7F77DD", color: "#fff", border: "none", borderRadius: 8, padding: "9px 18px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+              {loading ? "Saving..." : "Save Customer"}
+            </button>
           </div>
         </form>
       </div>
@@ -87,21 +92,21 @@ function Modal({ onClose, onSave, initial }: {
 }
 
 /* ---------------- DETAIL ---------------- */
+type Payment = { installment_number: number; amount_due: number; amount_paid: number; remaining_balance: number; status: string };
+type RiskResult = { risk_score: number; risk_level: string; recommendation: string };
+
 function CustomerDetail({ customer, onClose, onRefresh }: {
   customer: Customer;
   onClose: () => void;
   onRefresh: () => void;
 }) {
-  const [payments, setPayments] = useState<Array<{ installment_number: number; amount_due: number; amount_paid: number; remaining_balance: number; status: string }>>([]);
-  const [risk, setRisk] = useState<{ risk_score: number; risk_level: string; recommendation: string } | null>(null);
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [risk, setRisk] = useState<RiskResult | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     api.customers.payments(customer.id)
-      .then((d: unknown) => {
-        const data = d as { payments: typeof payments };
-        setPayments(data.payments || []);
-      })
+      .then((d: unknown) => { setPayments((d as { payments: Payment[] }).payments || []); })
       .catch(() => {});
   }, [customer.id]);
 
@@ -151,7 +156,7 @@ function CustomerDetail({ customer, onClose, onRefresh }: {
 
         <div style={{ marginBottom: 20 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-            <h4 style={{ fontSize: 14, fontWeight: 600, color: "#1a1a1a" }}>🤖 AI Risk Analysis</h4>
+            <h4 style={{ fontSize: 14, fontWeight: 600, color: "#1a1a1a" }}>AI Risk Analysis</h4>
             <Btn small onClick={runRisk}>{loading ? "Running..." : "Run Prediction"}</Btn>
           </div>
           {risk && (
