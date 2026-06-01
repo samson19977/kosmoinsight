@@ -212,7 +212,7 @@ export default function DashboardPage() {
       <div style={{ background: "#fff", border: "1px solid #E8E6E0", borderRadius: 14, padding: 20 }}>
         <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 4, color: "#1a1a1a" }}>Customer Distribution</h3>
         <p style={{ fontSize: 12, color: "#888", marginBottom: 16 }}>By province — hover to explore</p>
-        <RwandaRegionMap data={regionData} />
+        <RwandaRegionMap data={regionData as any} />
       </div>
 
       {/* AI Insights */}
