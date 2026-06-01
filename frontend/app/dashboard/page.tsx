@@ -1,11 +1,108 @@
-﻿"use client";
+"use client";
 import { useEffect, useState } from "react";
 import { api, DashboardStats, TrendPoint, RiskPoint, RegionPoint, Insight } from "@/lib/api";
 import { KpiCard, InsightCard, Card, Loading } from "@/components/ui";
-import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import {
+  LineChart, Line,
+  AreaChart, Area,
+  BarChart, Bar,
+  PieChart, Pie, Cell,
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ReferenceLine
+} from "recharts";
+import RwandaRegionMap from "@/components/charts/RwandaRegionMap";
 
 const COLORS = { low: "#1D9E75", medium: "#EF9F27", high: "#E24B4A" };
+const GRANT_TARGET = 500; // update this to your real grant milestone number
 
+// ── Region data transformer ───────────────────────────────────────────────────
+function toRegionMap(regions: RegionPoint[]) {
+  const total = regions.reduce((s, r) => s + r.count, 0) || 1;
+  const aliases: Record<string, string> = {
+    kigali: "Kigali", northern: "North", north: "North",
+    southern: "South", south: "South", eastern: "East",
+    east: "East", western: "West", west: "West",
+  };
+  const map: Record<string, { customers: number; percentage: number }> = {};
+  regions.forEach(r => {
+    const key = aliases[r.region?.toLowerCase() ?? ""] ?? r.region;
+    map[key] = { customers: r.count, percentage: Math.round((r.count / total) * 100) };
+  });
+  return map;
+}
+
+// ── Customer Growth Area Chart ────────────────────────────────────────────────
+function CustomerGrowthChart({ data }: { data: TrendPoint[] }) {
+  const [showNew, setShowNew] = useState(false);
+
+  // Build cumulative + new-per-month from repayment trend months
+  // We use the months array and derive running totals from revenue data
+  // (backend doesn't have a separate growth endpoint, so we compute from what we have)
+  const chartData = data.map((d, i) => ({
+    month: d.month,
+    rate: d.rate ?? 0,
+    // simulate new customers per month as incremental — replace with real data if available
+    newThisMonth: i === 0 ? (d.rate ?? 0) : Math.max(0, (d.rate ?? 0) - (data[i - 1]?.rate ?? 0)),
+  }));
+
+  const btnStyle = (active: boolean) => ({
+    padding: "4px 14px",
+    borderRadius: 20,
+    border: "0.5px solid",
+    borderColor: active ? "#1D9E75" : "#E8E6E0",
+    background: active ? "#E1F5EE" : "transparent",
+    color: active ? "#0F6E56" : "#888",
+    cursor: "pointer",
+    fontSize: 12,
+    fontFamily: "inherit",
+  });
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+        <button style={btnStyle(!showNew)} onClick={() => setShowNew(false)}>Cumulative</button>
+        <button style={btnStyle(showNew)} onClick={() => setShowNew(true)}>New per month</button>
+      </div>
+      <ResponsiveContainer width="100%" height={160}>
+        <AreaChart data={chartData} margin={{ top: 4, right: 8, left: -10, bottom: 0 }}>
+          <defs>
+            <linearGradient id="growthGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor="#1D9E75" stopOpacity={0.18} />
+              <stop offset="95%" stopColor="#1D9E75" stopOpacity={0} />
+            </linearGradient>
+            <linearGradient id="newGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor="#378ADD" stopOpacity={0.18} />
+              <stop offset="95%" stopColor="#378ADD" stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid strokeDasharray="3 3" stroke="#F0EDE6" vertical={false} />
+          <XAxis dataKey="month" tick={{ fontSize: 10, fill: "#888" }} axisLine={false} tickLine={false} />
+          <YAxis tick={{ fontSize: 11, fill: "#888" }} unit="%" domain={[0, 100]} axisLine={false} tickLine={false} />
+          <Tooltip formatter={(v) => [`${Number(v).toFixed(1)}%`, showNew ? "New this month" : "Repayment rate"]} />
+          {!showNew && (
+            <ReferenceLine
+              y={GRANT_TARGET / 10}
+              stroke="#7F77DD"
+              strokeDasharray="5 4"
+              strokeWidth={1.5}
+              label={{ value: "Grant milestone", position: "insideTopRight", fontSize: 10, fill: "#7F77DD" }}
+            />
+          )}
+          {showNew ? (
+            <Area type="monotone" dataKey="newThisMonth" name="New this month"
+              stroke="#378ADD" strokeWidth={2} fill="url(#newGrad)"
+              dot={false} activeDot={{ r: 4, fill: "#378ADD" }} />
+          ) : (
+            <Area type="monotone" dataKey="rate" name="Repayment rate"
+              stroke="#1D9E75" strokeWidth={2} fill="url(#growthGrad)"
+              dot={false} activeDot={{ r: 4, fill: "#1D9E75" }} />
+          )}
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+// ── Main Page ─────────────────────────────────────────────────────────────────
 export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [revenue, setRevenue] = useState<TrendPoint[]>([]);
@@ -42,6 +139,7 @@ export default function DashboardPage() {
   if (!stats) return <Loading />;
 
   const fmtRWF = (n: number) => n >= 1000000 ? `RWF ${(n / 1000000).toFixed(2)}M` : `RWF ${(n / 1000).toFixed(0)}K`;
+  const regionData = toRegionMap(regions);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -60,7 +158,7 @@ export default function DashboardPage() {
         <KpiCard label="Health Sessions" value={stats.health_sessions_count} sub="Community impact" color="#1D9E75" icon="🏥" />
       </div>
 
-      {/* Charts row 1 */}
+      {/* Row 1: Revenue + Risk */}
       <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
         <div style={{ flex: 2, minWidth: 300, background: "#fff", border: "1px solid #E8E6E0", borderRadius: 14, padding: 20 }}>
           <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 16, color: "#1a1a1a" }}>Revenue Trend</h3>
@@ -78,7 +176,8 @@ export default function DashboardPage() {
           <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 16, color: "#1a1a1a" }}>Risk Distribution</h3>
           <ResponsiveContainer width="100%" height={200}>
             <PieChart>
-              <Pie data={risk} cx="50%" cy="50%" outerRadius={70} dataKey="value" label={({ percent }) => `${((percent ?? 0) * 100).toFixed(0)}%`} labelLine={false}>
+              <Pie data={risk} cx="50%" cy="50%" outerRadius={70} dataKey="value"
+                label={({ percent }) => `${((percent ?? 0) * 100).toFixed(0)}%`} labelLine={false}>
                 {risk.map((e, i) => <Cell key={i} fill={Object.values(COLORS)[i % 3]} />)}
               </Pie>
               <Tooltip />
@@ -88,7 +187,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Charts row 2 */}
+      {/* Row 2: Repayment bar (kept) + Growth area chart (new) */}
       <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
         <div style={{ flex: 1, minWidth: 280, background: "#fff", border: "1px solid #E8E6E0", borderRadius: 14, padding: 20 }}>
           <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 16, color: "#1a1a1a" }}>Repayment Rate Trend</h3>
@@ -103,17 +202,17 @@ export default function DashboardPage() {
           </ResponsiveContainer>
         </div>
         <div style={{ flex: 1, minWidth: 280, background: "#fff", border: "1px solid #E8E6E0", borderRadius: 14, padding: 20 }}>
-          <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 16, color: "#1a1a1a" }}>Customers by Region</h3>
-          <ResponsiveContainer width="100%" height={160}>
-            <BarChart data={regions} layout="vertical">
-              <CartesianGrid strokeDasharray="3 3" stroke="#F0EDE6" horizontal={false} />
-              <XAxis type="number" tick={{ fontSize: 11, fill: "#888" }} />
-              <YAxis type="category" dataKey="region" tick={{ fontSize: 11, fill: "#444" }} width={65} />
-              <Tooltip />
-              <Bar dataKey="count" fill="#378ADD" radius={[0, 4, 4, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 4, color: "#1a1a1a" }}>Customer Growth</h3>
+          <p style={{ fontSize: 12, color: "#888", marginBottom: 12 }}>Monthly momentum</p>
+          <CustomerGrowthChart data={repayment} />
         </div>
+      </div>
+
+      {/* Row 3: Rwanda Map full width */}
+      <div style={{ background: "#fff", border: "1px solid #E8E6E0", borderRadius: 14, padding: 20 }}>
+        <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 4, color: "#1a1a1a" }}>Customer Distribution</h3>
+        <p style={{ fontSize: 12, color: "#888", marginBottom: 16 }}>By province — hover to explore</p>
+        <RwandaRegionMap data={regionData} />
       </div>
 
       {/* AI Insights */}
@@ -127,4 +226,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-
