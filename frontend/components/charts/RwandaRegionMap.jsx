@@ -49,7 +49,7 @@ const DEFAULT_DATA = {
   North:  { customers: 580,  percentage: 16 },
 };
 
-export default function RwandaRegionMap({ data = DEFAULT_DATA }) {
+export default function RwandaRegionMap({ data = DEFAULT_DATA }: { data?: Record<string, { customers: number; percentage: number }> }) {
   const [hovered, setHovered] = useState(null);
   const isDark =
     typeof window !== "undefined" &&

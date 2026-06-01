@@ -139,7 +139,7 @@ export default function DashboardPage() {
   if (!stats) return <Loading />;
 
   const fmtRWF = (n: number) => n >= 1000000 ? `RWF ${(n / 1000000).toFixed(2)}M` : `RWF ${(n / 1000).toFixed(0)}K`;
-  const regionData = toRegionMap(regions);
+  const regionData = toRegionMap(regions) as { Kigali: { customers: number; percentage: number }; East: { customers: number; percentage: number }; South: { customers: number; percentage: number }; West: { customers: number; percentage: number }; North: { customers: number; percentage: number } };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
