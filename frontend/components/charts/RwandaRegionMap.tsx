@@ -1,8 +1,17 @@
 import React, { useState } from "react";
 
-// Simplified SVG path data for Rwanda's 5 regions
-// Based on approximate geographic shapes (scaled to 400x320 viewBox)
-const REGIONS = {
+type RegionKey = "Kigali" | "East" | "South" | "West" | "North";
+
+interface RegionData {
+  customers: number;
+  percentage: number;
+}
+
+interface Props {
+  data?: Partial<Record<RegionKey, RegionData>>;
+}
+
+const REGIONS: Record<RegionKey, { label: string; path: string; centroid: [number, number]; color: string; darkColor: string }> = {
   Kigali: {
     label: "Kigali City",
     path: "M195 148 L210 142 L222 150 L218 165 L205 170 L193 162 Z",
@@ -40,8 +49,7 @@ const REGIONS = {
   },
 };
 
-// Sample customer distribution data — replace with real data from your backend
-const DEFAULT_DATA = {
+const DEFAULT_DATA: Record<RegionKey, RegionData> = {
   Kigali: { customers: 1420, percentage: 38 },
   East:   { customers: 620,  percentage: 17 },
   South:  { customers: 580,  percentage: 15 },
@@ -49,34 +57,27 @@ const DEFAULT_DATA = {
   North:  { customers: 580,  percentage: 16 },
 };
 
-export default function RwandaRegionMap({ data = DEFAULT_DATA }) {
-  const [hovered, setHovered] = useState(null);
+export default function RwandaRegionMap({ data = DEFAULT_DATA }: Props) {
+  const [hovered, setHovered] = useState<RegionKey | null>(null);
   const isDark =
     typeof window !== "undefined" &&
     window.matchMedia("(prefers-color-scheme: dark)").matches;
 
-  const maxCustomers = Math.max(...Object.values(data).map((d) => d.customers));
+  const maxCustomers = Math.max(...Object.values(data).map((d) => d?.customers ?? 0));
 
-  const getOpacity = (regionKey) => {
+  const getOpacity = (regionKey: RegionKey) => {
     const val = data[regionKey]?.customers ?? 0;
-    return 0.35 + (val / maxCustomers) * 0.65;
+    return 0.35 + (val / (maxCustomers || 1)) * 0.65;
   };
 
-  const getColor = (regionKey) => {
+  const getColor = (regionKey: RegionKey) => {
     const region = REGIONS[regionKey];
     return isDark ? region.darkColor : region.color;
   };
 
   return (
     <div style={{ width: "100%", fontFamily: "inherit" }}>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "flex-start",
-          gap: "24px",
-          flexWrap: "wrap",
-        }}
-      >
+      <div style={{ display: "flex", alignItems: "flex-start", gap: "24px", flexWrap: "wrap" }}>
         {/* Map */}
         <div style={{ flex: "0 0 auto" }}>
           <svg
@@ -87,7 +88,7 @@ export default function RwandaRegionMap({ data = DEFAULT_DATA }) {
             aria-label="Map of Rwanda showing customer distribution by region"
           >
             <title>Rwanda customer distribution map</title>
-            {Object.entries(REGIONS).map(([key, region]) => (
+            {(Object.entries(REGIONS) as [RegionKey, typeof REGIONS[RegionKey]][]).map(([key, region]) => (
               <g
                 key={key}
                 onMouseEnter={() => setHovered(key)}
@@ -97,9 +98,7 @@ export default function RwandaRegionMap({ data = DEFAULT_DATA }) {
                 <path
                   d={region.path}
                   fill={getColor(key)}
-                  fillOpacity={
-                    hovered === key ? 1 : getOpacity(key)
-                  }
+                  fillOpacity={hovered === key ? 1 : getOpacity(key)}
                   stroke="white"
                   strokeWidth={hovered === key ? 2 : 0.8}
                   style={{ transition: "all 0.2s ease" }}
@@ -143,14 +142,7 @@ export default function RwandaRegionMap({ data = DEFAULT_DATA }) {
                 marginBottom: 16,
               }}
             >
-              <div
-                style={{
-                  fontSize: 13,
-                  fontWeight: 500,
-                  color: "var(--color-text-primary)",
-                  marginBottom: 4,
-                }}
-              >
+              <div style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)", marginBottom: 4 }}>
                 {REGIONS[hovered].label} Province
               </div>
               <div style={{ fontSize: 22, fontWeight: 500, color: getColor(hovered) }}>
@@ -161,20 +153,12 @@ export default function RwandaRegionMap({ data = DEFAULT_DATA }) {
               </div>
             </div>
           ) : (
-            <div
-              style={{
-                fontSize: 12,
-                color: "var(--color-text-secondary)",
-                marginBottom: 16,
-                lineHeight: 1.5,
-              }}
-            >
+            <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 16, lineHeight: 1.5 }}>
               Hover a region to see details
             </div>
           )}
 
-          {/* Legend rows */}
-          {Object.entries(REGIONS).map(([key, region]) => (
+          {(Object.entries(REGIONS) as [RegionKey, typeof REGIONS[RegionKey]][]).map(([key, region]) => (
             <div
               key={key}
               onMouseEnter={() => setHovered(key)}
@@ -189,15 +173,7 @@ export default function RwandaRegionMap({ data = DEFAULT_DATA }) {
                 transition: "opacity 0.15s",
               }}
             >
-              <div
-                style={{
-                  width: 10,
-                  height: 10,
-                  borderRadius: 2,
-                  background: getColor(key),
-                  flexShrink: 0,
-                }}
-              />
+              <div style={{ width: 10, height: 10, borderRadius: 2, background: getColor(key), flexShrink: 0 }} />
               <span style={{ fontSize: 12, color: "var(--color-text-secondary)", flex: 1 }}>
                 {region.label}
               </span>

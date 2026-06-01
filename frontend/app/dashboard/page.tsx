@@ -139,7 +139,7 @@ export default function DashboardPage() {
   if (!stats) return <Loading />;
 
   const fmtRWF = (n: number) => n >= 1000000 ? `RWF ${(n / 1000000).toFixed(2)}M` : `RWF ${(n / 1000).toFixed(0)}K`;
-  const regionData = toRegionMap(regions) as { Kigali: { customers: number; percentage: number }; East: { customers: number; percentage: number }; South: { customers: number; percentage: number }; West: { customers: number; percentage: number }; North: { customers: number; percentage: number } };
+  const regionData = toRegionMap(regions);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -212,7 +212,7 @@ export default function DashboardPage() {
       <div style={{ background: "#fff", border: "1px solid #E8E6E0", borderRadius: 14, padding: 20 }}>
         <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 4, color: "#1a1a1a" }}>Customer Distribution</h3>
         <p style={{ fontSize: 12, color: "#888", marginBottom: 16 }}>By province — hover to explore</p>
-        <RwandaRegionMap data={regionData as any} />
+        <RwandaRegionMap data={regionData} />
       </div>
 
       {/* AI Insights */}
