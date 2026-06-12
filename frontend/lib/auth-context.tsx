@@ -2,7 +2,12 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 
 interface User { id: number; name: string; email: string; role: string; }
-interface AuthContextType { user: User | null; loading: boolean; login: (email: string, password: string) => Promise<void>; logout: () => void; }
+interface AuthContextType {
+  user: User | null;
+  loading: boolean;
+  login: (email: string, password: string) => Promise<void>;
+  logout: () => void;
+}
 
 const AuthContext = createContext<AuthContextType | null>(null);
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -15,7 +20,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const stored = localStorage.getItem("kosmo_user");
       if (stored) setUser(JSON.parse(stored));
-    } catch {}
+    } catch { /* ignore */ }
     setLoading(false);
   }, []);
 
@@ -23,7 +28,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const form = new URLSearchParams();
     form.append("username", email);
     form.append("password", password);
-    const res = await fetch(`${API}/api/auth/login`, {
+    // v2 route: /api/v1/auth/login (old /api/auth/login still works via compat)
+    const res = await fetch(`${API}/api/v1/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: form,
@@ -42,7 +48,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.location.href = "/login";
   };
 
-  return <AuthContext.Provider value={{ user, loading, login, logout }}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={{ user, loading, login, logout }}>
+      {children}
+    </AuthContext.Provider>
+  );
 }
 
 export function useAuth() {

@@ -1,6 +1,6 @@
 "use client";
-import { useEffect, useState } from "react";
-import { api, DashboardStats, TrendPoint, RiskPoint, RegionPoint, Insight } from "@/lib/api";
+import { useEffect, useState, useRef } from "react";
+import { api, DashboardStats, TrendPoint, RiskPoint, RegionPoint, Insight, connectDashboardWS } from "@/lib/api";
 import { KpiCard, InsightCard, Card, Loading } from "@/components/ui";
 import {
   LineChart, Line,

@@ -20,7 +20,7 @@ export default function UploadPage() {
     fd.append("file", file);
     try {
       const token = localStorage.getItem("kosmo_token");
-      const res = await fetch(`${API}/api/uploads/customers`, {
+      const res = await fetch(`${API}/api/v1/uploads/customers`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
         body: fd,
