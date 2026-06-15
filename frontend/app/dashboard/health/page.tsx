@@ -25,7 +25,6 @@ export default function HealthPage() {
   const [showModal, setShowModal] = useState(false);
   const [deleting, setDeleting] = useState<number | null>(null);
 
-  // Form — note: no hardcoded expected_attendance default
   const emptyForm = { title: "", topic: "menstrual_hygiene", region: "Kigali", facilitator: "", session_date: "", duration_minutes: "", expected_attendance: "" };
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
@@ -83,7 +82,6 @@ export default function HealthPage() {
         action={<Btn onClick={() => { setForm(emptyForm); setError(""); setShowModal(true); }}>+ New Session</Btn>}
       />
 
-      {/* KPI cards */}
       {impact && (
         <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 24 }}>
           <KpiCard label="Total Sessions" value={impact.total_sessions} color="#1D9E75" icon="🏥" />
@@ -92,7 +90,6 @@ export default function HealthPage() {
         </div>
       )}
 
-      {/* Topic breakdown */}
       <Card title="Sessions by Topic">
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           {TOPICS.map(topic => {
@@ -108,7 +105,6 @@ export default function HealthPage() {
         </div>
       </Card>
 
-      {/* Sessions table */}
       <div style={{ marginTop: 24, background: "#fff", border: "1px solid #E8E6E0", borderRadius: 14, overflow: "hidden" }}>
         {loading ? <Loading /> : (
           <Table headers={["Title", "Topic", "Region", "Facilitator", "Date", "Expected", "Actions"]}>
@@ -131,8 +127,10 @@ export default function HealthPage() {
                   <Td>{s.session_date ? new Date(s.session_date).toLocaleDateString() : "—"}</Td>
                   <Td>{s.expected_attendance ?? "—"}</Td>
                   <td style={{ padding: "11px 14px" }}>
-                    <button onClick={() => handleDelete(s.id)}
-                    style={{ background: "#FEE2E2", color: "#E24B4A", border: "none", borderRadius: 6, padding: "5px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                    {/* FIX: replaced <Btn small variant="danger"> with plain styled button */}
+                    <button
+                      onClick={() => handleDelete(s.id)}
+                      style={{ background: "#FEE2E2", color: "#E24B4A", border: "none", borderRadius: 6, padding: "5px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
                       {deleting === s.id ? "..." : "Delete"}
                     </button>
                   </td>
@@ -142,7 +140,6 @@ export default function HealthPage() {
         )}
       </div>
 
-      {/* New Session Modal */}
       {showModal && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
           <div style={{ background: "#fff", borderRadius: 16, padding: 28, width: "100%", maxWidth: 500, maxHeight: "92vh", overflowY: "auto" }}>
@@ -198,7 +195,12 @@ export default function HealthPage() {
             </div>
 
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 20 }}>
-              <Btn variant="ghost" onClick={() => setShowModal(false)}>Cancel</Btn>
+              {/* FIX: replaced <Btn variant="ghost"> with plain styled button */}
+              <button
+                onClick={() => setShowModal(false)}
+                style={{ background: "#F0EDE6", color: "#666", border: "none", borderRadius: 8, padding: "9px 18px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+                Cancel
+              </button>
               <Btn onClick={handleCreate}>{saving ? "Saving..." : "Save Session"}</Btn>
             </div>
           </div>

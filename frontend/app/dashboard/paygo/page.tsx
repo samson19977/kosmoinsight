@@ -10,7 +10,6 @@ export default function PayGoPage() {
   const [showModal, setShowModal] = useState(false);
   const [filterCustomer, setFilterCustomer] = useState("");
 
-  // Form state
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [customerSearch, setCustomerSearch] = useState("");
   const [showDropdown, setShowDropdown] = useState(false);
@@ -33,7 +32,6 @@ export default function PayGoPage() {
 
   useEffect(() => { load(); }, []);
 
-  // Close dropdown on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
@@ -47,9 +45,8 @@ export default function PayGoPage() {
   const filteredCustomers = customers.filter(c =>
     c.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
     c.phone.includes(customerSearch)
-  ).slice(0, 8); // show max 8 suggestions
+  ).slice(0, 8);
 
-  // Payments shown in table — filter by selected customer if set
   const shownPayments = filterCustomer
     ? payments.filter(p => String(p.customer_id) === filterCustomer)
     : payments;
@@ -84,7 +81,6 @@ export default function PayGoPage() {
         installment_number: +installmentNum || 1,
         due_date: dueDate ? new Date(dueDate).toISOString() : null,
       });
-      // Auto-update risk for this customer
       const updatedPayments = await api.customers.payments(selectedCustomer.id) as { payments: Payment[] };
       await api.payments.autoRisk(selectedCustomer.id, updatedPayments.payments || []);
       setShowModal(false);
@@ -97,7 +93,6 @@ export default function PayGoPage() {
 
   const markPaid = async (p: Payment) => {
     await api.payments.update(p.id, { amount_paid: p.amount_due, status: "paid", paid_date: new Date().toISOString() });
-    // Auto-update risk immediately
     const allCustomerPayments = [...payments.filter(x => x.customer_id === p.customer_id && x.id !== p.id), { ...p, status: "paid" }];
     await api.payments.autoRisk(p.customer_id, allCustomerPayments);
     load();
@@ -105,7 +100,6 @@ export default function PayGoPage() {
 
   const markMissed = async (p: Payment) => {
     await api.payments.update(p.id, { status: "missed" });
-    // Auto-update risk immediately — this is what triggers High Risk
     const allCustomerPayments = [...payments.filter(x => x.customer_id === p.customer_id && x.id !== p.id), { ...p, status: "missed" }];
     await api.payments.autoRisk(p.customer_id, allCustomerPayments);
     load();
@@ -119,7 +113,6 @@ export default function PayGoPage() {
         action={<Btn onClick={() => { resetForm(); setShowModal(true); }}>+ Record Payment</Btn>}
       />
 
-      {/* KPI cards */}
       <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 24 }}>
         <KpiCard label="Total Collected" value={`RWF ${(totalCollected / 1000).toFixed(0)}K`} color="#1D9E75" icon="✓" />
         <KpiCard label="Outstanding" value={`RWF ${((totalDue - totalCollected) / 1000).toFixed(0)}K`} color="#E24B4A" icon="⚠" />
@@ -129,7 +122,6 @@ export default function PayGoPage() {
         <KpiCard label="Collection Rate" value={`${totalDue > 0 ? ((totalCollected / totalDue) * 100).toFixed(1) : 0}%`} color="#7F77DD" icon="↗" />
       </div>
 
-      {/* Filter by customer */}
       <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
         <select
           value={filterCustomer}
@@ -148,12 +140,9 @@ export default function PayGoPage() {
             ✕ Clear filter
           </button>
         )}
-        <span style={{ fontSize: 13, color: "#888" }}>
-          Showing {shownPayments.length} records
-        </span>
+        <span style={{ fontSize: 13, color: "#888" }}>Showing {shownPayments.length} records</span>
       </div>
 
-      {/* Payments table */}
       <div style={{ background: "#fff", border: "1px solid #E8E6E0", borderRadius: 14, overflow: "hidden" }}>
         {loading ? <Loading /> : (
           <Table headers={["Customer", "#", "Amount Due", "Amount Paid", "Balance", "Due Date", "Status", "Actions"]}>
@@ -176,7 +165,12 @@ export default function PayGoPage() {
                     {(p.status === "pending" || p.status === "partial") && (
                       <div style={{ display: "flex", gap: 6 }}>
                         <Btn small onClick={() => markPaid(p)}>✓ Paid</Btn>
-                        <Btn small variant="danger" onClick={() => markMissed(p)}>✕ Missed</Btn>
+                        {/* FIX: replaced <Btn small variant="danger"> with plain styled button */}
+                        <button
+                          onClick={() => markMissed(p)}
+                          style={{ background: "#FEE2E2", color: "#E24B4A", border: "none", borderRadius: 6, padding: "5px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                          ✕ Missed
+                        </button>
                       </div>
                     )}
                     {p.status === "missed" && (
@@ -189,7 +183,6 @@ export default function PayGoPage() {
         )}
       </div>
 
-      {/* Record Payment Modal */}
       {showModal && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
           <div style={{ background: "#fff", borderRadius: 16, padding: 28, width: "100%", maxWidth: 460, maxHeight: "90vh", overflowY: "auto" }}>
@@ -197,8 +190,6 @@ export default function PayGoPage() {
             <p style={{ fontSize: 13, color: "#888", marginBottom: 20 }}>Risk score updates automatically after saving.</p>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-
-              {/* Searchable customer input */}
               <div>
                 <label style={{ fontSize: 12, fontWeight: 600, color: "#444", display: "block", marginBottom: 6 }}>Customer *</label>
                 <div ref={dropdownRef} style={{ position: "relative" }}>
@@ -254,7 +245,6 @@ export default function PayGoPage() {
                 )}
               </div>
 
-              {/* Amount fields */}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                 <div>
                   <label style={{ fontSize: 12, fontWeight: 600, color: "#444", display: "block", marginBottom: 6 }}>Amount Due (RWF) *</label>
@@ -277,7 +267,6 @@ export default function PayGoPage() {
                 </div>
               </div>
 
-              {/* Payment status preview */}
               {amountDue && (
                 <div style={{ background: "#F5F3EE", borderRadius: 8, padding: "10px 14px", fontSize: 13 }}>
                   <span style={{ color: "#666" }}>Status will be: </span>
@@ -290,7 +279,12 @@ export default function PayGoPage() {
             </div>
 
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 20 }}>
-              <Btn variant="ghost" onClick={() => { setShowModal(false); resetForm(); }}>Cancel</Btn>
+              {/* FIX: replaced <Btn variant="ghost"> with plain styled button */}
+              <button
+                onClick={() => { setShowModal(false); resetForm(); }}
+                style={{ background: "#F0EDE6", color: "#666", border: "none", borderRadius: 8, padding: "9px 18px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+                Cancel
+              </button>
               <Btn onClick={handleCreate}>{saving ? "Saving..." : "Save & Update Risk"}</Btn>
             </div>
           </div>
