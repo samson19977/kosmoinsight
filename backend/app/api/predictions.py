@@ -3,8 +3,8 @@ AI/ML Predictions — risk scoring, demand forecasting, customer segmentation.
 v2: auto-trigger risk update when payments change, improved segmentation.
 """
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import func, case
 import json
 from datetime import datetime
 from app.database import get_db
@@ -89,23 +89,58 @@ def predict_repayment_risk(
 
 @router.post("/batch-risk-update")
 def batch_update_risk(db: Session = Depends(get_db), _=Depends(get_current_user)):
-    """Recalculate risk for ALL customers — run this nightly or on-demand."""
+    """
+    Recalculate risk for ALL customers efficiently using aggregated DB queries.
+    Fixed: replaced N+1 loop with a single aggregated payment query.
+    """
+    now = datetime.utcnow()
+
+    # FIX 1: Single query to get missed/total payments per customer
+    payment_stats = db.query(
+        Payment.customer_id,
+        func.count(Payment.id).label("total"),
+        func.sum(
+            case((Payment.status == "missed", 1), else_=0)
+        ).label("missed"),
+        func.sum(
+            case(
+                (Payment.status != "paid", Payment.remaining_balance),
+                else_=0
+            )
+        ).label("debt"),
+    ).group_by(Payment.customer_id).all()
+
+    # Build a lookup dict: customer_id → stats
+    stats_map = {
+        row.customer_id: {
+            "total":  row.total  or 0,
+            "missed": int(row.missed or 0),
+            "debt":   float(row.debt  or 0),
+        }
+        for row in payment_stats
+    }
+
+    # FIX 2: Load all customers in one query (no joinedload needed)
     customers = db.query(Customer).all()
     counts = {"high": 0, "medium": 0, "low": 0}
 
     for c in customers:
-        missed = sum(1 for p in c.payments if p.status == "missed")
-        total  = len(c.payments)
-        months = max(1, (datetime.utcnow() - c.join_date).days // 30) if c.join_date else 1
-        score, level, _ = _compute_risk(missed, total, months)
+        # FIX 3: Safe join_date handling
+        if c.join_date:
+            months = max(1, (now - c.join_date).days // 30)
+        else:
+            months = 12  # assume established if no join date
+
+        s      = stats_map.get(c.id, {"total": 0, "missed": 0, "debt": 0.0})
+        score, level, _ = _compute_risk(s["missed"], s["total"], months)
+
         c.risk_score = score
         c.risk_level = level
-        c.total_debt = sum(
-            (p.remaining_balance or 0) for p in c.payments if p.status != "paid"
-        )
+        c.total_debt = s["debt"]
         counts[level] += 1
 
     db.commit()
+
     return {
         "updated":      len(customers),
         "high_risk":    counts["high"],
@@ -161,11 +196,14 @@ def customer_segmentation(db: Session = Depends(get_db), _=Depends(get_current_u
       High Risk — high risk or defaulted
       New       — <3 months old
     """
+    now = datetime.utcnow()
     customers = db.query(Customer).all()
     segments  = {"Champions": 0, "Loyal": 0, "At Risk": 0, "High Risk": 0, "New": 0}
 
     for c in customers:
-        months = max(1, (datetime.utcnow() - c.join_date).days // 30) if c.join_date else 1
+        # FIX: safe join_date handling
+        months = max(1, (now - c.join_date).days // 30) if c.join_date else 12
+
         if months < 3:
             segments["New"] += 1
         elif c.risk_level == "high" or c.status == "defaulted":
