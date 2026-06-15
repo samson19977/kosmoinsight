@@ -131,9 +131,10 @@ export default function HealthPage() {
                   <Td>{s.session_date ? new Date(s.session_date).toLocaleDateString() : "—"}</Td>
                   <Td>{s.expected_attendance ?? "—"}</Td>
                   <td style={{ padding: "11px 14px" }}>
-                    <Btn small variant="danger" onClick={() => handleDelete(s.id)}>
+                    <button onClick={() => handleDelete(s.id)}
+                    style={{ background: "#FEE2E2", color: "#E24B4A", border: "none", borderRadius: 6, padding: "5px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
                       {deleting === s.id ? "..." : "Delete"}
-                    </Btn>
+                    </button>
                   </td>
                 </Tr>
               ))}
