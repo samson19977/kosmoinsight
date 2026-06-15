@@ -56,12 +56,23 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# ─── Middleware ──────────────────────────────────────────────────────────────
-CORS_ORIGINS = [
+# ─── CORS ────────────────────────────────────────────────────────────────────
+# Always-allowed origins (hardcoded as safety net)
+DEFAULT_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "https://kosmoinsight.vercel.app",
+]
+
+# Merge with any extra origins from env var
+extra = [
     o.strip()
-    for o in os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
+    for o in os.getenv("CORS_ORIGINS", "").split(",")
     if o.strip()
 ]
+
+CORS_ORIGINS = list(set(DEFAULT_ORIGINS + extra))
+logger.info(f"CORS allowed origins: {CORS_ORIGINS}")
 
 app.add_middleware(
     CORSMiddleware,
@@ -88,16 +99,15 @@ app.include_router(reports.router,       prefix=f"{PREFIX}/reports",         tag
 app.include_router(notifications.router, prefix=f"{PREFIX}/notifications",   tags=["Notifications"])
 app.include_router(audit.router,         prefix=f"{PREFIX}/audit",           tags=["Audit Logs"])
 
-# ─── Backward-compat aliases (old /api/* routes still work) ──────────────────
-app.include_router(auth.router,        prefix="/api/auth",           tags=["Auth (legacy)"],          include_in_schema=False)
-app.include_router(customers.router,   prefix="/api/customers",      tags=["Customers (legacy)"],     include_in_schema=False)
-app.include_router(payments.router,    prefix="/api/payments",       tags=["Payments (legacy)"],      include_in_schema=False)
-app.include_router(analytics.router,   prefix="/api/analytics",      tags=["Analytics (legacy)"],     include_in_schema=False)
-app.include_router(predictions.router, prefix="/api/predict",        tags=["Predictions (legacy)"],   include_in_schema=False)
-app.include_router(reports.router,     prefix="/api/reports",        tags=["Reports (legacy)"],       include_in_schema=False)
+# ─── Backward-compat aliases ──────────────────────────────────────────────────
+app.include_router(auth.router,        prefix="/api/auth",      tags=["Auth (legacy)"],        include_in_schema=False)
+app.include_router(customers.router,   prefix="/api/customers", tags=["Customers (legacy)"],   include_in_schema=False)
+app.include_router(payments.router,    prefix="/api/payments",  tags=["Payments (legacy)"],    include_in_schema=False)
+app.include_router(analytics.router,   prefix="/api/analytics", tags=["Analytics (legacy)"],   include_in_schema=False)
+app.include_router(predictions.router, prefix="/api/predict",   tags=["Predictions (legacy)"], include_in_schema=False)
+app.include_router(reports.router,     prefix="/api/reports",   tags=["Reports (legacy)"],     include_in_schema=False)
 
-# ─── Health check ────────────────────────────────────────────────────────────
-
+# ─── Health check ─────────────────────────────────────────────────────────────
 @app.get("/", tags=["Root"])
 def root():
     return {
@@ -106,14 +116,11 @@ def root():
         "docs":    "/docs",
     }
 
-
 @app.get("/api/health", tags=["Root"])
 def health_check():
     return {"status": "ok", "version": "2.0.0"}
 
-
-# ─── WebSocket — real-time dashboard updates ─────────────────────────────────
-
+# ─── WebSocket — real-time dashboard updates ──────────────────────────────────
 class ConnectionManager:
     def __init__(self):
         self.active: list[WebSocket] = []
@@ -139,12 +146,6 @@ ws_manager = ConnectionManager()
 
 @app.websocket("/ws/dashboard")
 async def dashboard_ws(websocket: WebSocket):
-    """
-    Real-time dashboard feed.
-    Frontend connects here; backend pushes updates after any write.
-    Currently sends a ping every 30 seconds — hook into payment/customer writes
-    to push live events.
-    """
     await ws_manager.connect(websocket)
     import asyncio
     try:
