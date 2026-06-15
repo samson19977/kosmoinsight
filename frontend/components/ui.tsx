@@ -29,7 +29,6 @@ export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const [unread, setUnread] = useState(0);
 
-  // Poll notification count every 60s
   useEffect(() => {
     const fetch = () => api.notifications.unreadCount()
       .then(r => setUnread(r.count))
@@ -47,7 +46,6 @@ export function Sidebar() {
       flexDirection: "column", transition: "width 0.2s", flexShrink: 0,
       height: "100vh", position: "sticky", top: 0, overflow: "hidden",
     }}>
-      {/* Logo */}
       <div style={{ padding: "16px 12px", borderBottom: "1px solid #ffffff15", display: "flex", alignItems: "center", gap: 10 }}>
         <div style={{ width: 32, height: 32, background: "#7F77DD", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, fontWeight: 700, color: "#fff", flexShrink: 0 }}>K</div>
         {!collapsed && <div style={{ flex: 1, minWidth: 0 }}>
@@ -59,7 +57,6 @@ export function Sidebar() {
         </button>
       </div>
 
-      {/* Nav */}
       <nav style={{ flex: 1, padding: "10px 8px", display: "flex", flexDirection: "column", gap: 2, overflowY: "auto" }}>
         {allNav.map(n => {
           const active = pathname === n.href;
@@ -94,7 +91,6 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* User */}
       <div style={{ padding: "12px", borderTop: "1px solid #ffffff15" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: collapsed ? 0 : 8 }}>
           <div style={{ width: 28, height: 28, background: "#1D9E75", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
@@ -164,11 +160,15 @@ export function Loading({ text = "Loading…" }: { text?: string }) {
   );
 }
 
-export function PageHeader({ title, sub }: { title: string; sub?: string }) {
+// FIX: added optional `action` prop
+export function PageHeader({ title, sub, action }: { title: string; sub?: string; action?: React.ReactNode }) {
   return (
-    <div style={{ marginBottom: 4 }}>
-      <h2 style={{ fontSize: 22, fontWeight: 700, color: "#1a1a1a", marginBottom: 4 }}>{title}</h2>
-      {sub && <p style={{ fontSize: 14, color: "#888" }}>{sub}</p>}
+    <div style={{ marginBottom: 20, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+      <div>
+        <h2 style={{ fontSize: 22, fontWeight: 700, color: "#1a1a1a", marginBottom: 4 }}>{title}</h2>
+        {sub && <p style={{ fontSize: 14, color: "#888", margin: 0 }}>{sub}</p>}
+      </div>
+      {action && <div style={{ flexShrink: 0 }}>{action}</div>}
     </div>
   );
 }
@@ -216,13 +216,20 @@ export function InsightCard({ type, message }: { type: "warning" | "info" | "suc
   );
 }
 
+// FIX: added `small` prop (maps to size="sm"), kept full backward compat
 export function Btn({
-  children, onClick, color = "#7F77DD", disabled = false, size = "md",
+  children, onClick, color = "#7F77DD", disabled = false, size = "md", small = false,
 }: {
-  children: React.ReactNode; onClick?: () => void; color?: string; disabled?: boolean; size?: "sm" | "md";
+  children: React.ReactNode;
+  onClick?: () => void;
+  color?: string;
+  disabled?: boolean;
+  size?: "sm" | "md";
+  small?: boolean;
 }) {
-  const pad = size === "sm" ? "6px 14px" : "10px 20px";
-  const fs  = size === "sm" ? 12 : 14;
+  const resolvedSize = small ? "sm" : size;
+  const pad = resolvedSize === "sm" ? "5px 12px" : "10px 20px";
+  const fs  = resolvedSize === "sm" ? 12 : 14;
   return (
     <button
       onClick={onClick}
@@ -255,21 +262,28 @@ export function Table({ headers, children }: { headers: string[]; children: Reac
   );
 }
 
-export function Tr({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) {
+// FIX: added `i` prop for zebra striping (was missing, caused type error)
+export function Tr({ children, onClick, i }: { children: React.ReactNode; onClick?: () => void; i?: number }) {
+  const zebra = typeof i === "number" && i % 2 === 1 ? "#FAFAF8" : "";
   return (
     <tr
       onClick={onClick}
-      style={{ borderBottom: "1px solid #F0EDE6", cursor: onClick ? "pointer" : undefined, transition: "background 0.1s" }}
-      onMouseEnter={e => { if (onClick) (e.currentTarget as HTMLElement).style.background = "#FAFAF8"; }}
-      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = ""; }}
+      style={{ borderBottom: "1px solid #F0EDE6", background: zebra, cursor: onClick ? "pointer" : undefined, transition: "background 0.1s" }}
+      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = "#F5F3EE"; }}
+      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = zebra; }}
     >
       {children}
     </tr>
   );
 }
 
-export function Td({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
-  return <td style={{ padding: "10px 12px", color: "#3a3a3a", ...style }}>{children}</td>;
+// FIX: added `bold` prop
+export function Td({ children, style, bold }: { children: React.ReactNode; style?: React.CSSProperties; bold?: boolean }) {
+  return (
+    <td style={{ padding: "10px 12px", color: "#3a3a3a", fontWeight: bold ? 600 : 400, ...style }}>
+      {children}
+    </td>
+  );
 }
 
 export function EmptyState({ message, action }: { message: string; action?: React.ReactNode }) {

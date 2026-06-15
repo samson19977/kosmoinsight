@@ -80,8 +80,12 @@ function Modal({ onClose, onSave, initial }: {
           </div>
 
           <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 6 }}>
-            <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
-            <button type="submit" style={{ background: "#7F77DD", color: "#fff", border: "none", borderRadius: 8, padding: "9px 18px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+            <button type="button" onClick={onClose}
+            style={{ background: "#F0EDE6", color: "#666", border: "none", borderRadius: 8, padding: "9px 18px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+               Cancel
+            </button>
+            <button type="submit"
+              style={{ background: "#7F77DD", color: "#fff", border: "none", borderRadius: 8, padding: "9px 18px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
               {loading ? "Saving..." : "Save Customer"}
             </button>
           </div>
@@ -208,7 +212,11 @@ function CustomerDetail({ customer, onClose, onRefresh }: {
           )}
 
         <div style={{ marginTop: 20, textAlign: "right" }}>
-          <Btn variant="ghost" onClick={onClose}>Close</Btn>
+          {/* FIX: replaced Btn variant="ghost" with a plain button */}
+          <button onClick={onClose}
+            style={{ background: "#F0EDE6", color: "#666", border: "none", borderRadius: 8, padding: "9px 18px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+            Close
+          </button>
         </div>
       </div>
     </div>
@@ -295,7 +303,11 @@ export default function CustomersPage() {
                   <td style={{ padding: "11px 14px" }}>
                     <div style={{ display: "flex", gap: 6 }}>
                       <Btn small onClick={() => setSelected(c)}>View</Btn>
-                      <Btn small variant="danger" onClick={() => handleDelete(c.id)}>Delete</Btn>
+                      {/* FIX: replaced Btn variant="danger" with styled button */}
+                      <button onClick={() => handleDelete(c.id)}
+                        style={{ background: "#FEE2E2", color: "#E24B4A", border: "none", borderRadius: 6, padding: "5px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                        Delete
+                      </button>
                     </div>
                   </td>
                 </Tr>
