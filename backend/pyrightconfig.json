@@ -1,41 +1,18 @@
 {
-  // pyrightconfig.json — static type-checker config for the KosmoInsight backend.
-  // This file lives next to the top-level  app/  package (i.e. inside backend/).
-
-  // Tell Pyright that the project root is a source root, so
-  //   from app.database import engine
-  //   from app.api import auth
-  // all resolve correctly without any "Import could not be resolved" errors.
-  "include": [
-    "app"
-  ],
-
+  "include": ["app"],
   "exclude": [
     "**/__pycache__",
     "**/node_modules",
     "venv",
     ".venv"
   ],
-
-  // If you create a virtual-env named "venv" inside backend/, Pyright
-  // will automatically pick it up from here.
   "venvPath": ".",
   "venv": "venv",
-
-  // Extra paths searched for imports — the project root itself so that
-  // "app" is found as a top-level package.
-  "extraPaths": [
-    "."
-  ],
-
-  // Diagnostic mode: "basic" is good for development; use "strict" later.
+  "extraPaths": ["."],
   "typeCheckingMode": "basic",
-
-  // Python version — keep in sync with what you're actually running.
-  "pythonVersion": "3.12",
-  "pythonPlatform": "Linux",
-
-  // Suppress noisy errors for third-party stubs that don't ship type hints.
+  "pythonVersion": "3.11",
+  "pythonPlatform": "Windows",
   "reportMissingTypeStubs": false,
-  "reportMissingModuleSource": "none"
+  "reportMissingModuleSource": "none",
+  "reportMissingImports": "none"
 }

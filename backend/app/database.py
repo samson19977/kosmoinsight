@@ -16,7 +16,19 @@ logger = logging.getLogger(__name__)
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if not DATABASE_URL:
-    raise ValueError("DATABASE_URL is not set in environment variables.")
+    # IMPORTANT: on Render this must be set in Dashboard -> Environment,
+    # NOT just in a local .env file (which is never uploaded/read on Render).
+    # A missing DATABASE_URL crashes the process during import, before
+    # uvicorn binds to $PORT — which Render reports as
+    # "No open ports detected ... Timed Out".
+    logger.error(
+        "DATABASE_URL is not set. On Render: Dashboard -> your service "
+        "-> Environment -> add DATABASE_URL (and SECRET_KEY, CORS_ORIGINS)."
+    )
+    raise ValueError(
+        "DATABASE_URL is not set in environment variables. "
+        "Set it in your hosting provider's Environment settings."
+    )
 
 # Render / Supabase sometimes give postgres:// — SQLAlchemy needs postgresql://
 if DATABASE_URL.startswith("postgres://"):
@@ -24,7 +36,13 @@ if DATABASE_URL.startswith("postgres://"):
 
 IS_SQLITE = DATABASE_URL.startswith("sqlite")
 
-connect_args = {"check_same_thread": False} if IS_SQLITE else {}
+if IS_SQLITE:
+    connect_args = {"check_same_thread": False}
+else:
+    # connect_timeout prevents a slow/unreachable DB (e.g. paused Supabase
+    # project) from hanging app startup indefinitely, which also looks like
+    # "No open ports detected" from Render's perspective.
+    connect_args = {"connect_timeout": 10}
 
 engine = create_engine(
     DATABASE_URL,
