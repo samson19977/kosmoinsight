@@ -62,8 +62,9 @@ export default function AIPage() {
       <PageHeader title="AI & ML Hub" sub="Demand forecasting, customer segmentation, and batch risk scoring" />
 
       {error && (
-        <div style={{ background: "#FEE2E2", border: "1px solid #FCA5A5", borderRadius: 10, padding: "12px 16px", color: "#991B1B", fontSize: 14 }}>
-          ⚠️ {error}
+        <div style={{ background: "#FEE2E2", border: "1px solid #FCA5A5", borderRadius: 10, padding: "12px 16px", color: "#991B1B", fontSize: 14, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span>⚠️ {error.includes("fetch") ? "Server is waking up — wait 20–30 seconds then try again." : error}</span>
+          <button onClick={() => setError(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "#991B1B", fontSize: 18, lineHeight: 1 }}>×</button>
         </div>
       )}
 

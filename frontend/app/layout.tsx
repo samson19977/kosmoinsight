@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth-context";
+import { WakeBackend } from "@/components/wake-backend";
 
 export const metadata: Metadata = {
   title: "KosmoInsight AI",
@@ -12,6 +13,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body>
         <AuthProvider>{children}</AuthProvider>
+        <WakeBackend />
       </body>
     </html>
   );
