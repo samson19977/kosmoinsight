@@ -116,8 +116,11 @@ export const api = {
       req<Installment[]>(`${V1}/installments?customer_id=${customerId}&limit=200`),
     generate: (d: GenerateInstallmentsInput) =>
       req<Installment[]>(`${V1}/installments/generate`, { method: "POST", body: JSON.stringify(d) }),
-    markPaid: (id: number, amountPaid: number) =>
-      req<Installment>(`${V1}/installments/${id}/pay`, { method: "POST", body: JSON.stringify({ amount_paid: amountPaid }) }),
+    markPaid: (id: number, paidAmount?: number) =>
+      req<Installment>(
+        `${V1}/installments/${id}/mark-paid${paidAmount != null ? `?paid_amount=${paidAmount}` : ""}`,
+        { method: "PATCH" }
+      ),
     overdueSummary: () => req<OverdueSummary>(`${V1}/installments/overdue-summary`),
   },
 
@@ -203,10 +206,10 @@ export interface Payment {
   status: string; installment_number?: number;
 }
 export interface Installment {
-  id: number; customer_id: number; installment_number: number;
-  amount_due: number; amount_paid: number; due_date: string;
+  id: number; customer_id: number; installment_no: number;
+  amount_due: number; paid_amount: number; due_date: string;
   paid_date?: string; status: "pending" | "paid" | "missed" | "partial";
-  notes?: string;
+  frequency?: string; reminder_sent?: boolean;
 }
 export interface GenerateInstallmentsInput {
   customer_id: number; total_amount: number; num_installments: number;

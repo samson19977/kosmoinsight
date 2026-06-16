@@ -43,14 +43,14 @@ export default function InstallmentsPage() {
   const missed  = installments.filter(i => i.status === "missed").length;
   const pending = installments.filter(i => i.status === "pending").length;
   const totalDue = installments.reduce((s, i) => s + i.amount_due, 0);
-  const totalCollected = installments.reduce((s, i) => s + i.amount_paid, 0);
+  const totalCollected = installments.reduce((s, i) => s + i.paid_amount, 0);
 
   const fmtRWF = (n: number) => n >= 1_000_000
     ? `RWF ${(n / 1_000_000).toFixed(2)}M`
     : `RWF ${(n / 1000).toFixed(0)}K`;
 
   const handleMarkPaid = async (inst: Installment) => {
-    const input = prompt(`Amount paid for installment #${inst.installment_number} (due: ${fmtRWF(inst.amount_due)}):`, String(inst.amount_due));
+    const input = prompt(`Amount paid for installment #${inst.installment_no} (due: ${fmtRWF(inst.amount_due)}):`, String(inst.amount_due));
     if (!input) return;
     const amount = parseFloat(input);
     if (isNaN(amount) || amount < 0) { alert("Invalid amount"); return; }
@@ -121,12 +121,12 @@ export default function InstallmentsPage() {
               {shown.map(i => (
                 <Tr key={i.id}>
                   <Td><span style={{ fontWeight: 500 }}>{customerName(i.customer_id)}</span></Td>
-                  <Td>#{i.installment_number}</Td>
+                  <Td>#{i.installment_no}</Td>
                   <Td style={{ color: "#666" }}>{i.due_date?.slice(0, 10) || "—"}</Td>
                   <Td style={{ fontWeight: 500 }}>RWF {i.amount_due.toLocaleString()}</Td>
-                  <Td style={{ color: "#1D9E75" }}>RWF {i.amount_paid.toLocaleString()}</Td>
-                  <Td style={{ color: i.amount_due - i.amount_paid > 0 ? "#E24B4A" : "#1D9E75", fontWeight: 500 }}>
-                    RWF {Math.max(0, i.amount_due - i.amount_paid).toLocaleString()}
+                  <Td style={{ color: "#1D9E75" }}>RWF {i.paid_amount.toLocaleString()}</Td>
+                  <Td style={{ color: i.amount_due - i.paid_amount > 0 ? "#E24B4A" : "#1D9E75", fontWeight: 500 }}>
+                    RWF {Math.max(0, i.amount_due - i.paid_amount).toLocaleString()}
                   </Td>
                   <Td><StatusBadge status={i.status} /></Td>
                   <Td>
