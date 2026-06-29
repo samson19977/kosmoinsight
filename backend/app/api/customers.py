@@ -21,7 +21,7 @@ def _update_debt(customer: Customer):
     )
 
 
-@router.get("/", response_model=List[CustomerOut])
+@router.get("", response_model=List[CustomerOut])
 def list_customers(
     search:      Optional[str] = Query(None),
     region:      Optional[str] = Query(None),
@@ -51,7 +51,7 @@ def list_customers(
     return q.order_by(Customer.join_date.desc()).offset(skip).limit(limit).all()
 
 
-@router.post("/", response_model=CustomerOut, status_code=201)
+@router.post("", response_model=CustomerOut, status_code=201)
 def create_customer(
     data:         CustomerCreate,
     request:      Request,

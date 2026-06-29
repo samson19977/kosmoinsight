@@ -72,7 +72,7 @@ def generate_installment_schedule(
     return created
 
 
-@router.get("/", response_model=List[InstallmentOut])
+@router.get("", response_model=List[InstallmentOut])
 def list_installments(
     customer_id: Optional[int] = Query(None),
     status:      Optional[str] = Query(None),

@@ -28,7 +28,7 @@ def _sync_customer_debt(customer_id: int, db: Session):
         )
 
 
-@router.get("/", response_model=List[PaymentOut])
+@router.get("", response_model=List[PaymentOut])
 def list_payments(
     skip:        int           = Query(default=0, ge=0),
     limit:       int           = Query(default=200, ge=1, le=2000),
@@ -48,7 +48,7 @@ def list_payments(
     return q.order_by(Payment.id.desc()).offset(skip).limit(limit).all()
 
 
-@router.post("/", response_model=PaymentOut, status_code=201)
+@router.post("", response_model=PaymentOut, status_code=201)
 def create_payment(
     data:    PaymentCreate,
     request: Request,
