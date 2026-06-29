@@ -6,7 +6,6 @@
 
 const BASE = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/$/, "");
 
-// ─── Auth helper ──────────────────────────────────────────────────────────────
 function getToken(): string | null {
   if (typeof window === "undefined") return null;
   return localStorage.getItem("kosmo_token");
@@ -24,7 +23,6 @@ async function request<T>(
       if (v !== undefined && v !== "") url.searchParams.set(k, v);
     });
   }
-
   const res = await fetch(url.toString(), {
     ...options,
     headers: {
@@ -33,7 +31,6 @@ async function request<T>(
       ...(options.headers || {}),
     },
   });
-
   if (!res.ok) {
     let msg = `API error ${res.status}`;
     try {
@@ -44,14 +41,10 @@ async function request<T>(
     }
     throw new Error(msg);
   }
-
-  // Some endpoints return 204 No Content
   if (res.status === 204) return {} as T;
-
   return res.json() as Promise<T>;
 }
 
-// CSV download helper — triggers browser save dialog
 async function downloadCsv(path: string, filename: string): Promise<void> {
   const token = getToken();
   const res = await fetch(`${BASE}${path}`, {
@@ -69,8 +62,6 @@ async function downloadCsv(path: string, filename: string): Promise<void> {
   URL.revokeObjectURL(url);
 }
 
-// ─── TypeScript Types ─────────────────────────────────────────────────────────
-
 export interface Customer {
   id: number;
   name: string;
@@ -80,10 +71,10 @@ export interface Customer {
   product_type?: string;
   payment_plan?: string;
   notes?: string;
-  status: string;         // "active" | "completed" | "suspended" | "defaulted"
-  risk_score: number;     // 0.0 – 1.0
-  risk_level: string;     // "low" | "medium" | "high"
-  join_date: string;      // ISO date string
+  status: string;
+  risk_score: number;
+  risk_level: string;
+  join_date: string;
   created_at?: string;
 }
 
@@ -94,7 +85,7 @@ export interface Payment {
   amount_paid: number;
   remaining_balance?: number;
   installment_number?: number;
-  status: string;         // "pending" | "paid" | "missed"
+  status: string;
   due_date?: string | null;
   paid_date?: string | null;
   created_at?: string;
@@ -107,7 +98,7 @@ export interface Installment {
   amount_due: number;
   paid_amount: number;
   remaining_balance?: number;
-  status: string;         // "pending" | "paid" | "missed"
+  status: string;
   due_date?: string | null;
   paid_date?: string | null;
   created_at?: string;
@@ -124,15 +115,15 @@ export interface GenerateInstallmentsInput {
   total_amount: number;
   num_installments: number;
   start_date?: string;
-  frequency?: string;     // "daily" | "weekly" | "monthly"
+  frequency?: string;
 }
 
 export interface Notification {
   id: number;
   customer_id?: number;
-  channel: string;        // "sms" | "email" | "whatsapp" | "in_app"
+  channel: string;
   message: string;
-  status: string;         // "pending" | "sent" | "failed"
+  status: string;
   sent_at?: string | null;
   created_at?: string;
 }
@@ -140,7 +131,7 @@ export interface Notification {
 export interface AuditLog {
   id: number;
   user_id?: number;
-  action: string;         // "create" | "update" | "delete" | "login" | "logout"
+  action: string;
   resource: string;
   resource_id?: number;
   detail?: string;
@@ -165,7 +156,7 @@ export interface TrendPoint {
 }
 
 export interface RiskPoint {
-  name: string;           // "Low" | "Medium" | "High"
+  name: string;
   value: number;
 }
 
@@ -175,260 +166,176 @@ export interface RegionPoint {
 }
 
 export interface Insight {
-  type: string;           // "success" | "warning" | "info"
+  type: string;
   message: string;
 }
 
-// ─── API namespace ────────────────────────────────────────────────────────────
-
 export const api = {
 
-  // ── Customers ──────────────────────────────────────────────────────────────
   customers: {
     list(params?: Record<string, string>): Promise<Customer[]> {
       return request<Customer[]>("/api/v1/customers", {}, params);
     },
-
     get(id: number): Promise<Customer> {
       return request<Customer>(`/api/v1/customers/${id}`);
     },
-
     create(data: Partial<Customer>): Promise<Customer> {
-      return request<Customer>("/api/v1/customers", {
-        method: "POST",
-        body: JSON.stringify(data),
-      });
+      return request<Customer>("/api/v1/customers", { method: "POST", body: JSON.stringify(data) });
     },
-
     update(id: number, data: Partial<Customer>): Promise<Customer> {
-      return request<Customer>(`/api/v1/customers/${id}`, {
-        method: "PUT",
-        body: JSON.stringify(data),
-      });
+      return request<Customer>(`/api/v1/customers/${id}`, { method: "PUT", body: JSON.stringify(data) });
     },
-
     delete(id: number): Promise<void> {
       return request<void>(`/api/v1/customers/${id}`, { method: "DELETE" });
     },
-
-    // Returns { payments: Payment[] }
     payments(id: number): Promise<{ payments: Payment[] }> {
       return request<{ payments: Payment[] }>(`/api/v1/customers/${id}/payments`);
     },
   },
 
-  // ── Payments ───────────────────────────────────────────────────────────────
   payments: {
     list(params?: Record<string, string>): Promise<Payment[]> {
       return request<Payment[]>("/api/v1/payments", {}, params);
     },
-
     create(data: Partial<Payment>): Promise<Payment> {
-      return request<Payment>("/api/v1/payments", {
-        method: "POST",
-        body: JSON.stringify(data),
-      });
+      return request<Payment>("/api/v1/payments", { method: "POST", body: JSON.stringify(data) });
     },
-
     update(id: number, data: Partial<Payment>): Promise<Payment> {
-      return request<Payment>(`/api/v1/payments/${id}`, {
-        method: "PUT",
-        body: JSON.stringify(data),
-      });
+      return request<Payment>(`/api/v1/payments/${id}`, { method: "PUT", body: JSON.stringify(data) });
     },
-
-    // Automatically recalculates risk after a payment is recorded
     async autoRisk(customerId: number, payments: Payment[]): Promise<void> {
       const missed = payments.filter((p) => p.status === "missed").length;
       const total = payments.length;
       const missedRate = total > 0 ? missed / total : 0;
-
       let risk_level = "low";
       if (missedRate >= 0.5) risk_level = "high";
       else if (missedRate >= 0.2) risk_level = "medium";
-
       await request<void>(`/api/v1/customers/${customerId}`, {
         method: "PUT",
         body: JSON.stringify({ risk_score: missedRate, risk_level }),
-      }).catch(() => {
-        // Non-critical — don't block UI
-      });
+      }).catch(() => {});
     },
   },
 
-  // ── Installments ───────────────────────────────────────────────────────────
   installments: {
     list(params?: Record<string, string>): Promise<Installment[]> {
       return request<Installment[]>("/api/v1/installments", {}, params);
     },
-
     generate(data: GenerateInstallmentsInput): Promise<{ created: number }> {
-      return request<{ created: number }>("/api/v1/installments/generate", {
-        method: "POST",
-        body: JSON.stringify(data),
-      });
+      return request<{ created: number }>("/api/v1/installments/generate", { method: "POST", body: JSON.stringify(data) });
     },
-
     markPaid(id: number, amount_paid: number): Promise<Installment> {
       return request<Installment>(`/api/v1/installments/${id}/mark-paid`, {
         method: "POST",
         body: JSON.stringify({ amount_paid, paid_date: new Date().toISOString() }),
       });
     },
-
     overdueSummary(): Promise<OverdueSummary> {
       return request<OverdueSummary>("/api/v1/installments/overdue-summary");
     },
   },
 
-  // ── Analytics ──────────────────────────────────────────────────────────────
   analytics: {
     dashboard(): Promise<DashboardStats> {
       return request<DashboardStats>("/api/v1/analytics/dashboard");
     },
-
     revenueTrend(): Promise<TrendPoint[]> {
       return request<TrendPoint[]>("/api/v1/analytics/revenue-trend");
     },
-
     repaymentTrend(): Promise<TrendPoint[]> {
       return request<TrendPoint[]>("/api/v1/analytics/repayment-trend");
     },
-
     riskDist(): Promise<RiskPoint[]> {
       return request<RiskPoint[]>("/api/v1/analytics/risk-distribution");
     },
-
     regionDist(): Promise<RegionPoint[]> {
       return request<RegionPoint[]>("/api/v1/analytics/region-distribution");
     },
-
     insights(): Promise<Insight[]> {
       return request<Insight[]>("/api/v1/analytics/insights");
     },
-
     healthImpact(): Promise<{ total_sessions: number; total_attendees: number; avg_feedback_score: number }> {
       return request("/api/v1/analytics/health-impact");
     },
   },
 
-  // ── Predictions / ML ───────────────────────────────────────────────────────
   predict: {
     batchRisk(): Promise<{ updated: number; high_risk: number; medium_risk: number; low_risk: number; message: string }> {
       return request("/api/v1/predict/batch-risk", { method: "POST" });
     },
-
     forecast(data: { product_type: string; periods: number }): Promise<{ forecast: { month: string; predicted_demand: number }[] }> {
-      return request("/api/v1/predict/forecast", {
-        method: "POST",
-        body: JSON.stringify(data),
-      });
+      return request("/api/v1/predict/forecast", { method: "POST", body: JSON.stringify(data) });
     },
-
     segments(): Promise<{ segment: string; count: number; desc?: string }[]> {
       return request("/api/v1/predict/segments");
     },
   },
 
-  // ── Health Sessions ────────────────────────────────────────────────────────
   health: {
     list(): Promise<unknown[]> {
       return request("/api/v1/health-sessions");
     },
-
     create(data: Record<string, unknown>): Promise<unknown> {
-      return request("/api/v1/health-sessions", {
-        method: "POST",
-        body: JSON.stringify(data),
-      });
+      return request("/api/v1/health-sessions", { method: "POST", body: JSON.stringify(data) });
     },
-
     delete(id: number): Promise<void> {
       return request<void>(`/api/v1/health-sessions/${id}`, { method: "DELETE" });
     },
   },
 
-  // ── Notifications ──────────────────────────────────────────────────────────
   notifications: {
     list(params?: Record<string, string>): Promise<Notification[]> {
       return request<Notification[]>("/api/v1/notifications", {}, params);
     },
-
     create(data: Partial<Notification>): Promise<Notification> {
-      return request<Notification>("/api/v1/notifications", {
-        method: "POST",
-        body: JSON.stringify(data),
-      });
+      return request<Notification>("/api/v1/notifications", { method: "POST", body: JSON.stringify(data) });
     },
   },
 
-  // ── Audit Logs ─────────────────────────────────────────────────────────────
   audit: {
     list(params?: Record<string, string>): Promise<AuditLog[]> {
       return request<AuditLog[]>("/api/v1/audit-logs", {}, params);
     },
   },
 
-  // ── Reports / CSV exports ──────────────────────────────────────────────────
   reports: {
     summary(): Promise<Record<string, unknown>> {
       return request("/api/v1/reports/summary");
     },
-
     donor(): Promise<Record<string, unknown>> {
       return request("/api/v1/reports/donor");
     },
-
     csvKpi(): Promise<void> {
       return downloadCsv("/api/v1/reports/export/kpi", "kosmo-kpi-summary.csv");
     },
-
     csvCustomers(): Promise<void> {
       return downloadCsv("/api/v1/reports/export/customers", "kosmo-customers.csv");
     },
-
     csvPayments(): Promise<void> {
       return downloadCsv("/api/v1/reports/export/payments", "kosmo-payments.csv");
     },
   },
 };
 
-// ─── WebSocket dashboard (live updates) ───────────────────────────────────────
 export function connectDashboardWS(onMessage: (data: Partial<DashboardStats>) => void): () => void {
   const wsBase = BASE.replace(/^http/, "ws");
   const token = getToken();
   const url = `${wsBase}/api/v1/ws/dashboard${token ? `?token=${token}` : ""}`;
-
   let ws: WebSocket | null = null;
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
   let stopped = false;
-
   const connect = () => {
     if (stopped) return;
     ws = new WebSocket(url);
-
     ws.onmessage = (e) => {
-      try {
-        onMessage(JSON.parse(e.data));
-      } catch {
-        // ignore malformed frames
-      }
+      try { onMessage(JSON.parse(e.data)); } catch { }
     };
-
     ws.onclose = () => {
-      if (!stopped) {
-        retryTimer = setTimeout(connect, 5000); // reconnect after 5 s
-      }
+      if (!stopped) retryTimer = setTimeout(connect, 5000);
     };
-
-    ws.onerror = () => {
-      ws?.close();
-    };
+    ws.onerror = () => { ws?.close(); };
   };
-
   connect();
-
-  // Return cleanup function
   return () => {
     stopped = true;
     if (retryTimer) clearTimeout(retryTimer);
