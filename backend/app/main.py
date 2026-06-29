@@ -38,10 +38,6 @@ async def lifespan(app: FastAPI):
         Base.metadata.create_all(bind=engine)
         logger.info(" Database tables ready.")
     except Exception as exc:
-        # Don't let a DB hiccup at boot prevent the port from opening —
-        # that's what produces Render's opaque "No open ports detected"
-        # timeout. Log it loudly instead so /api/health is still reachable
-        # for debugging, and DB-backed endpoints will retry per-request.
         logger.error(f" Database not reachable at startup: {exc}")
         logger.error(" Check DATABASE_URL in your environment variables.")
     yield
@@ -70,6 +66,7 @@ DEFAULT_ORIGINS = [
     "http://localhost:3000",
     "http://localhost:3001",
     "https://kosmoinsight.vercel.app",
+    "https://kosmoinsight-rust.vercel.app",   # ← actual production frontend
 ]
 
 # Merge with any extra origins from env var
