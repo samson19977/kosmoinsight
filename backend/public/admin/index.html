@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>KosmoPads Admin Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+  :root{
+    --teal:#0f7a72; --teal-dark:#0a5c56; --teal-light:#e6f4f2;
+    --ink:#1b2a2a; --muted:#5c6f6d; --line:#dfe8e6; --bg:#f6f9f8;
+    --pink:#e8557a; --amber:#c98a1d; --danger:#c0392b;
+    font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);}
+  header{background:linear-gradient(120deg,var(--teal-dark),var(--teal));color:#fff;padding:18px 28px;display:flex;align-items:center;justify-content:space-between;}
+  header h1{font-size:18px;margin:0;font-weight:600;letter-spacing:.3px;}
+  header span.sub{font-size:12px;opacity:.85;}
+  #logoutBtn{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.35);color:#fff;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:13px;}
+  #logoutBtn:hover{background:rgba(255,255,255,.28);}
+
+  #loginScreen{max-width:360px;margin:12vh auto;background:#fff;padding:32px;border-radius:14px;box-shadow:0 10px 30px rgba(15,122,114,.12);}
+  #loginScreen h2{margin-top:0;color:var(--teal-dark);}
+  #loginScreen label{display:block;font-size:13px;color:var(--muted);margin:14px 0 6px;}
+  #loginScreen input{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;font-size:14px;}
+  #loginScreen button{width:100%;margin-top:20px;padding:11px;border:none;border-radius:8px;background:var(--teal);color:#fff;font-size:14px;font-weight:600;cursor:pointer;}
+  #loginScreen button:hover{background:var(--teal-dark);}
+  #loginError{color:var(--danger);font-size:13px;margin-top:10px;min-height:16px;}
+
+  main{max-width:1180px;margin:0 auto;padding:24px 28px 60px;display:none;}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:22px;}
+  .kpi{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px 18px;}
+  .kpi .label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;}
+  .kpi .value{font-size:24px;font-weight:700;color:var(--teal-dark);margin-top:6px;}
+  .kpi .value.pink{color:var(--pink);}
+  .kpi .value.amber{color:var(--amber);}
+
+  .grid{display:grid;grid-template-columns:2fr 1fr;gap:18px;}
+  .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin-bottom:18px;}
+  .card h3{margin:0 0 14px;font-size:14px;color:var(--ink);}
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th{text-align:left;color:var(--muted);font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line);}
+  td{padding:8px;border-bottom:1px solid #f0f4f3;}
+  .badge{padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600;}
+  .badge.paid{background:#e5f6ec;color:#1e8e4e;}
+  .badge.pending{background:#fdf1dd;color:var(--amber);}
+  .badge.failed{background:#fbe6e4;color:var(--danger);}
+  .badge.confirmed,.badge.delivered,.badge.shipped,.badge.processing{background:var(--teal-light);color:var(--teal-dark);}
+  .badge.cancelled{background:#f1f1f1;color:#777;}
+  .confirmBtn{background:var(--teal);color:#fff;border:none;border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;}
+  .confirmBtn:hover{background:var(--teal-dark);}
+  .empty{color:var(--muted);font-size:13px;padding:8px 0;}
+  #refreshBtn{background:none;border:1px solid var(--line);border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;color:var(--muted);float:right;}
+  canvas{max-height:220px;}
+  @media (max-width: 860px){ .grid{grid-template-columns:1fr;} }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>KosmoPads Admin</h1>
+    <span class="sub">Business revenue &amp; key insights</span>
+  </div>
+  <button id="logoutBtn" style="display:none">Log out</button>
+</header>
+
+<div id="loginScreen">
+  <h2>Admin sign in</h2>
+  <label>Email</label>
+  <input id="loginEmail" type="email" placeholder="admin@kosmotive.rw" autocomplete="username" />
+  <label>Password</label>
+  <input id="loginPassword" type="password" placeholder="••••••••" autocomplete="current-password" />
+  <button id="loginBtn">Sign in</button>
+  <div id="loginError"></div>
+</div>
+
+<main id="dashboard">
+  <button id="refreshBtn">↻ Refresh</button>
+  <div class="kpis" id="kpis"></div>
+
+  <div class="grid">
+    <div>
+      <div class="card">
+        <h3>Revenue — last 14 days</h3>
+        <canvas id="trendChart"></canvas>
+      </div>
+      <div class="card">
+        <h3>Recent orders</h3>
+        <table id="recentOrdersTable"><thead><tr><th>Order</th><th>Customer</th><th>Total</th><th>Payment</th><th>Status</th><th>Date</th></tr></thead><tbody></tbody></table>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <h3>Top products by revenue</h3>
+        <canvas id="productsChart"></canvas>
+      </div>
+      <div class="card">
+        <h3>Awaiting payment confirmation</h3>
+        <div id="pendingList"></div>
+      </div>
+      <div class="card">
+        <h3>Orders by status</h3>
+        <div id="statusList"></div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+const API_BASE = window.location.origin + '/api';
+let token = localStorage.getItem('kosmo_admin_token') || '';
+let trendChart, productsChart;
+
+const fmt = (n) => new Intl.NumberFormat('en-RW').format(n) + ' FRW';
+const fmtDate = (d) => new Date(d).toLocaleString('en-RW', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' });
+
+function showDashboard(show){
+  document.getElementById('loginScreen').style.display = show ? 'none' : 'block';
+  document.getElementById('dashboard').style.display = show ? 'block' : 'none';
+  document.getElementById('logoutBtn').style.display = show ? 'inline-block' : 'none';
+}
+
+async function login(){
+  const email = document.getElementById('loginEmail').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  const errEl = document.getElementById('loginError');
+  errEl.textContent = '';
+  try{
+    const res = await fetch(`${API_BASE}/admin/login`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ email, password })
+    });
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error || 'Login failed');
+    token = data.token;
+    localStorage.setItem('kosmo_admin_token', token);
+    showDashboard(true);
+    loadDashboard();
+  }catch(e){
+    errEl.textContent = e.message;
+  }
+}
+
+function logout(){
+  token = '';
+  localStorage.removeItem('kosmo_admin_token');
+  showDashboard(false);
+}
+
+async function loadDashboard(){
+  try{
+    const res = await fetch(`${API_BASE}/admin/dashboard`, { headers:{ Authorization:`Bearer ${token}` } });
+    if(res.status === 401){ logout(); return; }
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error || 'Failed to load dashboard');
+    render(data);
+  }catch(e){
+    alert(e.message);
+  }
+}
+
+function render(d){
+  const k = document.getElementById('kpis');
+  k.innerHTML = `
+    <div class="kpi"><div class="label">Revenue today</div><div class="value">${fmt(d.revenue.today)}</div></div>
+    <div class="kpi"><div class="label">Last 7 days</div><div class="value">${fmt(d.revenue.last7Days)}</div></div>
+    <div class="kpi"><div class="label">Last 30 days</div><div class="value">${fmt(d.revenue.last30Days)}</div></div>
+    <div class="kpi"><div class="label">All-time revenue</div><div class="value pink">${fmt(d.revenue.allTime)}</div></div>
+    <div class="kpi"><div class="label">Avg. order value</div><div class="value">${fmt(d.revenue.averageOrderValueRwf)}</div></div>
+    <div class="kpi"><div class="label">Total orders</div><div class="value">${d.counts.totalOrders}</div></div>
+    <div class="kpi"><div class="label">Customers</div><div class="value">${d.counts.totalCustomers}</div></div>
+    <div class="kpi"><div class="label">Awaiting confirmation</div><div class="value amber">${d.counts.pendingPaymentConfirmations}</div></div>
+  `;
+
+  // Trend chart
+  const labels = d.revenueTrend14Days.map(t => t.date.slice(5));
+  const values = d.revenueTrend14Days.map(t => t.revenueRwf);
+  if(trendChart) trendChart.destroy();
+  trendChart = new Chart(document.getElementById('trendChart'), {
+    type:'line',
+    data:{ labels, datasets:[{ label:'Revenue (FRW)', data: values, borderColor:'#0f7a72', backgroundColor:'rgba(15,122,114,.12)', fill:true, tension:.3 }] },
+    options:{ plugins:{legend:{display:false}}, scales:{ y:{ ticks:{ callback:v=>v/1000+'k' } } } }
+  });
+
+  // Top products chart
+  const top = d.topProducts.slice(0,6);
+  if(productsChart) productsChart.destroy();
+  productsChart = new Chart(document.getElementById('productsChart'), {
+    type:'bar',
+    data:{ labels: top.map(p=>p.name), datasets:[{ label:'Revenue (FRW)', data: top.map(p=>p.revenueRwf), backgroundColor:'#e8557a' }] },
+    options:{ indexAxis:'y', plugins:{legend:{display:false}} }
+  });
+
+  // Recent orders table
+  const tbody = document.querySelector('#recentOrdersTable tbody');
+  tbody.innerHTML = d.recentOrders.length ? d.recentOrders.map(o => `
+    <tr>
+      <td>${o.orderNumber}</td>
+      <td>${o.customerName}</td>
+      <td>${fmt(o.totalRwf)}</td>
+      <td>${o.paymentMethod}</td>
+      <td><span class="badge ${o.paymentStatus}">${o.paymentStatus}</span> <span class="badge ${o.orderStatus}">${o.orderStatus}</span></td>
+      <td>${fmtDate(o.createdAt)}</td>
+    </tr>`).join('') : `<tr><td colspan="6" class="empty">No orders yet.</td></tr>`;
+
+  // Pending confirmations
+  const pendingEl = document.getElementById('pendingList');
+  pendingEl.innerHTML = d.pendingConfirmation.length ? d.pendingConfirmation.map(o => `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f0f4f3;">
+      <div>
+        <div style="font-weight:600;font-size:13px;">${o.orderNumber} — ${fmt(o.totalRwf)}</div>
+        <div style="font-size:12px;color:var(--muted);">${o.customerName} · ${o.customerPhone}</div>
+      </div>
+      <button class="confirmBtn" onclick="confirmPayment('${o.orderNumber}')">Confirm paid</button>
+    </div>`).join('') : `<div class="empty">Nothing pending 🎉</div>`;
+
+  // Orders by status
+  const statusEl = document.getElementById('statusList');
+  statusEl.innerHTML = Object.entries(d.ordersByStatus).map(([status,count]) => `
+    <div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;">
+      <span class="badge ${status}">${status}</span><span>${count}</span>
+    </div>`).join('');
+}
+
+async function confirmPayment(orderNumber){
+  if(!confirm(`Mark ${orderNumber} as paid and notify the customer?`)) return;
+  try{
+    const res = await fetch(`${API_BASE}/orders/${orderNumber}/confirm-payment`, {
+      method:'PATCH', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` },
+      body: JSON.stringify({})
+    });
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error || 'Failed to confirm payment');
+    loadDashboard();
+  }catch(e){ alert(e.message); }
+}
+
+document.getElementById('loginBtn').addEventListener('click', login);
+document.getElementById('loginPassword').addEventListener('keydown', (e)=>{ if(e.key==='Enter') login(); });
+document.getElementById('logoutBtn').addEventListener('click', logout);
+document.getElementById('refreshBtn').addEventListener('click', loadDashboard);
+
+if(token){ showDashboard(true); loadDashboard(); } else { showDashboard(false); }
+</script>
+</body>
+</html>
