@@ -38,7 +38,8 @@
     "@types/nodemailer": "^6.4.14",
     "@types/pg": "^8.10.9",
     "@types/uuid": "^9.0.7",
-    "drizzle-kit": "^0.20.14",
+    "drizzle-orm": "^0.45.2",
+    "drizzle-kit": "^0.31.10",
     "nodemon": "^3.0.2",
     "ts-node": "^10.9.2",
     "typescript": "^5.3.3"
