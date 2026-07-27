@@ -157,7 +157,11 @@ async function loadDashboard(){
     if(!res.ok) throw new Error(data.error || 'Failed to load dashboard');
     render(data);
   }catch(e){
-    alert(e.message);
+    const main = document.getElementById('dashboard') || document.body;
+    const banner = document.createElement('div');
+    banner.style.cssText = 'background:#fed7d7;color:#822727;padding:12px 16px;border-radius:6px;margin:16px;font-size:13px;';
+    banner.textContent = '⚠️ ' + e.message;
+    main.prepend(banner);
   }
 }
 
@@ -174,7 +178,6 @@ function render(d){
     <div class="kpi"><div class="label">Awaiting confirmation</div><div class="value amber">${d.counts.pendingPaymentConfirmations}</div></div>
   `;
 
-  // Trend chart
   const labels = d.revenueTrend14Days.map(t => t.date.slice(5));
   const values = d.revenueTrend14Days.map(t => t.revenueRwf);
   if(trendChart) trendChart.destroy();
@@ -184,7 +187,6 @@ function render(d){
     options:{ plugins:{legend:{display:false}}, scales:{ y:{ ticks:{ callback:v=>v/1000+'k' } } } }
   });
 
-  // Top products chart
   const top = d.topProducts.slice(0,6);
   if(productsChart) productsChart.destroy();
   productsChart = new Chart(document.getElementById('productsChart'), {
@@ -193,7 +195,6 @@ function render(d){
     options:{ indexAxis:'y', plugins:{legend:{display:false}} }
   });
 
-  // Recent orders table
   const tbody = document.querySelector('#recentOrdersTable tbody');
   tbody.innerHTML = d.recentOrders.length ? d.recentOrders.map(o => `
     <tr>
@@ -205,7 +206,6 @@ function render(d){
       <td>${fmtDate(o.createdAt)}</td>
     </tr>`).join('') : `<tr><td colspan="6" class="empty">No orders yet.</td></tr>`;
 
-  // Pending confirmations
   const pendingEl = document.getElementById('pendingList');
   pendingEl.innerHTML = d.pendingConfirmation.length ? d.pendingConfirmation.map(o => `
     <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f0f4f3;">
@@ -213,10 +213,13 @@ function render(d){
         <div style="font-weight:600;font-size:13px;">${o.orderNumber} — ${fmt(o.totalRwf)}</div>
         <div style="font-size:12px;color:var(--muted);">${o.customerName} · ${o.customerPhone}</div>
       </div>
-      <button class="confirmBtn" onclick="confirmPayment('${o.orderNumber}')">Confirm paid</button>
+      <button class="confirmBtn" data-order="${o.orderNumber}">Confirm paid</button>
     </div>`).join('') : `<div class="empty">Nothing pending 🎉</div>`;
 
-  // Orders by status
+  document.querySelectorAll('.confirmBtn').forEach(btn => {
+    btn.addEventListener('click', () => confirmPayment(btn));
+  });
+
   const statusEl = document.getElementById('statusList');
   statusEl.innerHTML = Object.entries(d.ordersByStatus).map(([status,count]) => `
     <div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;">
@@ -224,8 +227,19 @@ function render(d){
     </div>`).join('');
 }
 
-async function confirmPayment(orderNumber){
-  if(!confirm(`Mark ${orderNumber} as paid and notify the customer?`)) return;
+async function confirmPayment(btn){
+  const orderNumber = btn.dataset.order;
+  if(btn.dataset.armed !== 'true'){
+    btn.dataset.armed = 'true';
+    btn.textContent = 'Click again to confirm ✓';
+    btn.style.background = '#c05621';
+    setTimeout(() => {
+      if(btn.isConnected){ btn.dataset.armed = 'false'; btn.textContent = 'Confirm paid'; btn.style.background = ''; }
+    }, 4000);
+    return;
+  }
+  btn.disabled = true;
+  btn.textContent = 'Confirming...';
   try{
     const res = await fetch(`${API_BASE}/orders/${orderNumber}/confirm-payment`, {
       method:'PATCH', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` },
@@ -234,7 +248,13 @@ async function confirmPayment(orderNumber){
     const data = await res.json();
     if(!res.ok) throw new Error(data.error || 'Failed to confirm payment');
     loadDashboard();
-  }catch(e){ alert(e.message); }
+  }catch(e){
+    btn.disabled = false;
+    btn.dataset.armed = 'false';
+    btn.textContent = 'Confirm paid';
+    btn.style.background = '';
+    document.getElementById('pendingList').insertAdjacentHTML('afterbegin', `<div style="color:#c53030;font-size:12px;padding:4px 0;">⚠️ ${e.message}</div>`);
+  }
 }
 
 document.getElementById('loginBtn').addEventListener('click', login);
