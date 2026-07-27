@@ -1,15 +1,6 @@
-import nodemailer, { createTransport } from 'nodemailer';
+import { Resend } from 'resend';
 
-const transporter = createTransport({
-  host: process.env.SMTP_HOST || 'smtp.gmail.com',
-  port: parseInt(process.env.SMTP_PORT || '587'),
-  secure: false,
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-  tls: { rejectUnauthorized: false },
-});
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 interface EmailData {
   to: string;
@@ -37,14 +28,15 @@ export class EmailService {
 
   static async sendEmail(data: EmailData): Promise<boolean> {
     try {
-      const info = await transporter.sendMail({
-        from: `"KosmoPads" <${this.fromEmail}>`,
+      const { data: info, error } = await resend.emails.send({
+        from: `KosmoPads <${this.fromEmail}>`,
         to: data.to,
         subject: data.subject,
         html: data.html,
         text: data.text,
       });
-      console.log('✅ Email sent:', info.messageId);
+      if (error) throw error;
+      console.log('✅ Email sent:', info?.id);
       return true;
     } catch (error) {
       console.error('❌ Email sending failed:', error);
@@ -242,13 +234,11 @@ export class EmailService {
   }
 
   static async testConnection(): Promise<boolean> {
-    try {
-      await transporter.verify();
-      console.log('✅ Nodemailer SMTP connected successfully!');
-      return true;
-    } catch (error) {
-      console.error('❌ Nodemailer connection failed (check SMTP credentials):', error);
+    if (!process.env.RESEND_API_KEY) {
+      console.error('❌ RESEND_API_KEY is not set — emails will fail to send.');
       return false;
     }
+    console.log('✅ Resend API key configured — email service ready.');
+    return true;
   }
 }
