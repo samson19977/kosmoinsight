@@ -1,11 +1,8 @@
-import { pgTable, serial, varchar, text, integer, boolean, timestamp, numeric, pgEnum } from 'drizzle-orm/pg-core';
+import { pgTable, serial, varchar, text, integer, boolean, timestamp, numeric } from 'drizzle-orm/pg-core';
 
 // ============================================
-// ENUMS
+// ENUMS (kept as varchar to avoid enum migration issues)
 // ============================================
-export const orderStatusEnum = pgEnum('order_status', ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled']);
-export const paymentStatusEnum = pgEnum('payment_status', ['pending', 'paid', 'failed', 'refunded']);
-export const paymentMethodEnum = pgEnum('payment_method', ['momo', 'cash', 'bank']);
 
 // ============================================
 // PRODUCTS TABLE
@@ -18,6 +15,7 @@ export const products = pgTable('products', {
   packageType: varchar('package_type', { length: 50 }).notNull(),
   imageUrl: varchar('image_url', { length: 255 }),
   stock: integer('stock').default(9999),
+  lowStockThreshold: integer('low_stock_threshold').default(10),
   isActive: boolean('is_active').default(true),
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),
@@ -102,5 +100,19 @@ export const admins = pgTable('admins', {
   role: varchar('role', { length: 30 }).default('admin'), // admin | superadmin
   isActive: boolean('is_active').default(true),
   lastLoginAt: timestamp('last_login_at'),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// ============================================
+// STOCK MOVEMENTS TABLE (audit trail for inventory changes)
+// ============================================
+export const stockMovements = pgTable('stock_movements', {
+  id: serial('id').primaryKey(),
+  productId: integer('product_id').references(() => products.id).notNull(),
+  changeQty: integer('change_qty').notNull(), // positive = restock, negative = sale/adjustment
+  reason: varchar('reason', { length: 100 }).notNull(), // 'sale', 'restock', 'adjustment', 'correction'
+  orderId: integer('order_id').references(() => orders.id),
+  adminId: integer('admin_id').references(() => admins.id),
+  note: text('note'),
   createdAt: timestamp('created_at').defaultNow(),
 });

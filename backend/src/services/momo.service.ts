@@ -25,8 +25,10 @@ interface PaymentInstructions {
 export class MomoService {
   private static baseUrl = process.env.MOMO_BASE_URL || 'https://sandbox.momodeveloper.mtn.com';
   private static subscriptionKey = process.env.MOMO_SUBSCRIPTION_KEY || '';
+  // MTN MoMo Collection Basic-auth credentials are (API User ID : API Key) —
+  // there is no separate "API secret" for this product.
+  private static collectionUserId = process.env.MOMO_COLLECTION_USER_ID || '';
   private static apiKey = process.env.MOMO_API_KEY || '';
-  private static apiSecret = process.env.MOMO_API_SECRET || '';
   private static merchantCode = process.env.MOMO_MERCHANT_CODE || '675566';
   private static environment = process.env.MOMO_ENVIRONMENT || 'sandbox';
 
@@ -64,7 +66,11 @@ export class MomoService {
   // Get OAuth token from MoMo API
   private static async getAccessToken(): Promise<string | null> {
     try {
-      const credentials = Buffer.from(`${this.apiKey}:${this.apiSecret}`).toString('base64');
+      if (!this.collectionUserId || !this.apiKey) {
+        console.error('MoMo token error: MOMO_COLLECTION_USER_ID or MOMO_API_KEY is not set');
+        return null;
+      }
+      const credentials = Buffer.from(`${this.collectionUserId}:${this.apiKey}`).toString('base64');
       const response = await axios.post(
         `${this.baseUrl}/collection/token/`,
         {},

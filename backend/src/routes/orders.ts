@@ -120,9 +120,9 @@ router.post('/', validate(orderSchema), async (req: Request, res: Response): Pro
       await EmailService.sendAdminNotification({
         orderNumber,
         customerName: order.customerName,
-        customerEmail: 'No email provided',
-        phone: customer.phone,
+        customerPhone: customer.phone,
         total: totalRwf,
+        paymentMethod,
         items: itemsWithSubtotal,
         notes,
       }).catch((err) => console.error('Admin email error (non-fatal):', err));
@@ -215,14 +215,19 @@ router.patch('/:orderNumber/confirm-payment', requireAdmin, async (req: Request,
       .where(eq(orders.id, order.id));
 
     if (order.customerEmail) {
+      const items = await db.select().from(orderItems).where(eq(orderItems.orderId, order.id));
       await EmailService.sendPaymentReceipt({
         customerName: order.customerName,
         customerEmail: order.customerEmail,
         orderNumber: order.orderNumber,
-        total: order.totalRwf,
-        paymentMethod: order.paymentMethod,
-        momoReference,
-        phone: order.customerPhone,
+        amountRwf: order.totalRwf,
+        paidAt: new Date(),
+        items: items.map((i) => ({
+          name: i.productName,
+          quantity: i.quantity,
+          priceRwf: i.priceRwf,
+          subtotalRwf: i.subtotalRwf,
+        })),
       }).catch((err) => console.error('Receipt email error (non-fatal):', err));
     }
 

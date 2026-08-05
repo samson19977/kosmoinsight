@@ -22,9 +22,26 @@ interface OrderEmailData {
   notes?: string;
 }
 
+interface PaymentReceiptData {
+  orderNumber: string;
+  customerName: string;
+  customerEmail: string;
+  amountRwf: number;
+  paidAt: Date;
+  items: Array<{ name: string; quantity: number; priceRwf: number; subtotalRwf: number }>;
+}
+
+interface AdminPaymentAlertData {
+  orderNumber: string;
+  customerName: string;
+  customerPhone: string;
+  amountRwf: number;
+  status: 'paid' | 'failed';
+}
+
 export class EmailService {
   private static fromEmail = process.env.EMAIL_FROM || 'noreply@kosmopads.rw';
-  private static adminEmail = process.env.ADMIN_EMAIL || 'sniyizurugero@aimsric.org';
+  private static adminEmail = process.env.ADMIN_EMAIL || 'admin@kosmopads.rw';
 
   static async sendEmail(data: EmailData): Promise<boolean> {
     try {
@@ -44,6 +61,9 @@ export class EmailService {
     }
   }
 
+  // ============================================
+  // Order confirmation (sent right after order is placed)
+  // ============================================
   static async sendOrderConfirmation(data: OrderEmailData): Promise<void> {
     const itemsHtml = data.items
       .map(
@@ -57,152 +77,186 @@ export class EmailService {
       .join('');
 
     const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-    <title>Order Confirmation - KosmoPads</title>
-    <style>
-      body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;line-height:1.6;color:#333;margin:0;padding:0;background:#f7fafc;}
-      .container{max-width:600px;margin:0 auto;padding:20px;}
-      .header{background:linear-gradient(135deg,#2d3748 0%,#1a202c 100%);color:white;padding:30px 20px;text-align:center;border-radius:8px 8px 0 0;}
-      .header h1{margin:0;font-size:28px;}.header p{margin:5px 0 0;opacity:.9;}
-      .content{background:white;padding:30px;border-radius:0 0 8px 8px;box-shadow:0 2px 4px rgba(0,0,0,.1);}
-      .payment-box{background:#fefcbf;border-left:4px solid #d69e2e;padding:20px;border-radius:8px;margin:20px 0;}
-      .payment-box h3{margin-top:0;color:#744210;}
-      .ussd-code{font-size:24px;font-weight:bold;color:#2d3748;text-align:center;padding:10px;background:white;border-radius:8px;border:2px dashed #48bb78;margin:10px 0;}
-      table{width:100%;border-collapse:collapse;}th{text-align:left;padding:8px;background:#edf2f7;}
-      .footer{text-align:center;padding:20px;color:#718096;font-size:14px;border-top:1px solid #e2e8f0;margin-top:30px;}
-      .badge{display:inline-block;background:#ecc94b;color:#744210;padding:2px 10px;border-radius:12px;font-size:12px;font-weight:bold;}
-    </style></head><body>
-    <div class="container">
-      <div class="header"><h1>🩸 KosmoPads</h1><p>Thank you for your order</p></div>
-      <div class="content">
-        <h2>Hi ${data.customerName},</h2>
-        <p>Thanks for your order! It's on-hold until we confirm your payment.</p>
-        <div class="payment-box">
-          <h3>📱 Send payment via MTN MoMo:</h3>
-          <div class="ussd-code">${data.ussdCode}</div>
-          <p><strong>Merchant:</strong> Kosmotive</p>
-          <p><strong>Reference / Order #:</strong> <span style="font-weight:bold;font-size:18px;">${data.reference}</span></p>
-          <p style="font-size:14px;color:#744210;"><em>Use your Order ID as the payment reference.</em></p>
+    <title>Order Confirmation – KosmoPads</title></head>
+    <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f7fafc;margin:0;padding:20px;color:#333;">
+      <div style="max-width:600px;margin:0 auto;">
+        <div style="background:linear-gradient(135deg,#0f7a72,#0a5c56);color:#fff;padding:30px 24px;border-radius:10px 10px 0 0;text-align:center;">
+          <h1 style="margin:0;font-size:26px;">🩸 KosmoPads</h1>
+          <p style="margin:6px 0 0;opacity:.9;">Order Confirmation</p>
         </div>
-        <h3>Order #${data.orderNumber}</h3>
-        <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
-        <p><strong>Phone:</strong> ${data.phone}</p>
-        <table>
-          <thead><tr><th>Product</th><th style="text-align:center;">Qty</th><th style="text-align:right;">Price</th></tr></thead>
-          <tbody>${itemsHtml}</tbody>
-          <tfoot>
-            <tr><td colspan="2" style="text-align:right;padding-top:16px;font-weight:bold;">Total:</td>
-            <td style="text-align:right;padding-top:16px;font-weight:bold;font-size:20px;color:#2d3748;">${data.total.toLocaleString()} FRW</td></tr>
-          </tfoot>
-        </table>
-        <p><strong>Payment method:</strong> ${data.paymentMethod} <span class="badge">On-hold</span></p>
-        ${data.notes ? `<p><strong>Note:</strong> ${data.notes}</p>` : ''}
-        <div style="background:#ebf8ff;padding:15px;border-radius:8px;margin:20px 0;border-left:4px solid #3182ce;">
-          <p style="margin:0;font-size:14px;color:#2c5282;"><strong>📦 Delivery:</strong> Delivery fee is not included and is paid directly by the client.</p>
-        </div>
-        <p>We look forward to fulfilling your order soon.</p>
-      </div>
-      <div class="footer"><p>© 2026 Kosmotive. All rights reserved.</p><p><a href="https://kosmopads.rw" style="color:#48bb78;text-decoration:none;">kosmopads.rw</a></p></div>
-    </div></body></html>`;
+        <div style="background:#fff;padding:28px 24px;border-radius:0 0 10px 10px;box-shadow:0 2px 6px rgba(0,0,0,.08);">
+          <h2 style="color:#0f7a72;margin-top:0;">Hi ${data.customerName},</h2>
+          <p>Thank you for your order! It will be processed once your payment is confirmed.</p>
 
-    const text = `KosmoPads - Order #${data.orderNumber}\n\nHi ${data.customerName},\n\nPayment: Dial ${data.ussdCode}\nMerchant: Kosmotive\nReference: ${data.reference}\n\nTotal: ${data.total.toLocaleString()} FRW\nMethod: ${data.paymentMethod}\n${data.notes ? `Note: ${data.notes}` : ''}\n\nThank you!`;
+          <div style="background:#fffbeb;border-left:4px solid #d69e2e;padding:18px 20px;border-radius:8px;margin:20px 0;">
+            <h3 style="margin-top:0;color:#744210;">📱 Pay via MTN MoMo</h3>
+            <div style="font-size:22px;font-weight:bold;color:#2d3748;text-align:center;padding:10px;background:#fff;border-radius:8px;border:2px dashed #48bb78;margin:10px 0;">${data.ussdCode}</div>
+            <p style="margin:6px 0;"><strong>Merchant:</strong> Kosmotive</p>
+            <p style="margin:6px 0;"><strong>Reference / Order #:</strong> <span style="font-size:18px;font-weight:bold;">${data.reference}</span></p>
+            <p style="font-size:13px;color:#744210;margin:8px 0 0;"><em>Use your Order Number as the payment reference when prompted.</em></p>
+          </div>
+
+          <h3 style="color:#0f7a72;">Order #${data.orderNumber}</h3>
+          <table style="width:100%;border-collapse:collapse;">
+            <thead><tr>
+              <th style="text-align:left;padding:8px;background:#f0f4f3;">Product</th>
+              <th style="padding:8px;background:#f0f4f3;text-align:center;">Qty</th>
+              <th style="padding:8px;background:#f0f4f3;text-align:right;">Subtotal</th>
+            </tr></thead>
+            <tbody>${itemsHtml}</tbody>
+            <tfoot><tr>
+              <td colspan="2" style="padding:10px 8px;font-weight:bold;text-align:right;">Total:</td>
+              <td style="padding:10px 8px;font-weight:bold;font-size:18px;text-align:right;color:#0f7a72;">${data.total.toLocaleString()} FRW</td>
+            </tr></tfoot>
+          </table>
+
+          ${data.notes ? `<p style="color:#555;font-size:14px;"><strong>Note:</strong> ${data.notes}</p>` : ''}
+
+          <p style="color:#718096;font-size:13px;border-top:1px solid #e2e8f0;padding-top:16px;margin-top:20px;">
+            KosmoPads Rwanda — Sustainable feminine hygiene products.<br/>
+            Questions? Reply to this email or contact us on WhatsApp.
+          </p>
+        </div>
+      </div>
+    </body></html>`;
 
     await this.sendEmail({
       to: data.customerEmail,
-      subject: `Your KosmoPads order #${data.orderNumber} has been received!`,
+      subject: `Order Confirmed – #${data.orderNumber} | KosmoPads`,
       html,
-      text,
-    });
-
-    // Notify admin
-    await this.sendAdminNotification({
-      orderNumber: data.orderNumber,
-      customerName: data.customerName,
-      customerEmail: data.customerEmail,
-      phone: data.phone,
-      total: data.total,
-      items: data.items,
-      notes: data.notes,
+      text: `Hi ${data.customerName}, your order #${data.orderNumber} has been received. Total: ${data.total.toLocaleString()} FRW. Pay via MoMo USSD: ${data.ussdCode} using reference ${data.reference}.`,
     });
   }
 
-  static async sendPaymentReceipt(data: {
-    customerName: string;
-    customerEmail: string;
-    orderNumber: string;
-    total: number;
-    paymentMethod: string;
-    momoReference?: string;
-    phone: string;
-  }): Promise<void> {
-    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
-    <style>
-      body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;line-height:1.6;color:#333;margin:0;background:#f7fafc;}
-      .container{max-width:600px;margin:0 auto;padding:20px;}
-      .header{background:linear-gradient(135deg,#38a169 0%,#2f855a 100%);color:white;padding:30px 20px;text-align:center;border-radius:8px 8px 0 0;}
-      .content{background:white;padding:30px;border-radius:0 0 8px 8px;}
-      .receipt-box{background:#f0fff4;border:2px solid #38a169;padding:20px;border-radius:8px;margin:20px 0;}
-      .footer{text-align:center;padding:20px;color:#718096;font-size:14px;border-top:1px solid #e2e8f0;margin-top:30px;}
-    </style></head><body>
-    <div class="container">
-      <div class="header"><h1>🩸 KosmoPads</h1><p>Payment Confirmed ✅</p></div>
-      <div class="content">
-        <p style="font-size:48px;text-align:center;margin:0;">✅</p>
-        <h2 style="text-align:center;color:#38a169;">Payment Successful!</h2>
-        <p style="text-align:center;">Hi <strong>${data.customerName}</strong>, payment confirmed for order <strong>#${data.orderNumber}</strong>.</p>
-        <div class="receipt-box">
-          <h3 style="margin-top:0;">🧾 Receipt</h3>
-          <p><strong>Order:</strong> #${data.orderNumber}</p>
-          <p><strong>Total:</strong> <span style="font-size:20px;font-weight:bold;">${data.total.toLocaleString()} FRW</span></p>
-          <p><strong>Method:</strong> ${data.paymentMethod}</p>
-          ${data.momoReference ? `<p><strong>Reference:</strong> ${data.momoReference}</p>` : ''}
-          <p><strong>Date:</strong> ${new Date().toLocaleString()}</p>
-          <p><strong>Phone:</strong> ${data.phone}</p>
+  // ============================================
+  // Payment receipt (sent after MoMo webhook confirms payment)
+  // ============================================
+  static async sendPaymentReceipt(data: PaymentReceiptData): Promise<void> {
+    const itemsHtml = data.items
+      .map(
+        (item) => `
+      <tr>
+        <td style="padding:8px;border-bottom:1px solid #eee;">${item.name}</td>
+        <td style="padding:8px;border-bottom:1px solid #eee;text-align:center;">${item.quantity}</td>
+        <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">${item.subtotalRwf.toLocaleString()} FRW</td>
+      </tr>`
+      )
+      .join('');
+
+    const paidAtStr = data.paidAt.toLocaleString('en-RW', { dateStyle: 'long', timeStyle: 'short' });
+
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+    <title>Payment Receipt – KosmoPads</title></head>
+    <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f7fafc;margin:0;padding:20px;color:#333;">
+      <div style="max-width:600px;margin:0 auto;">
+        <div style="background:linear-gradient(135deg,#1e8e4e,#155e37);color:#fff;padding:30px 24px;border-radius:10px 10px 0 0;text-align:center;">
+          <div style="font-size:40px;margin-bottom:6px;">✅</div>
+          <h1 style="margin:0;font-size:24px;">Payment Confirmed</h1>
+          <p style="margin:6px 0 0;opacity:.9;">KosmoPads Rwanda</p>
         </div>
-        <p style="text-align:center;font-size:18px;">Thank you for choosing KosmoPads! 🌸</p>
+        <div style="background:#fff;padding:28px 24px;border-radius:0 0 10px 10px;box-shadow:0 2px 6px rgba(0,0,0,.08);">
+          <h2 style="color:#1e8e4e;margin-top:0;">Hi ${data.customerName},</h2>
+          <p>Your payment has been received and your order is now being processed. Thank you! 🙏</p>
+
+          <div style="background:#e5f6ec;border-radius:8px;padding:16px 20px;margin:20px 0;">
+            <p style="margin:4px 0;"><strong>Order #:</strong> ${data.orderNumber}</p>
+            <p style="margin:4px 0;"><strong>Amount paid:</strong> <span style="font-size:18px;font-weight:bold;color:#1e8e4e;">${data.amountRwf.toLocaleString()} FRW</span></p>
+            <p style="margin:4px 0;"><strong>Date:</strong> ${paidAtStr}</p>
+          </div>
+
+          <h3 style="color:#333;">Items ordered</h3>
+          <table style="width:100%;border-collapse:collapse;">
+            <thead><tr>
+              <th style="text-align:left;padding:8px;background:#f0f4f3;">Product</th>
+              <th style="padding:8px;background:#f0f4f3;text-align:center;">Qty</th>
+              <th style="padding:8px;background:#f0f4f3;text-align:right;">Subtotal</th>
+            </tr></thead>
+            <tbody>${itemsHtml}</tbody>
+            <tfoot><tr>
+              <td colspan="2" style="padding:10px 8px;font-weight:bold;text-align:right;">Total paid:</td>
+              <td style="padding:10px 8px;font-weight:bold;font-size:16px;text-align:right;color:#1e8e4e;">${data.amountRwf.toLocaleString()} FRW</td>
+            </tr></tfoot>
+          </table>
+
+          <p style="color:#718096;font-size:13px;border-top:1px solid #e2e8f0;padding-top:16px;margin-top:20px;">
+            KosmoPads Rwanda — Sustainable feminine hygiene products.<br/>
+            Keep this email as your payment receipt.
+          </p>
+        </div>
       </div>
-      <div class="footer"><p>© 2026 Kosmotive. All rights reserved.</p></div>
-    </div></body></html>`;
+    </body></html>`;
 
     await this.sendEmail({
       to: data.customerEmail,
-      subject: `✅ Payment Confirmed - Order #${data.orderNumber}`,
+      subject: `✅ Payment Received – Order #${data.orderNumber} | KosmoPads`,
       html,
-      text: `Payment confirmed for order #${data.orderNumber}. Total: ${data.total.toLocaleString()} FRW`,
+      text: `Hi ${data.customerName}, your payment of ${data.amountRwf.toLocaleString()} FRW for order #${data.orderNumber} has been confirmed. Thank you!`,
     });
   }
 
+  // ============================================
+  // Admin alert when a payment status changes
+  // ============================================
+  static async sendAdminPaymentAlert(data: AdminPaymentAlertData): Promise<void> {
+    const icon = data.status === 'paid' ? '✅' : '❌';
+    const label = data.status === 'paid' ? 'PAID' : 'FAILED';
+    const color = data.status === 'paid' ? '#1e8e4e' : '#c0392b';
+
+    const html = `<div style="font-family:sans-serif;padding:20px;max-width:500px;">
+      <h2 style="color:${color};">${icon} Payment ${label}</h2>
+      <p><strong>Order #:</strong> ${data.orderNumber}</p>
+      <p><strong>Customer:</strong> ${data.customerName}</p>
+      <p><strong>Phone:</strong> ${data.customerPhone}</p>
+      <p><strong>Amount:</strong> ${data.amountRwf.toLocaleString()} FRW</p>
+      <p><strong>Time:</strong> ${new Date().toLocaleString()}</p>
+    </div>`;
+
+    await this.sendEmail({
+      to: this.adminEmail,
+      subject: `${icon} Payment ${label} – Order #${data.orderNumber} | KosmoPads`,
+      html,
+      text: `Payment ${label} for order #${data.orderNumber}. Customer: ${data.customerName} (${data.customerPhone}). Amount: ${data.amountRwf.toLocaleString()} FRW.`,
+    });
+  }
+
+  // ============================================
+  // Admin notification for orders without email (unchanged)
+  // ============================================
   static async sendAdminNotification(data: {
     orderNumber: string;
     customerName: string;
-    customerEmail: string;
-    phone: string;
+    customerPhone: string;
     total: number;
+    paymentMethod: string;
     items: Array<{ name: string; quantity: number; price: number }>;
     notes?: string;
   }): Promise<void> {
     const itemsList = data.items
-      .map((i) => `${i.name} × ${i.quantity} = ${(i.price * i.quantity).toLocaleString()} FRW`)
-      .join('<br>');
+      .map((i) => `• ${i.name} ×${i.quantity} = ${(i.price * i.quantity).toLocaleString()} FRW`)
+      .join('\n');
 
-    const html = `
-      <h2>🆕 New Order Received — KosmoPads</h2>
+    const html = `<div style="font-family:sans-serif;padding:20px;max-width:500px;">
+      <h2 style="color:#0f7a72;">🆕 New Order Received</h2>
       <p><strong>Order #:</strong> ${data.orderNumber}</p>
       <p><strong>Customer:</strong> ${data.customerName}</p>
-      <p><strong>Email:</strong> ${data.customerEmail}</p>
-      <p><strong>Phone:</strong> ${data.phone}</p>
+      <p><strong>Phone:</strong> ${data.customerPhone}</p>
+      <p><strong>Payment method:</strong> ${data.paymentMethod}</p>
       <p><strong>Total:</strong> ${data.total.toLocaleString()} FRW</p>
-      <h3>Items:</h3><p>${itemsList}</p>
       ${data.notes ? `<p><strong>Note:</strong> ${data.notes}</p>` : ''}
-      <p style="color:#718096;font-size:14px;">⚠️ Action required: Confirm payment to process this order.</p>`;
+      <p style="color:#744210;">⚠️ Action required: Confirm payment to process this order.</p>
+    </div>`;
 
     await this.sendEmail({
       to: this.adminEmail,
-      subject: `🆕 New Order #${data.orderNumber} - KosmoPads`,
+      subject: `🆕 New Order #${data.orderNumber} – KosmoPads`,
       html,
-      text: `New Order #${data.orderNumber} from ${data.customerName}. Total: ${data.total} FRW`,
+      text: `New Order #${data.orderNumber} from ${data.customerName} (${data.customerPhone}). Total: ${data.total.toLocaleString()} FRW.\n\nItems:\n${itemsList}`,
     });
   }
 
+  // ============================================
+  // Payment reminder (unchanged)
+  // ============================================
   static async sendPaymentReminder(data: {
     customerName: string;
     customerEmail: string;
@@ -211,25 +265,24 @@ export class EmailService {
     expiresInHours: number;
     ussdCode: string;
   }): Promise<void> {
-    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
-    <style>body{font-family:sans-serif;}.container{max-width:600px;margin:0 auto;padding:20px;}.header{background:#ecc94b;padding:20px;text-align:center;border-radius:8px 8px 0 0;}.content{background:white;padding:30px;border-radius:0 0 8px 8px;}</style>
-    </head><body><div class="container">
-      <div class="header"><h2 style="margin:0;">⏰ Payment Reminder</h2></div>
-      <div class="content">
+    const html = `<div style="font-family:sans-serif;padding:20px;max-width:500px;">
+      <div style="background:#ecc94b;padding:20px;text-align:center;border-radius:8px 8px 0 0;">
+        <h2 style="margin:0;">⏰ Payment Reminder</h2>
+      </div>
+      <div style="background:#fff;padding:28px;border-radius:0 0 8px 8px;">
         <h2>Hi ${data.customerName},</h2>
         <p>Your order <strong>#${data.orderNumber}</strong> is still awaiting payment.</p>
         <p><strong>Total:</strong> ${data.total.toLocaleString()} FRW</p>
         <p><strong>Expires in:</strong> ${data.expiresInHours} hours</p>
-        <p>To pay: Dial <strong>${data.ussdCode}</strong> and use <strong>${data.orderNumber}</strong> as reference.</p>
-        <p>Please complete payment to avoid cancellation.</p>
+        <p>Dial <strong>${data.ussdCode}</strong> and use <strong>${data.orderNumber}</strong> as reference.</p>
       </div>
-    </div></body></html>`;
+    </div>`;
 
     await this.sendEmail({
       to: data.customerEmail,
-      subject: `⏰ Payment Reminder - Order #${data.orderNumber} expires in ${data.expiresInHours}h`,
+      subject: `⏰ Payment Reminder – Order #${data.orderNumber} expires in ${data.expiresInHours}h`,
       html,
-      text: `Reminder: Complete payment for order #${data.orderNumber}. Total: ${data.total} FRW. Expires in ${data.expiresInHours} hours.`,
+      text: `Reminder: Complete payment for order #${data.orderNumber}. Total: ${data.total.toLocaleString()} FRW. Expires in ${data.expiresInHours} hours.`,
     });
   }
 

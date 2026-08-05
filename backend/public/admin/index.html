@@ -9,165 +9,480 @@
   :root{
     --teal:#0f7a72; --teal-dark:#0a5c56; --teal-light:#e6f4f2;
     --ink:#1b2a2a; --muted:#5c6f6d; --line:#dfe8e6; --bg:#f6f9f8;
-    --pink:#e8557a; --amber:#c98a1d; --danger:#c0392b;
+    --pink:#e8557a; --amber:#c98a1d; --danger:#c0392b; --success:#1e8e4e;
     font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
   }
   *{box-sizing:border-box;}
   body{margin:0;background:var(--bg);color:var(--ink);}
-  header{background:linear-gradient(120deg,var(--teal-dark),var(--teal));color:#fff;padding:18px 28px;display:flex;align-items:center;justify-content:space-between;}
-  header h1{font-size:18px;margin:0;font-weight:600;letter-spacing:.3px;}
-  header span.sub{font-size:12px;opacity:.85;}
-  #logoutBtn{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.35);color:#fff;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:13px;}
+
+  /* ── Header ── */
+  header{background:linear-gradient(120deg,var(--teal-dark),var(--teal));color:#fff;padding:16px 24px;display:flex;align-items:center;justify-content:space-between;gap:10px;}
+  header h1{font-size:17px;margin:0;font-weight:600;letter-spacing:.3px;}
+  header .sub{font-size:11px;opacity:.8;}
+  .header-right{display:flex;align-items:center;gap:10px;}
+  #adminName{font-size:13px;opacity:.9;}
+  #logoutBtn{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.35);color:#fff;padding:5px 13px;border-radius:6px;cursor:pointer;font-size:12px;}
   #logoutBtn:hover{background:rgba(255,255,255,.28);}
+  nav{background:var(--teal-dark);display:flex;gap:0;overflow-x:auto;}
+  nav button{background:none;border:none;color:rgba(255,255,255,.75);padding:10px 18px;cursor:pointer;font-size:13px;white-space:nowrap;border-bottom:2px solid transparent;transition:.15s;}
+  nav button:hover{color:#fff;background:rgba(255,255,255,.08);}
+  nav button.active{color:#fff;border-bottom-color:#fff;}
 
-  #loginScreen{max-width:360px;margin:12vh auto;background:#fff;padding:32px;border-radius:14px;box-shadow:0 10px 30px rgba(15,122,114,.12);}
-  #loginScreen h2{margin-top:0;color:var(--teal-dark);}
-  #loginScreen label{display:block;font-size:13px;color:var(--muted);margin:14px 0 6px;}
-  #loginScreen input{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;font-size:14px;}
-  #loginScreen button{width:100%;margin-top:20px;padding:11px;border:none;border-radius:8px;background:var(--teal);color:#fff;font-size:14px;font-weight:600;cursor:pointer;}
-  #loginScreen button:hover{background:var(--teal-dark);}
-  #loginError{color:var(--danger);font-size:13px;margin-top:10px;min-height:16px;}
+  /* ── Login screen ── */
+  #loginScreen{max-width:380px;margin:10vh auto 0;background:#fff;padding:36px 32px;border-radius:16px;box-shadow:0 12px 36px rgba(15,122,114,.13);}
+  #loginScreen .logo{text-align:center;margin-bottom:22px;}
+  #loginScreen .logo img{height:44px;}
+  #loginScreen .logo h2{margin:8px 0 0;color:var(--teal-dark);font-size:20px;}
+  #loginScreen label{display:block;font-size:13px;color:var(--muted);margin:14px 0 5px;font-weight:500;}
+  #loginScreen .pw-wrap{position:relative;}
+  #loginScreen .pw-wrap input{width:100%;padding:10px 38px 10px 12px;border:1px solid var(--line);border-radius:8px;font-size:14px;outline:none;transition:.15s;}
+  #loginScreen .pw-wrap input:focus{border-color:var(--teal);}
+  #loginScreen input[type=email]{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;font-size:14px;outline:none;transition:.15s;}
+  #loginScreen input[type=email]:focus{border-color:var(--teal);}
+  #eyeBtn{position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;padding:2px;color:var(--muted);font-size:17px;line-height:1;display:flex;align-items:center;}
+  #eyeBtn:hover{color:var(--teal);}
+  #loginBtn{width:100%;margin-top:20px;padding:11px;border:none;border-radius:8px;background:var(--teal);color:#fff;font-size:14px;font-weight:600;cursor:pointer;transition:.15s;}
+  #loginBtn:hover:not(:disabled){background:var(--teal-dark);}
+  #loginBtn:disabled{opacity:.6;cursor:not-allowed;}
+  #loginError{font-size:13px;margin-top:10px;min-height:16px;border-radius:6px;padding:0;}
+  #loginError.show{padding:9px 12px;background:#fbe6e4;color:var(--danger);}
+  #loginError.warning{padding:9px 12px;background:#fdf1dd;color:#744210;}
+  .attempts-bar{height:4px;background:#e2e8f0;border-radius:2px;margin-top:12px;overflow:hidden;display:none;}
+  .attempts-bar.show{display:block;}
+  .attempts-fill{height:100%;border-radius:2px;transition:width .3s,background .3s;}
 
-  main{max-width:1180px;margin:0 auto;padding:24px 28px 60px;display:none;}
-  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:22px;}
-  .kpi{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px 18px;}
-  .kpi .label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;}
-  .kpi .value{font-size:24px;font-weight:700;color:var(--teal-dark);margin-top:6px;}
+  /* ── Main shell ── */
+  #shell{display:none;}
+  .page{display:none;max-width:1200px;margin:0 auto;padding:24px 24px 60px;}
+  .page.active{display:block;}
+
+  /* ── KPIs ── */
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:20px;}
+  .kpi{background:#fff;border:1px solid var(--line);border-radius:12px;padding:15px 17px;}
+  .kpi .label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;}
+  .kpi .value{font-size:22px;font-weight:700;color:var(--teal-dark);margin-top:5px;}
   .kpi .value.pink{color:var(--pink);}
   .kpi .value.amber{color:var(--amber);}
+  .kpi .value.danger{color:var(--danger);}
 
-  .grid{display:grid;grid-template-columns:2fr 1fr;gap:18px;}
-  .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin-bottom:18px;}
-  .card h3{margin:0 0 14px;font-size:14px;color:var(--ink);}
+  /* ── Cards & layout ── */
+  .grid2{display:grid;grid-template-columns:2fr 1fr;gap:16px;}
+  .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin-bottom:16px;}
+  .card h3{margin:0 0 14px;font-size:14px;color:var(--ink);display:flex;align-items:center;justify-content:space-between;}
+  .card-actions{display:flex;gap:8px;align-items:center;}
+  canvas{max-height:220px;}
+
+  /* ── Tables ── */
   table{width:100%;border-collapse:collapse;font-size:13px;}
   th{text-align:left;color:var(--muted);font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line);}
-  td{padding:8px;border-bottom:1px solid #f0f4f3;}
-  .badge{padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600;}
-  .badge.paid{background:#e5f6ec;color:#1e8e4e;}
+  td{padding:8px;border-bottom:1px solid #f0f4f3;vertical-align:middle;}
+  tr:last-child td{border-bottom:none;}
+
+  /* ── Badges ── */
+  .badge{padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600;white-space:nowrap;}
+  .badge.paid,.badge.success{background:#e5f6ec;color:var(--success);}
   .badge.pending{background:#fdf1dd;color:var(--amber);}
-  .badge.failed{background:#fbe6e4;color:var(--danger);}
+  .badge.failed,.badge.danger{background:#fbe6e4;color:var(--danger);}
   .badge.confirmed,.badge.delivered,.badge.shipped,.badge.processing{background:var(--teal-light);color:var(--teal-dark);}
-  .badge.cancelled{background:#f1f1f1;color:#777;}
-  .confirmBtn{background:var(--teal);color:#fff;border:none;border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;}
-  .confirmBtn:hover{background:var(--teal-dark);}
-  .empty{color:var(--muted);font-size:13px;padding:8px 0;}
-  #refreshBtn{background:none;border:1px solid var(--line);border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;color:var(--muted);float:right;}
-  canvas{max-height:220px;}
-  @media (max-width: 860px){ .grid{grid-template-columns:1fr;} }
+  .badge.cancelled,.badge.inactive{background:#f1f1f1;color:#777;}
+  .badge.low{background:#fff3cd;color:#856404;}
+  .badge.out{background:#fbe6e4;color:var(--danger);}
+
+  /* ── Buttons ── */
+  .btn{border:none;border-radius:6px;padding:5px 11px;font-size:12px;cursor:pointer;font-weight:500;transition:.15s;}
+  .btn-teal{background:var(--teal);color:#fff;}
+  .btn-teal:hover{background:var(--teal-dark);}
+  .btn-ghost{background:none;border:1px solid var(--line);color:var(--muted);}
+  .btn-ghost:hover{border-color:var(--teal);color:var(--teal);}
+  .btn-danger{background:#fbe6e4;color:var(--danger);border:1px solid #f5c6c3;}
+  .btn-danger:hover{background:#f5c6c3;}
+  .btn-sm{padding:4px 9px;font-size:11px;}
+
+  /* ── Stock input ── */
+  .stock-edit{display:flex;align-items:center;gap:6px;}
+  .stock-edit input{width:70px;padding:4px 7px;border:1px solid var(--line);border-radius:6px;font-size:13px;text-align:right;}
+  .stock-edit input:focus{outline:none;border-color:var(--teal);}
+  .stock-bar{height:5px;border-radius:3px;background:#e2e8f0;overflow:hidden;margin-top:3px;}
+  .stock-bar-fill{height:100%;border-radius:3px;transition:width .4s;}
+
+  /* ── Misc ── */
+  .empty{color:var(--muted);font-size:13px;padding:10px 0;text-align:center;}
+  #refreshBtn{background:none;border:1px solid var(--line);border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;color:var(--muted);}
+  #refreshBtn:hover{border-color:var(--teal);color:var(--teal);}
+  .toast{position:fixed;bottom:24px;right:24px;background:#1b2a2a;color:#fff;padding:11px 18px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .25s;z-index:9999;}
+  .toast.show{opacity:1;}
+  .section-title{font-size:15px;font-weight:600;color:var(--ink);margin:0 0 14px;}
+  .inv-summary{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;}
+  .inv-chip{background:#fff;border:1px solid var(--line);border-radius:8px;padding:8px 14px;font-size:12px;color:var(--muted);}
+  .inv-chip span{font-weight:700;font-size:15px;display:block;margin-bottom:1px;}
+  .inv-chip span.red{color:var(--danger);}
+  .inv-chip span.amber{color:var(--amber);}
+  .inv-chip span.teal{color:var(--teal-dark);}
+  .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:1000;display:none;align-items:center;justify-content:center;}
+  .modal-overlay.show{display:flex;}
+  .modal{background:#fff;border-radius:14px;padding:28px 26px;width:100%;max-width:420px;box-shadow:0 20px 60px rgba(0,0,0,.2);}
+  .modal h3{margin-top:0;color:var(--ink);font-size:16px;}
+  .modal label{display:block;font-size:13px;color:var(--muted);margin:12px 0 5px;}
+  .modal input,.modal select,.modal textarea{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:7px;font-size:13px;outline:none;}
+  .modal input:focus,.modal select:focus{border-color:var(--teal);}
+  .modal-btns{display:flex;gap:8px;justify-content:flex-end;margin-top:20px;}
+  @media(max-width:860px){.grid2{grid-template-columns:1fr;}}
 </style>
 </head>
 <body>
 
-<header>
-  <div>
-    <h1>KosmoPads Admin</h1>
-    <span class="sub">Business revenue &amp; key insights</span>
-  </div>
-  <button id="logoutBtn" style="display:none">Log out</button>
-</header>
-
+<!-- ======================================================
+  LOGIN SCREEN
+====================================================== -->
 <div id="loginScreen">
-  <h2>Admin sign in</h2>
-  <label>Email</label>
-  <input id="loginEmail" type="email" placeholder="admin@kosmotive.rw" autocomplete="username" />
-  <label>Password</label>
-  <input id="loginPassword" type="password" placeholder="••••••••" autocomplete="current-password" />
-  <button id="loginBtn">Sign in</button>
+  <div class="logo">
+    <h2>🩸 KosmoPads Admin</h2>
+    <p style="margin:4px 0 0;font-size:13px;color:var(--muted);">Sign in to your dashboard</p>
+  </div>
+
+  <label for="emailInput">Email address</label>
+  <input type="email" id="emailInput" placeholder="Enter your email" autocomplete="username" />
+
+  <label for="passwordInput">Password</label>
+  <div class="pw-wrap">
+    <input type="password" id="passwordInput" placeholder="Enter your password" autocomplete="current-password" />
+    <button id="eyeBtn" type="button" title="Toggle password visibility" aria-label="Show or hide password">
+      <!-- eye icon -->
+      <svg id="eyeIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+        <circle cx="12" cy="12" r="3"/>
+      </svg>
+      <svg id="eyeOffIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;">
+        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
+        <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
+        <line x1="1" y1="1" x2="23" y2="23"/>
+      </svg>
+    </button>
+  </div>
+
   <div id="loginError"></div>
+  <div class="attempts-bar" id="attemptsBar">
+    <div class="attempts-fill" id="attemptsFill"></div>
+  </div>
+
+  <button id="loginBtn">Sign in</button>
 </div>
 
-<main id="dashboard">
-  <button id="refreshBtn">↻ Refresh</button>
-  <div class="kpis" id="kpis"></div>
-
-  <div class="grid">
+<!-- ======================================================
+  MAIN SHELL (shown after login)
+====================================================== -->
+<div id="shell">
+  <header>
     <div>
-      <div class="card">
-        <h3>Revenue — last 14 days</h3>
-        <canvas id="trendChart"></canvas>
-      </div>
-      <div class="card">
-        <h3>Recent orders</h3>
-        <table id="recentOrdersTable"><thead><tr><th>Order</th><th>Customer</th><th>Total</th><th>Payment</th><th>Status</th><th>Date</th></tr></thead><tbody></tbody></table>
-      </div>
+      <h1>KosmoPads Admin</h1>
+      <span class="sub">Kosmotive Business Dashboard</span>
     </div>
-    <div>
-      <div class="card">
-        <h3>Top products by revenue</h3>
-        <canvas id="productsChart"></canvas>
+    <div class="header-right">
+      <span id="adminName"></span>
+      <button id="logoutBtn">Sign out</button>
+    </div>
+  </header>
+  <nav>
+    <button class="active" data-page="dashPage">📊 Dashboard</button>
+    <button data-page="inventoryPage">📦 Inventory</button>
+    <button data-page="ordersPage">🛒 Orders</button>
+  </nav>
+
+  <!-- DASHBOARD PAGE -->
+  <div class="page active" id="dashPage">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin:20px 0 14px;">
+      <span class="section-title">Business Overview</span>
+      <button id="refreshBtn" onclick="loadDashboard()">⟳ Refresh</button>
+    </div>
+    <div class="kpis" id="kpis"></div>
+    <div class="grid2">
+      <div>
+        <div class="card">
+          <h3>Revenue Trend (14 days)</h3>
+          <canvas id="trendChart"></canvas>
+        </div>
+        <div class="card">
+          <h3>Recent Orders</h3>
+          <div id="recentOrders"></div>
+        </div>
       </div>
-      <div class="card">
-        <h3>Awaiting payment confirmation</h3>
-        <div id="pendingList"></div>
-      </div>
-      <div class="card">
-        <h3>Orders by status</h3>
-        <div id="statusList"></div>
+      <div>
+        <div class="card">
+          <h3>Top Products by Revenue</h3>
+          <canvas id="productsChart"></canvas>
+        </div>
+        <div class="card">
+          <h3>Pending Confirmation <span id="pendingCount" class="badge amber"></span></h3>
+          <div id="pendingOrders"></div>
+        </div>
       </div>
     </div>
   </div>
-</main>
+
+  <!-- INVENTORY PAGE -->
+  <div class="page" id="inventoryPage">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin:20px 0 14px;">
+      <span class="section-title">Stock Management</span>
+      <button class="btn btn-ghost" onclick="loadInventory()">⟳ Refresh</button>
+    </div>
+    <div class="inv-summary" id="invSummary"></div>
+    <div class="card">
+      <table>
+        <thead>
+          <tr>
+            <th>Product</th>
+            <th>Price</th>
+            <th>Stock</th>
+            <th>Status</th>
+            <th>Listing</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="inventoryBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ORDERS PAGE -->
+  <div class="page" id="ordersPage">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin:20px 0 14px;">
+      <span class="section-title">All Orders</span>
+      <button class="btn btn-ghost" onclick="loadOrders()">⟳ Refresh</button>
+    </div>
+    <div class="card">
+      <table>
+        <thead>
+          <tr>
+            <th>Order #</th>
+            <th>Customer</th>
+            <th>Total</th>
+            <th>Payment</th>
+            <th>Order status</th>
+            <th>Date</th>
+          </tr>
+        </thead>
+        <tbody id="ordersBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Stock Edit Modal -->
+<div class="modal-overlay" id="stockModal">
+  <div class="modal">
+    <h3 id="modalProductName">Update Stock</h3>
+    <label>Current stock</label>
+    <input type="number" id="currentStockInput" disabled />
+    <label>New stock level</label>
+    <input type="number" id="newStockInput" min="0" placeholder="e.g. 50" />
+    <label>Reason</label>
+    <select id="stockReason">
+      <option value="restock">Restock (received new inventory)</option>
+      <option value="adjustment">Adjustment (stock count)</option>
+      <option value="correction">Correction (data error fix)</option>
+      <option value="return">Return (customer return)</option>
+    </select>
+    <label>Note (optional)</label>
+    <input type="text" id="stockNote" placeholder="e.g. Batch #12 received" />
+    <div class="modal-btns">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-teal" id="saveStockBtn" onclick="saveStock()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
 
 <script>
-const API_BASE = window.location.origin + '/api';
-let token = localStorage.getItem('kosmo_admin_token') || '';
-let trendChart, productsChart;
+// ============================================================
+// CONFIG
+// ============================================================
+const API_BASE = '/api';
+let token = localStorage.getItem('kos_token') || '';
+let trendChart = null, productsChart = null;
+let editingProductId = null;
+const MAX_ATTEMPTS = 5;
 
-const fmt = (n) => new Intl.NumberFormat('en-RW').format(n) + ' FRW';
-const fmtDate = (d) => new Date(d).toLocaleString('en-RW', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' });
+// ============================================================
+// BOOT
+// ============================================================
+(function init() {
+  if (token) {
+    showShell();
+    loadDashboard();
+  }
 
-function showDashboard(show){
-  document.getElementById('loginScreen').style.display = show ? 'none' : 'block';
-  document.getElementById('dashboard').style.display = show ? 'block' : 'none';
-  document.getElementById('logoutBtn').style.display = show ? 'inline-block' : 'none';
-}
+  // Nav tabs
+  document.querySelectorAll('nav button[data-page]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      const page = document.getElementById(btn.dataset.page);
+      if (page) page.classList.add('active');
+      if (btn.dataset.page === 'inventoryPage') loadInventory();
+      if (btn.dataset.page === 'ordersPage') loadOrders();
+    });
+  });
 
-async function login(){
-  const email = document.getElementById('loginEmail').value.trim();
-  const password = document.getElementById('loginPassword').value;
+  // Login button
+  document.getElementById('loginBtn').addEventListener('click', doLogin);
+  document.getElementById('passwordInput').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+  document.getElementById('emailInput').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('passwordInput').focus(); });
+  document.getElementById('logoutBtn').addEventListener('click', logout);
+
+  // Password eye toggle
+  document.getElementById('eyeBtn').addEventListener('click', () => {
+    const input = document.getElementById('passwordInput');
+    const isPassword = input.type === 'password';
+    input.type = isPassword ? 'text' : 'password';
+    document.getElementById('eyeIcon').style.display = isPassword ? 'none' : '';
+    document.getElementById('eyeOffIcon').style.display = isPassword ? '' : 'none';
+  });
+})();
+
+// ============================================================
+// LOGIN
+// ============================================================
+async function doLogin() {
+  const email = document.getElementById('emailInput').value.trim();
+  const password = document.getElementById('passwordInput').value;
   const errEl = document.getElementById('loginError');
-  errEl.textContent = '';
-  try{
+  const btn = document.getElementById('loginBtn');
+
+  clearLoginError();
+
+  if (!email || !password) {
+    showLoginError('Please enter your email and password.', false);
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Signing in…';
+
+  try {
     const res = await fetch(`${API_BASE}/admin/login`, {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ email, password })
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
     });
     const data = await res.json();
-    if(!res.ok) throw new Error(data.error || 'Login failed');
+
+    if (res.status === 429 || data.locked) {
+      // Hard lockout
+      const secs = data.retryAfterSeconds || 900;
+      showLockout(secs);
+      return;
+    }
+
+    if (!res.ok) {
+      const remaining = typeof data.attemptsRemaining === 'number' ? data.attemptsRemaining : null;
+      showLoginError(data.error || 'Login failed.', remaining !== null && remaining <= 2);
+      if (remaining !== null) updateAttemptsBar(remaining);
+      return;
+    }
+
+    // Success
     token = data.token;
-    localStorage.setItem('kosmo_admin_token', token);
-    showDashboard(true);
+    localStorage.setItem('kos_token', token);
+    document.getElementById('adminName').textContent = data.admin?.name || 'Admin';
+    clearLoginError();
+    showShell();
     loadDashboard();
-  }catch(e){
-    errEl.textContent = e.message;
+  } catch (err) {
+    showLoginError('Network error — please check your connection.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Sign in';
   }
 }
 
-function logout(){
+function showLoginError(msg, isWarning = false) {
+  const el = document.getElementById('loginError');
+  el.textContent = msg;
+  el.className = isWarning ? 'warning show' : 'show';
+}
+
+function clearLoginError() {
+  const el = document.getElementById('loginError');
+  el.textContent = '';
+  el.className = '';
+  document.getElementById('attemptsBar').classList.remove('show');
+}
+
+function updateAttemptsBar(remaining) {
+  const bar = document.getElementById('attemptsBar');
+  const fill = document.getElementById('attemptsFill');
+  const pct = Math.round((remaining / MAX_ATTEMPTS) * 100);
+  bar.classList.add('show');
+  fill.style.width = pct + '%';
+  fill.style.background = remaining <= 1 ? 'var(--danger)' : remaining <= 2 ? 'var(--amber)' : 'var(--teal)';
+}
+
+let lockoutTimer = null;
+function showLockout(seconds) {
+  if (lockoutTimer) clearInterval(lockoutTimer);
+  let s = seconds;
+  const btn = document.getElementById('loginBtn');
+  btn.disabled = true;
+
+  function tick() {
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    const label = m > 0 ? `${m}m ${sec}s` : `${sec}s`;
+    showLoginError(`Too many failed attempts. Try again in ${label}.`, false);
+    btn.textContent = `Locked (${label})`;
+    if (s <= 0) {
+      clearInterval(lockoutTimer);
+      btn.disabled = false;
+      btn.textContent = 'Sign in';
+      clearLoginError();
+    }
+    s--;
+  }
+  tick();
+  lockoutTimer = setInterval(tick, 1000);
+}
+
+function logout() {
   token = '';
-  localStorage.removeItem('kosmo_admin_token');
-  showDashboard(false);
+  localStorage.removeItem('kos_token');
+  document.getElementById('shell').style.display = 'none';
+  document.getElementById('loginScreen').style.display = '';
+  document.getElementById('emailInput').value = '';
+  document.getElementById('passwordInput').value = '';
+  document.getElementById('passwordInput').type = 'password';
+  document.getElementById('eyeIcon').style.display = '';
+  document.getElementById('eyeOffIcon').style.display = 'none';
+  clearLoginError();
+  document.getElementById('attemptsBar').classList.remove('show');
 }
 
-async function loadDashboard(){
-  try{
-    const res = await fetch(`${API_BASE}/admin/dashboard`, { headers:{ Authorization:`Bearer ${token}` } });
-    if(res.status === 401){ logout(); return; }
+function showShell() {
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('shell').style.display = '';
+}
+
+// ============================================================
+// DASHBOARD
+// ============================================================
+async function loadDashboard() {
+  try {
+    const res = await fetch(`${API_BASE}/admin/dashboard`, { headers: { Authorization: `Bearer ${token}` } });
+    if (res.status === 401) { logout(); return; }
     const data = await res.json();
-    if(!res.ok) throw new Error(data.error || 'Failed to load dashboard');
-    render(data);
-  }catch(e){
-    const main = document.getElementById('dashboard') || document.body;
-    const banner = document.createElement('div');
-    banner.style.cssText = 'background:#fed7d7;color:#822727;padding:12px 16px;border-radius:6px;margin:16px;font-size:13px;';
-    banner.textContent = '⚠️ ' + e.message;
-    main.prepend(banner);
+    if (!res.ok) throw new Error(data.error || 'Failed to load dashboard');
+    renderDashboard(data);
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
   }
 }
 
-function render(d){
-  const k = document.getElementById('kpis');
-  k.innerHTML = `
+function fmt(n) { return (n || 0).toLocaleString() + ' FRW'; }
+
+function renderDashboard(d) {
+  document.getElementById('kpis').innerHTML = `
     <div class="kpi"><div class="label">Revenue today</div><div class="value">${fmt(d.revenue.today)}</div></div>
     <div class="kpi"><div class="label">Last 7 days</div><div class="value">${fmt(d.revenue.last7Days)}</div></div>
     <div class="kpi"><div class="label">Last 30 days</div><div class="value">${fmt(d.revenue.last30Days)}</div></div>
@@ -178,91 +493,236 @@ function render(d){
     <div class="kpi"><div class="label">Awaiting confirmation</div><div class="value amber">${d.counts.pendingPaymentConfirmations}</div></div>
   `;
 
+  // Trend chart
   const labels = d.revenueTrend14Days.map(t => t.date.slice(5));
   const values = d.revenueTrend14Days.map(t => t.revenueRwf);
-  if(trendChart) trendChart.destroy();
+  if (trendChart) trendChart.destroy();
   trendChart = new Chart(document.getElementById('trendChart'), {
-    type:'line',
-    data:{ labels, datasets:[{ label:'Revenue (FRW)', data: values, borderColor:'#0f7a72', backgroundColor:'rgba(15,122,114,.12)', fill:true, tension:.3 }] },
-    options:{ plugins:{legend:{display:false}}, scales:{ y:{ ticks:{ callback:v=>v/1000+'k' } } } }
+    type: 'line',
+    data: { labels, datasets: [{ label: 'Revenue (FRW)', data: values, borderColor: '#0f7a72', backgroundColor: 'rgba(15,122,114,.1)', fill: true, tension: .35 }] },
+    options: { plugins: { legend: { display: false } }, scales: { y: { ticks: { callback: v => v >= 1000 ? (v/1000)+'k' : v } } } }
   });
 
-  const top = d.topProducts.slice(0,6);
-  if(productsChart) productsChart.destroy();
+  // Products chart
+  const top = d.topProducts.slice(0, 6);
+  if (productsChart) productsChart.destroy();
   productsChart = new Chart(document.getElementById('productsChart'), {
-    type:'bar',
-    data:{ labels: top.map(p=>p.name), datasets:[{ label:'Revenue (FRW)', data: top.map(p=>p.revenueRwf), backgroundColor:'#e8557a' }] },
-    options:{ indexAxis:'y', plugins:{legend:{display:false}} }
+    type: 'bar',
+    data: { labels: top.map(p => p.name), datasets: [{ label: 'Revenue (FRW)', data: top.map(p => p.revenueRwf), backgroundColor: '#e8557a' }] },
+    options: { indexAxis: 'y', plugins: { legend: { display: false } } }
   });
 
-  const tbody = document.querySelector('#recentOrdersTable tbody');
-  tbody.innerHTML = d.recentOrders.length ? d.recentOrders.map(o => `
-    <tr>
-      <td>${o.orderNumber}</td>
-      <td>${o.customerName}</td>
-      <td>${fmt(o.totalRwf)}</td>
-      <td>${o.paymentMethod}</td>
-      <td><span class="badge ${o.paymentStatus}">${o.paymentStatus}</span> <span class="badge ${o.orderStatus}">${o.orderStatus}</span></td>
-      <td>${fmtDate(o.createdAt)}</td>
-    </tr>`).join('') : `<tr><td colspan="6" class="empty">No orders yet.</td></tr>`;
+  // Recent orders table
+  const ro = document.getElementById('recentOrders');
+  if (!d.recentOrders.length) { ro.innerHTML = '<p class="empty">No orders yet.</p>'; }
+  else {
+    ro.innerHTML = `<table>
+      <thead><tr><th>Order #</th><th>Customer</th><th>Total</th><th>Payment</th><th>Date</th></tr></thead>
+      <tbody>` +
+      d.recentOrders.map(o => `<tr>
+        <td><strong>${o.orderNumber}</strong></td>
+        <td>${o.customerName}</td>
+        <td>${fmt(o.totalRwf)}</td>
+        <td><span class="badge ${o.paymentStatus}">${o.paymentStatus}</span></td>
+        <td>${new Date(o.createdAt).toLocaleDateString()}</td>
+      </tr>`).join('') + `</tbody></table>`;
+  }
 
-  const pendingEl = document.getElementById('pendingList');
-  pendingEl.innerHTML = d.pendingConfirmation.length ? d.pendingConfirmation.map(o => `
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f0f4f3;">
-      <div>
-        <div style="font-weight:600;font-size:13px;">${o.orderNumber} — ${fmt(o.totalRwf)}</div>
-        <div style="font-size:12px;color:var(--muted);">${o.customerName} · ${o.customerPhone}</div>
-      </div>
-      <button class="confirmBtn" data-order="${o.orderNumber}">Confirm paid</button>
-    </div>`).join('') : `<div class="empty">Nothing pending 🎉</div>`;
-
-  document.querySelectorAll('.confirmBtn').forEach(btn => {
-    btn.addEventListener('click', () => confirmPayment(btn));
-  });
-
-  const statusEl = document.getElementById('statusList');
-  statusEl.innerHTML = Object.entries(d.ordersByStatus).map(([status,count]) => `
-    <div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;">
-      <span class="badge ${status}">${status}</span><span>${count}</span>
-    </div>`).join('');
+  // Pending confirmation
+  const pc = document.getElementById('pendingOrders');
+  const cnt = document.getElementById('pendingCount');
+  cnt.textContent = d.pendingConfirmation.length || '';
+  if (!d.pendingConfirmation.length) { pc.innerHTML = '<p class="empty">No pending confirmations.</p>'; }
+  else {
+    pc.innerHTML = `<table>
+      <thead><tr><th>Order #</th><th>Customer</th><th>Phone</th><th>Total</th></tr></thead>
+      <tbody>` +
+      d.pendingConfirmation.map(o => `<tr>
+        <td><strong>${o.orderNumber}</strong></td>
+        <td>${o.customerName}</td>
+        <td>${o.customerPhone}</td>
+        <td>${fmt(o.totalRwf)}</td>
+      </tr>`).join('') + `</tbody></table>`;
+  }
 }
 
-async function confirmPayment(btn){
-  const orderNumber = btn.dataset.order;
-  if(btn.dataset.armed !== 'true'){
-    btn.dataset.armed = 'true';
-    btn.textContent = 'Click again to confirm ✓';
-    btn.style.background = '#c05621';
-    setTimeout(() => {
-      if(btn.isConnected){ btn.dataset.armed = 'false'; btn.textContent = 'Confirm paid'; btn.style.background = ''; }
-    }, 4000);
+// ============================================================
+// INVENTORY
+// ============================================================
+async function loadInventory() {
+  try {
+    const res = await fetch(`${API_BASE}/admin/inventory`, { headers: { Authorization: `Bearer ${token}` } });
+    if (res.status === 401) { logout(); return; }
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to load inventory');
+    renderInventory(data);
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
+  }
+}
+
+function renderInventory(data) {
+  const { inventory, summary } = data;
+
+  document.getElementById('invSummary').innerHTML = `
+    <div class="inv-chip"><span class="teal">${summary.active}</span>Active products</div>
+    <div class="inv-chip"><span class="amber">${summary.lowStock}</span>Low stock</div>
+    <div class="inv-chip"><span class="red">${summary.outOfStock}</span>Out of stock</div>
+  `;
+
+  const tbody = document.getElementById('inventoryBody');
+  if (!inventory.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty">No products found.</td></tr>';
     return;
   }
+
+  tbody.innerHTML = inventory.map(p => {
+    const stockPct = Math.min(100, p.stock > 0 ? Math.round((p.stock / Math.max(p.stock, p.lowStockThreshold * 3)) * 100) : 0);
+    const barColor = p.isOutOfStock ? 'var(--danger)' : p.isLowStock ? 'var(--amber)' : 'var(--success)';
+    const statusBadge = p.isOutOfStock
+      ? '<span class="badge out">Out of stock</span>'
+      : p.isLowStock
+        ? '<span class="badge low">Low stock</span>'
+        : '<span class="badge paid">In stock</span>';
+
+    return `<tr>
+      <td>
+        <strong>${p.name}</strong>
+        <div style="font-size:11px;color:var(--muted);margin-top:1px;">${p.packageType}</div>
+      </td>
+      <td>${(p.priceRwf).toLocaleString()} FRW</td>
+      <td>
+        <div style="font-weight:600;">${p.stock}</div>
+        <div class="stock-bar"><div class="stock-bar-fill" style="width:${stockPct}%;background:${barColor};"></div></div>
+        <div style="font-size:10px;color:var(--muted);">alert at ${p.lowStockThreshold}</div>
+      </td>
+      <td>${statusBadge}</td>
+      <td>
+        <span class="badge ${p.isActive ? 'confirmed' : 'inactive'}">${p.isActive ? 'Active' : 'Hidden'}</span>
+      </td>
+      <td>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <button class="btn btn-teal btn-sm" onclick="openStockModal(${p.id}, '${p.name.replace(/'/g,"\\'")}', ${p.stock})">Edit stock</button>
+          <button class="btn btn-ghost btn-sm" onclick="toggleProduct(${p.id})">${p.isActive ? 'Hide' : 'Show'}</button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function openStockModal(productId, name, currentStock) {
+  editingProductId = productId;
+  document.getElementById('modalProductName').textContent = 'Update stock – ' + name;
+  document.getElementById('currentStockInput').value = currentStock;
+  document.getElementById('newStockInput').value = currentStock;
+  document.getElementById('stockReason').value = 'restock';
+  document.getElementById('stockNote').value = '';
+  document.getElementById('stockModal').classList.add('show');
+  setTimeout(() => document.getElementById('newStockInput').focus(), 50);
+}
+
+function closeModal() {
+  document.getElementById('stockModal').classList.remove('show');
+  editingProductId = null;
+}
+
+async function saveStock() {
+  if (!editingProductId) return;
+  const newStock = parseInt(document.getElementById('newStockInput').value);
+  const reason = document.getElementById('stockReason').value;
+  const note = document.getElementById('stockNote').value;
+
+  if (isNaN(newStock) || newStock < 0) {
+    showToast('Stock must be a number ≥ 0', true);
+    return;
+  }
+
+  const btn = document.getElementById('saveStockBtn');
   btn.disabled = true;
-  btn.textContent = 'Confirming...';
-  try{
-    const res = await fetch(`${API_BASE}/orders/${orderNumber}/confirm-payment`, {
-      method:'PATCH', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` },
-      body: JSON.stringify({})
+  btn.textContent = 'Saving…';
+
+  try {
+    const res = await fetch(`${API_BASE}/admin/inventory/${editingProductId}/stock`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ newStock, reason, note }),
     });
     const data = await res.json();
-    if(!res.ok) throw new Error(data.error || 'Failed to confirm payment');
-    loadDashboard();
-  }catch(e){
+    if (!res.ok) throw new Error(data.error || 'Failed to update stock');
+
+    showToast(`✅ Stock updated to ${newStock}`);
+    closeModal();
+    loadInventory();
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
+  } finally {
     btn.disabled = false;
-    btn.dataset.armed = 'false';
-    btn.textContent = 'Confirm paid';
-    btn.style.background = '';
-    document.getElementById('pendingList').insertAdjacentHTML('afterbegin', `<div style="color:#c53030;font-size:12px;padding:4px 0;">⚠️ ${e.message}</div>`);
+    btn.textContent = 'Save';
   }
 }
 
-document.getElementById('loginBtn').addEventListener('click', login);
-document.getElementById('loginPassword').addEventListener('keydown', (e)=>{ if(e.key==='Enter') login(); });
-document.getElementById('logoutBtn').addEventListener('click', logout);
-document.getElementById('refreshBtn').addEventListener('click', loadDashboard);
+async function toggleProduct(productId) {
+  try {
+    const res = await fetch(`${API_BASE}/admin/inventory/${productId}/toggle`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed');
+    showToast(`Product is now ${data.product.isActive ? 'active' : 'hidden'}`);
+    loadInventory();
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
+  }
+}
 
-if(token){ showDashboard(true); loadDashboard(); } else { showDashboard(false); }
+// ============================================================
+// ORDERS PAGE
+// ============================================================
+async function loadOrders() {
+  try {
+    const res = await fetch(`${API_BASE}/orders`, { headers: { Authorization: `Bearer ${token}` } });
+    if (res.status === 401) { logout(); return; }
+    const data = await res.json();
+    const tbody = document.getElementById('ordersBody');
+    const list = Array.isArray(data) ? data : data.orders || [];
+    if (!list.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty">No orders found.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = list.map(o => `<tr>
+      <td><strong>${o.orderNumber}</strong></td>
+      <td>${o.customerName}<div style="font-size:11px;color:var(--muted);">${o.customerPhone || ''}</div></td>
+      <td>${(o.totalRwf || 0).toLocaleString()} FRW</td>
+      <td><span class="badge ${o.paymentStatus}">${o.paymentStatus || 'pending'}</span></td>
+      <td><span class="badge ${o.orderStatus}">${o.orderStatus || 'pending'}</span></td>
+      <td>${o.createdAt ? new Date(o.createdAt).toLocaleDateString() : '-'}</td>
+    </tr>`).join('');
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
+  }
+}
+
+// ============================================================
+// UTILITIES
+// ============================================================
+function showToast(msg, isError = false) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.background = isError ? '#c0392b' : '#1b2a2a';
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3200);
+}
+
+// Close modal on backdrop click
+document.getElementById('stockModal').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+
+// Keyboard shortcuts
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeModal();
+});
 </script>
 </body>
 </html>

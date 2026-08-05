@@ -30,7 +30,7 @@ services:
         sync: false
       - key: MOMO_API_KEY
         sync: false
-      - key: MOMO_API_SECRET
+      - key: MOMO_COLLECTION_USER_ID
         sync: false
       - key: MOMO_SUBSCRIPTION_KEY
         sync: false

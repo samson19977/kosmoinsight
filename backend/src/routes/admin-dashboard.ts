@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
+import { desc, sql } from 'drizzle-orm';
 import { db } from '../config/database';
-import { orders, orderItems, customers, products } from '../db/schema';
+import { orders, orderItems, customers } from '../db/schema';
 import { requireAdmin } from '../middleware/auth';
 
 const router = Router();
@@ -11,134 +12,132 @@ function startOfDay(d: Date): Date {
   x.setHours(0, 0, 0, 0);
   return x;
 }
+
 function daysAgo(n: number): Date {
   const d = new Date();
   d.setDate(d.getDate() - n);
   return startOfDay(d);
 }
 
-// GET /api/admin/dashboard — the main "business at a glance" endpoint
+function isPaid(paymentStatus: string | null): boolean {
+  return paymentStatus === 'paid';
+}
+
+// ============================================
+// GET /api/admin/dashboard
+// Business overview: revenue, counts, trend, top products,
+// recent orders, and orders pending payment confirmation.
+// ============================================
 router.get('/', async (_req: Request, res: Response): Promise<void> => {
   try {
-    const [allOrders, allItems, allCustomers, allProducts] = await Promise.all([
-      db.select().from(orders),
-      db.select().from(orderItems),
-      db.select().from(customers),
-      db.select().from(products),
-    ]);
+    const allOrders = await db.select().from(orders).orderBy(desc(orders.createdAt));
+    const paidOrders = allOrders.filter((o) => isPaid(o.paymentStatus));
 
-    const paidOrders = allOrders.filter((o) => o.paymentStatus === 'paid');
-    const todayStart = startOfDay(new Date());
-    const weekStart = daysAgo(6); // last 7 days incl. today
-    const monthStart = daysAgo(29); // last 30 days incl. today
+    // ---- Revenue ----
+    const today = startOfDay(new Date());
+    const day7 = daysAgo(7);
+    const day30 = daysAgo(30);
 
-    const sumRevenue = (list: typeof paidOrders) => list.reduce((sum, o) => sum + o.totalRwf, 0);
+    const sumRevenue = (list: typeof paidOrders) =>
+      list.reduce((sum, o) => sum + (o.totalRwf || 0), 0);
 
-    const revenueToday = sumRevenue(paidOrders.filter((o) => new Date(o.createdAt!) >= todayStart));
-    const revenueThisWeek = sumRevenue(paidOrders.filter((o) => new Date(o.createdAt!) >= weekStart));
-    const revenueThisMonth = sumRevenue(paidOrders.filter((o) => new Date(o.createdAt!) >= monthStart));
+    const revenueToday = sumRevenue(
+      paidOrders.filter((o) => o.createdAt && new Date(o.createdAt) >= today)
+    );
+    const revenueLast7Days = sumRevenue(
+      paidOrders.filter((o) => o.createdAt && new Date(o.createdAt) >= day7)
+    );
+    const revenueLast30Days = sumRevenue(
+      paidOrders.filter((o) => o.createdAt && new Date(o.createdAt) >= day30)
+    );
     const revenueAllTime = sumRevenue(paidOrders);
+    const averageOrderValueRwf =
+      paidOrders.length > 0 ? Math.round(revenueAllTime / paidOrders.length) : 0;
 
-    // Orders by fulfilment status
-    const ordersByStatus: Record<string, number> = {};
-    for (const o of allOrders) {
-      const key = o.orderStatus || 'pending';
-      ordersByStatus[key] = (ordersByStatus[key] || 0) + 1;
-    }
+    // ---- Counts ----
+    const [{ count: totalCustomers }] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(customers);
 
-    // Payments by status
-    const paymentsByStatus: Record<string, number> = {};
-    for (const o of allOrders) {
-      const key = o.paymentStatus || 'pending';
-      paymentsByStatus[key] = (paymentsByStatus[key] || 0) + 1;
-    }
+    const pendingPaymentConfirmations = allOrders.filter(
+      (o) => o.paymentStatus === 'pending' || o.paymentStatus === 'pending_manual'
+    ).length;
 
-    // Revenue trend — last 14 days (paid orders)
-    const trend: { date: string; revenueRwf: number; orders: number }[] = [];
+    // ---- Revenue trend (last 14 days) ----
+    const trendMap = new Map<string, number>();
     for (let i = 13; i >= 0; i--) {
-      const dayStart = daysAgo(i);
-      const dayEnd = new Date(dayStart);
-      dayEnd.setDate(dayEnd.getDate() + 1);
-      const dayOrders = paidOrders.filter((o) => {
-        const t = new Date(o.createdAt!);
-        return t >= dayStart && t < dayEnd;
-      });
-      trend.push({
-        date: dayStart.toISOString().slice(0, 10),
-        revenueRwf: sumRevenue(dayOrders),
-        orders: dayOrders.length,
-      });
+      const d = daysAgo(i);
+      trendMap.set(d.toISOString().slice(0, 10), 0);
     }
+    for (const o of paidOrders) {
+      if (!o.createdAt) continue;
+      const key = new Date(o.createdAt).toISOString().slice(0, 10);
+      if (trendMap.has(key)) {
+        trendMap.set(key, (trendMap.get(key) || 0) + (o.totalRwf || 0));
+      }
+    }
+    const revenueTrend14Days = Array.from(trendMap.entries()).map(([date, revenueRwf]) => ({
+      date,
+      revenueRwf,
+    }));
 
-    // Top products — by revenue and by quantity (only counted against paid orders)
+    // ---- Top products by revenue (paid orders only) ----
     const paidOrderIds = new Set(paidOrders.map((o) => o.id));
-    const productAgg: Record<string, { name: string; quantity: number; revenueRwf: number }> = {};
+    const allItems = await db.select().from(orderItems);
+    const productRevenue = new Map<string, number>();
     for (const item of allItems) {
       if (!paidOrderIds.has(item.orderId)) continue;
-      if (!productAgg[item.productName]) {
-        productAgg[item.productName] = { name: item.productName, quantity: 0, revenueRwf: 0 };
-      }
-      productAgg[item.productName].quantity += item.quantity;
-      productAgg[item.productName].revenueRwf += item.subtotalRwf;
+      const key = item.productName;
+      productRevenue.set(key, (productRevenue.get(key) || 0) + (item.subtotalRwf || 0));
     }
-    const topProducts = Object.values(productAgg).sort((a, b) => b.revenueRwf - a.revenueRwf);
+    const topProducts = Array.from(productRevenue.entries())
+      .map(([name, revenueRwf]) => ({ name, revenueRwf }))
+      .sort((a, b) => b.revenueRwf - a.revenueRwf)
+      .slice(0, 6);
 
-    // Recent orders (latest 10, any status)
-    const recentOrders = [...allOrders]
-      .sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime())
-      .slice(0, 10)
-      .map((o) => ({
-        orderNumber: o.orderNumber,
-        customerName: o.customerName,
-        totalRwf: o.totalRwf,
-        orderStatus: o.orderStatus,
-        paymentStatus: o.paymentStatus,
-        paymentMethod: o.paymentMethod,
-        createdAt: o.createdAt,
-      }));
+    // ---- Recent orders (latest 8) ----
+    const recentOrders = allOrders.slice(0, 8).map((o) => ({
+      orderNumber: o.orderNumber,
+      customerName: o.customerName,
+      totalRwf: o.totalRwf,
+      paymentStatus: o.paymentStatus,
+      createdAt: o.createdAt,
+    }));
 
-    // Orders awaiting manual payment confirmation — the admin's action queue
+    // ---- Pending confirmation (oldest first, capped at 10) ----
     const pendingConfirmation = allOrders
-      .filter((o) => o.paymentStatus === 'pending')
-      .sort((a, b) => new Date(a.createdAt!).getTime() - new Date(b.createdAt!).getTime())
+      .filter((o) => o.paymentStatus === 'pending' || o.paymentStatus === 'pending_manual')
+      .slice(-10)
+      .reverse()
       .map((o) => ({
         orderNumber: o.orderNumber,
         customerName: o.customerName,
         customerPhone: o.customerPhone,
         totalRwf: o.totalRwf,
-        paymentMethod: o.paymentMethod,
-        createdAt: o.createdAt,
       }));
-
-    const avgOrderValue = paidOrders.length > 0 ? Math.round(revenueAllTime / paidOrders.length) : 0;
 
     res.json({
       success: true,
-      generatedAt: new Date().toISOString(),
       revenue: {
         today: revenueToday,
-        last7Days: revenueThisWeek,
-        last30Days: revenueThisMonth,
+        last7Days: revenueLast7Days,
+        last30Days: revenueLast30Days,
         allTime: revenueAllTime,
-        averageOrderValueRwf: avgOrderValue,
+        averageOrderValueRwf,
       },
       counts: {
         totalOrders: allOrders.length,
-        totalPaidOrders: paidOrders.length,
-        totalCustomers: allCustomers.length,
-        totalActiveProducts: allProducts.filter((p) => p.isActive).length,
-        pendingPaymentConfirmations: pendingConfirmation.length,
+        totalCustomers,
+        pendingPaymentConfirmations,
       },
-      ordersByStatus,
-      paymentsByStatus,
-      revenueTrend14Days: trend,
+      revenueTrend14Days,
       topProducts,
       recentOrders,
       pendingConfirmation,
     });
   } catch (error) {
-    console.error('Dashboard error:', error);
-    res.status(500).json({ error: 'Failed to build dashboard' });
+    console.error('Dashboard fetch error:', error);
+    res.status(500).json({ error: 'Failed to load dashboard' });
   }
 });
 

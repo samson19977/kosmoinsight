@@ -1,7 +1,7 @@
 {
   "name": "kosmotive-backend",
-  "version": "1.0.0",
-  "description": "Kosmotive PAYG Platform Backend - KosmoPads Rwanda",
+  "version": "1.1.0",
+  "description": "Kosmotive Backend – KosmoPads Rwanda",
   "main": "dist/app.js",
   "scripts": {
     "dev": "nodemon --exec ts-node src/app.ts",
@@ -23,8 +23,8 @@
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
-    "pg": "^8.11.3",
     "resend": "6.18.0",
+    "pg": "^8.11.3",
     "uuid": "^9.0.1",
     "zod": "^3.22.4"
   },
