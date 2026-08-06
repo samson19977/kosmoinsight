@@ -31,6 +31,14 @@ export class MomoService {
   private static apiKey = process.env.MOMO_API_KEY || '';
   private static merchantCode = process.env.MOMO_MERCHANT_CODE || '675566';
   private static environment = process.env.MOMO_ENVIRONMENT || 'sandbox';
+  // MTN's sandbox environment only accepts EUR — it rejects RWF (or any other
+  // currency) with a 400/RESOURCE_NOT_FOUND-style failure on requesttopay.
+  // Production accounts use the real settlement currency, RWF.
+  // Docs/community confirmation: sandbox transactions must be created in EUR
+  // regardless of the real-world currency you intend to charge.
+  private static get transactionCurrency(): string {
+    return this.environment === 'sandbox' ? 'EUR' : 'RWF';
+  }
 
   // Normalize phone number to international format
   static normalizePhone(phone: string): string {
@@ -137,7 +145,7 @@ export class MomoService {
         `${this.baseUrl}/collection/v1_0/requesttopay`,
         {
           amount: String(request.amount),
-          currency: 'RWF',
+          currency: this.transactionCurrency,
           externalId: request.reference,
           payer: {
             partyIdType: 'MSISDN',
