@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm';
 import { db } from '../config/database';
 import { admins } from '../db/schema';
 import { signAdminToken, requireAdmin, AuthedRequest } from '../middleware/auth';
+import { MomoService } from '../services/momo.service';
 
 const router = Router();
 
@@ -161,6 +162,14 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
 // GET /api/admin/me — verify token / fetch current admin profile
 router.get('/me', requireAdmin, (req: AuthedRequest, res: Response): void => {
   res.json({ success: true, admin: req.admin });
+});
+
+// GET /api/admin/momo-check — diagnostic: confirms MoMo env vars are present
+// and that MTN actually accepts them (real token fetch), without exposing
+// any secret values in the response. Admin-only since it makes a live call.
+router.get('/momo-check', requireAdmin, async (_req: AuthedRequest, res: Response): Promise<void> => {
+  const result = await MomoService.testConnection();
+  res.status(result.ok ? 200 : 502).json(result);
 });
 
 export default router;

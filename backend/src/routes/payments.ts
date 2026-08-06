@@ -4,7 +4,8 @@ import { MomoService } from '../services/momo.service';
 import { validate } from '../middleware/validate';
 import { momoPaymentSchema } from '../lib/validation/schemas';
 import { db } from '../config/database';
-import { orders, payments } from '../db/schema';
+import { orders, payments, orderItems } from '../db/schema';
+import { EmailService } from '../services/email.service';
 
 const router = Router();
 
@@ -79,12 +80,78 @@ router.post('/momo/initiate', validate(momoPaymentSchema), async (req: Request, 
 
 // ============================================
 // GET /api/payments/momo/status/:referenceId
-// Polls MoMo API for the current payment status.
+// Polls MoMo API for the current payment status AND reconciles our own
+// database with it. This exists because MTN's webhook callbacks are known
+// to be unreliable in sandbox (and can occasionally be missed/delayed in
+// production too) — so every status poll is also a self-healing check:
+// if MTN says SUCCESSFUL/FAILED and our DB still shows pending, we update
+// it here rather than waiting indefinitely on a webhook that may never arrive.
 // ============================================
 router.get('/momo/status/:referenceId', async (req: Request, res: Response): Promise<void> => {
   try {
     const { referenceId } = req.params;
     const status = await MomoService.checkPaymentStatus(referenceId);
+
+    // Try to reconcile against our own payment/order records
+    const [payment] = await db
+      .select()
+      .from(payments)
+      .where(eq(payments.momoTransactionId, referenceId));
+
+    if (payment && payment.status !== 'paid' && payment.status !== 'failed') {
+      const rawStatus = (status.status || '').toUpperCase();
+
+      if (rawStatus === 'SUCCESSFUL') {
+        const now = new Date();
+
+        await db
+          .update(payments)
+          .set({ status: 'paid', paidAt: now, notes: 'Confirmed via status poll reconciliation', updatedAt: now })
+          .where(eq(payments.id, payment.id));
+
+        const [order] = await db.select().from(orders).where(eq(orders.id, payment.orderId));
+
+        if (order) {
+          await db
+            .update(orders)
+            .set({ paymentStatus: 'paid', orderStatus: 'confirmed', updatedAt: now })
+            .where(eq(orders.id, order.id));
+
+          console.log(`✅ Status-poll reconciliation: order ${order.orderNumber} marked PAID`);
+
+          if (order.customerEmail) {
+            const items = await db.select().from(orderItems).where(eq(orderItems.orderId, order.id));
+            await EmailService.sendPaymentReceipt({
+              orderNumber: order.orderNumber,
+              customerName: order.customerName,
+              customerEmail: order.customerEmail,
+              amountRwf: payment.amountRwf,
+              paidAt: now,
+              items: items.map((i) => ({ name: i.productName, quantity: i.quantity, priceRwf: i.priceRwf, subtotalRwf: i.subtotalRwf })),
+            }).catch((err) => console.error('Receipt email error (non-fatal):', err));
+          }
+
+          await EmailService.sendAdminPaymentAlert({
+            orderNumber: order.orderNumber,
+            customerName: order.customerName,
+            customerPhone: order.customerPhone,
+            amountRwf: payment.amountRwf,
+            status: 'paid',
+          }).catch((err) => console.error('Admin alert email error (non-fatal):', err));
+        }
+      } else if (rawStatus === 'FAILED') {
+        await db
+          .update(payments)
+          .set({ status: 'failed', notes: `Failed via status poll. Reason: ${status.reason || 'unspecified'}`, updatedAt: new Date() })
+          .where(eq(payments.id, payment.id));
+
+        await db
+          .update(orders)
+          .set({ paymentStatus: 'failed', updatedAt: new Date() })
+          .where(eq(orders.id, payment.orderId));
+      }
+    }
+
     res.json({ success: true, referenceId, ...status });
   } catch (error) {
     console.error('MoMo status error:', error);

@@ -64,8 +64,7 @@ export class MomoService {
   }
 
   // Get OAuth token from MoMo API
-  private static async getAccessToken(): Promise<string | null> {
-    try {
+  private static async getAccessToken(): Promise<string | null> {    try {
       if (!this.collectionUserId || !this.apiKey) {
         console.error('MoMo token error: MOMO_COLLECTION_USER_ID or MOMO_API_KEY is not set');
         return null;
@@ -87,6 +86,34 @@ export class MomoService {
       console.error('MoMo token error:', error?.response?.data || error.message);
       return null;
     }
+  }
+
+  // Public diagnostic — checks config presence + attempts a real token fetch
+  // against MTN sandbox/production, without exposing any secret values.
+  static async testConnection(): Promise<{
+    ok: boolean;
+    message: string;
+    config: Record<string, boolean | string>;
+  }> {
+    const config = {
+      MOMO_BASE_URL: this.baseUrl,
+      MOMO_ENVIRONMENT: this.environment,
+      MOMO_MERCHANT_CODE: this.merchantCode,
+      MOMO_COLLECTION_USER_ID_set: Boolean(this.collectionUserId),
+      MOMO_API_KEY_set: Boolean(this.apiKey),
+      MOMO_SUBSCRIPTION_KEY_set: Boolean(this.subscriptionKey),
+    };
+
+    if (!this.collectionUserId || !this.apiKey || !this.subscriptionKey) {
+      return { ok: false, message: 'One or more required MoMo env vars are missing — see config below.', config };
+    }
+
+    const token = await this.getAccessToken();
+    if (!token) {
+      return { ok: false, message: 'Credentials are present but MTN rejected the token request — check Render logs for the exact MTN error.', config };
+    }
+
+    return { ok: true, message: 'Token fetched successfully — MoMo credentials are valid.', config };
   }
 
   // Initiate a MoMo Request-to-Pay

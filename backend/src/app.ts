@@ -43,7 +43,7 @@ app.use(
       directives: {
         defaultSrc: ["'self'"],
         scriptSrc: ["'self'", "'unsafe-inline'", "https://cdnjs.cloudflare.com"],
-        scriptSrcAttr: ["'unsafe-inline'"],   // ← add this line
+        scriptSrcAttr: ["'unsafe-inline'"],
         styleSrc: ["'self'", "'unsafe-inline'"],
         imgSrc: ["'self'", "data:"],
         connectSrc: ["'self'"],
@@ -320,6 +320,7 @@ async function startServer() {
     POST /api/webhooks/momo               ← MoMo callback
     POST /api/admin/login
     GET  /api/admin/me
+    GET  /api/admin/momo-check             ← MoMo credential diagnostic
     GET  /api/admin/dashboard
     GET  /api/admin/inventory
     PATCH /api/admin/inventory/:id/stock

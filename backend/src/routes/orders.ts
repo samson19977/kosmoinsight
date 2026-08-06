@@ -6,7 +6,7 @@ import { EmailService } from '../services/email.service';
 import { MomoService } from '../services/momo.service';
 import { requireAdmin } from '../middleware/auth';
 import { db } from '../config/database';
-import { orders, orderItems, customers } from '../db/schema';
+import { orders, orderItems, customers, payments } from '../db/schema';
 
 const router = Router();
 
@@ -144,14 +144,68 @@ router.post('/', validate(orderSchema), async (req: Request, res: Response): Pro
 });
 
 // GET /api/orders/:orderNumber/status (public — customer order tracking)
+// Also reconciles with MTN directly on every poll: sandbox (and occasionally
+// production) webhook callbacks can be missed, so if our DB still shows
+// "pending" but the order has a MoMo reference, we double-check live with
+// MTN and self-heal the DB here rather than waiting indefinitely on a webhook.
 router.get('/:orderNumber/status', async (req: Request, res: Response): Promise<void> => {
   try {
     const { orderNumber } = req.params;
-    const [order] = await db.select().from(orders).where(eq(orders.orderNumber, orderNumber));
+    let [order] = await db.select().from(orders).where(eq(orders.orderNumber, orderNumber));
 
     if (!order) {
       res.status(404).json({ error: 'Order not found' });
       return;
+    }
+
+    if (order.paymentStatus === 'pending' && order.momoReference) {
+      try {
+        const momoStatus = await MomoService.checkPaymentStatus(order.momoReference);
+        const rawStatus = (momoStatus.status || '').toUpperCase();
+
+        if (rawStatus === 'SUCCESSFUL' || rawStatus === 'FAILED') {
+          const now = new Date();
+          const [payment] = await db.select().from(payments).where(eq(payments.orderId, order.id));
+
+          if (rawStatus === 'SUCCESSFUL') {
+            if (payment) {
+              await db.update(payments).set({ status: 'paid', paidAt: now, notes: 'Confirmed via order status poll reconciliation', updatedAt: now }).where(eq(payments.id, payment.id));
+            }
+            await db.update(orders).set({ paymentStatus: 'paid', orderStatus: 'confirmed', updatedAt: now }).where(eq(orders.id, order.id));
+            console.log(`✅ Order status poll reconciliation: order ${order.orderNumber} marked PAID`);
+
+            if (order.customerEmail && payment) {
+              const items = await db.select().from(orderItems).where(eq(orderItems.orderId, order.id));
+              await EmailService.sendPaymentReceipt({
+                orderNumber: order.orderNumber,
+                customerName: order.customerName,
+                customerEmail: order.customerEmail,
+                amountRwf: payment.amountRwf,
+                paidAt: now,
+                items: items.map((i) => ({ name: i.productName, quantity: i.quantity, priceRwf: i.priceRwf, subtotalRwf: i.subtotalRwf })),
+              }).catch((err) => console.error('Receipt email error (non-fatal):', err));
+            }
+            await EmailService.sendAdminPaymentAlert({
+              orderNumber: order.orderNumber,
+              customerName: order.customerName,
+              customerPhone: order.customerPhone,
+              amountRwf: payment?.amountRwf ?? order.totalRwf,
+              status: 'paid',
+            }).catch((err) => console.error('Admin alert email error (non-fatal):', err));
+          } else {
+            if (payment) {
+              await db.update(payments).set({ status: 'failed', notes: `Failed via order status poll. Reason: ${momoStatus.reason || 'unspecified'}`, updatedAt: now }).where(eq(payments.id, payment.id));
+            }
+            await db.update(orders).set({ paymentStatus: 'failed', updatedAt: now }).where(eq(orders.id, order.id));
+          }
+
+          // Re-fetch so the response reflects the just-reconciled state
+          [order] = await db.select().from(orders).where(eq(orders.id, order.id));
+        }
+      } catch (reconcileErr) {
+        // Non-fatal — MTN might be briefly unreachable; just report current DB state
+        console.error('MoMo reconciliation during status poll failed (non-fatal):', reconcileErr);
+      }
     }
 
     res.json({
