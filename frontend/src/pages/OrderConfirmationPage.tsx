@@ -1,14 +1,23 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import { motion } from 'framer-motion';
-import { CheckCircle, Copy, Phone, MapPin, Clock, Printer, ArrowRight, Home } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { CheckCircle, Copy, Phone, MapPin, Clock, Printer, ArrowRight, Home, RefreshCw } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { getOrderStatus } from '../services/orders.service';
+
+// Poll every 6s for up to 10 minutes — enough for a real MoMo confirmation
+// without hammering the API or polling forever if the customer walks away.
+const POLL_INTERVAL_MS = 6000;
+const POLL_TIMEOUT_MS = 10 * 60 * 1000;
 
 const OrderConfirmationPage: React.FC = () => {
   const { orderNumber } = useParams<{ orderNumber: string }>();
   const location = useLocation();
   const navigate = useNavigate();
   const [data, setData] = useState<any>(location.state ?? null);
+  const [paymentStatus, setPaymentStatus] = useState<string>('pending');
+  const [justPaid, setJustPaid] = useState(false);
+  const pollStartedAt = useRef<number>(Date.now());
 
   useEffect(() => {
     if (!data && orderNumber) {
@@ -18,6 +27,39 @@ const OrderConfirmationPage: React.FC = () => {
         .catch(() => {});
     }
   }, [orderNumber, data]);
+
+  // Live payment-status polling — auto-flips to "Paid" as soon as the
+  // MoMo webhook confirms it, no manual refresh or status-page visit needed.
+  useEffect(() => {
+    const num = orderNumber || data?.orderNumber;
+    if (!num) return;
+
+    let cancelled = false;
+    const poll = async () => {
+      if (cancelled) return;
+      if (Date.now() - pollStartedAt.current > POLL_TIMEOUT_MS) return; // give up quietly
+      try {
+        const result = await getOrderStatus(num);
+        if (cancelled) return;
+        if (result.paymentStatus && result.paymentStatus !== paymentStatus) {
+          setPaymentStatus(result.paymentStatus);
+          if (result.paymentStatus === 'paid') {
+            setJustPaid(true);
+            toast.success('Payment received! 🎉');
+            return; // stop polling once paid
+          }
+        }
+        if (result.paymentStatus !== 'paid') {
+          setTimeout(poll, POLL_INTERVAL_MS);
+        }
+      } catch {
+        setTimeout(poll, POLL_INTERVAL_MS); // transient network error — keep trying
+      }
+    };
+    const t = setTimeout(poll, POLL_INTERVAL_MS);
+    return () => { cancelled = true; clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderNumber, data?.orderNumber]);
 
   const copy = (text: string, label: string) => {
     navigator.clipboard.writeText(text).then(() => toast.success(`${label} copied!`));
@@ -56,17 +98,39 @@ const OrderConfirmationPage: React.FC = () => {
               {[
                 { label: 'Order Number', value: data.orderNumber, mono: true },
                 { label: 'Total Amount', value: `${data.total?.toLocaleString()} FRW`, bold: true },
-                { label: 'Status', value: '⏳ Awaiting Payment' },
+                {
+                  label: 'Status',
+                  value: paymentStatus === 'paid' ? '✅ Payment Received' : '⏳ Awaiting Payment',
+                  live: true,
+                },
                 { label: 'Delivery', value: '📦 Arranged separately' },
-              ].map(({ label, value, mono, bold }) => (
+              ].map(({ label, value, mono, bold, live }) => (
                 <div key={label} className="bg-gray-50 rounded-xl p-3.5">
-                  <p className="text-xs text-gray-400 mb-0.5">{label}</p>
-                  <p className={`text-sm ${mono ? 'font-mono' : ''} ${bold ? 'text-primary-600 font-bold text-base' : 'font-semibold text-gray-900'}`}>{value}</p>
+                  <p className="text-xs text-gray-400 mb-0.5 flex items-center gap-1">
+                    {label}
+                    {live && paymentStatus !== 'paid' && (
+                      <RefreshCw size={10} className="animate-spin text-gray-300" />
+                    )}
+                  </p>
+                  <p className={`text-sm ${mono ? 'font-mono' : ''} ${bold ? 'text-primary-600 font-bold text-base' : 'font-semibold text-gray-900'} ${live && paymentStatus === 'paid' ? 'text-emerald-600' : ''}`}>{value}</p>
                 </div>
               ))}
             </div>
 
-            {/* Payment Instructions */}
+            <AnimatePresence>
+              {justPaid && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+                  className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 flex items-center gap-3"
+                >
+                  <CheckCircle size={22} className="text-emerald-600 flex-shrink-0" />
+                  <p className="text-sm text-emerald-800"><strong>Payment confirmed!</strong> We're preparing your order and will contact you to arrange delivery.</p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Payment Instructions — hidden once payment clears */}
+            {paymentStatus !== 'paid' && (
             <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5">
               <h3 className="font-bold text-amber-800 mb-4 flex items-center gap-2">
                 <Phone size={18} /> MTN MoMo Payment Instructions
@@ -92,6 +156,7 @@ const OrderConfirmationPage: React.FC = () => {
                 <strong>Steps:</strong> Dial the USSD code → select Pay Bill → enter merchant code <strong>675566</strong> → enter amount → use Order Number as reference → confirm with PIN.
               </p>
             </div>
+            )}
 
             {/* Delivery note */}
             <div className="flex items-start gap-3 bg-blue-50 rounded-xl p-4 text-sm">
