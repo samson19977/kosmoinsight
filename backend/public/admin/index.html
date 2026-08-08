@@ -494,19 +494,28 @@ async function loadDashboard() {
 }
 
 function fmt(n) { return (n || 0).toLocaleString() + ' FRW'; }
+// Compact FRW formatter for chart axes: 1,200 -> 1.2K, 54,000 -> 54K, 1,250,000 -> 1.3M
+function compactRwf(v) {
+  if (v >= 1000000) return (v / 1000000).toFixed(v % 1000000 === 0 ? 0 : 1) + 'M';
+  if (v >= 1000) return (v / 1000).toFixed(v % 1000 === 0 ? 0 : 1) + 'K';
+  return String(v);
+}
 
 function renderDashboard(d) {
+  // KPI money tiles: show compact (K/M) with the exact figure on hover, so
+  // big revenue numbers don't overflow their boxes as the business grows.
+  const money = (v) => `<span title="${fmt(v)}">${compactRwf(v)} FRW</span>`;
   document.getElementById('kpis').innerHTML = `
-    <div class="kpi"><div class="label">Revenue today</div><div class="value">${fmt(d.revenue.today)}</div></div>
-    <div class="kpi"><div class="label">Last 7 days</div><div class="value">${fmt(d.revenue.last7Days)}</div></div>
-    <div class="kpi"><div class="label">Last 30 days</div><div class="value">${fmt(d.revenue.last30Days)}</div></div>
-    <div class="kpi"><div class="label">All-time revenue</div><div class="value pink">${fmt(d.revenue.allTime)}</div></div>
-    <div class="kpi"><div class="label">Avg. order value</div><div class="value">${fmt(d.revenue.averageOrderValueRwf)}</div></div>
+    <div class="kpi"><div class="label">Revenue today</div><div class="value">${money(d.revenue.today)}</div></div>
+    <div class="kpi"><div class="label">Last 7 days</div><div class="value">${money(d.revenue.last7Days)}</div></div>
+    <div class="kpi"><div class="label">Last 30 days</div><div class="value">${money(d.revenue.last30Days)}</div></div>
+    <div class="kpi"><div class="label">All-time revenue</div><div class="value pink">${money(d.revenue.allTime)}</div></div>
+    <div class="kpi"><div class="label">Avg. order value</div><div class="value">${money(d.revenue.averageOrderValueRwf)}</div></div>
     <div class="kpi"><div class="label">Total orders</div><div class="value">${d.counts.totalOrders}</div></div>
     <div class="kpi"><div class="label">Customers</div><div class="value">${d.counts.totalCustomers}</div></div>
     <div class="kpi" title="Orders placed but not yet confirmed as paid — confirm them below to move this into revenue">
       <div class="label">Pending revenue (${d.counts.pendingPaymentConfirmations} orders)</div>
-      <div class="value amber">${fmt(d.revenue.pending)}</div>
+      <div class="value amber">${money(d.revenue.pending)}</div>
     </div>
   `;
 
@@ -517,7 +526,13 @@ function renderDashboard(d) {
   trendChart = new Chart(document.getElementById('trendChart'), {
     type: 'line',
     data: { labels, datasets: [{ label: 'Revenue (FRW)', data: values, borderColor: '#0f7a72', backgroundColor: 'rgba(15,122,114,.1)', fill: true, tension: .35 }] },
-    options: { plugins: { legend: { display: false } }, scales: { y: { ticks: { callback: v => v >= 1000 ? (v/1000)+'k' : v } } } }
+    options: {
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => fmt(ctx.parsed.y) } },
+      },
+      scales: { y: { ticks: { callback: v => compactRwf(v) } } },
+    }
   });
 
   // Products chart
@@ -526,7 +541,14 @@ function renderDashboard(d) {
   productsChart = new Chart(document.getElementById('productsChart'), {
     type: 'bar',
     data: { labels: top.map(p => p.name), datasets: [{ label: 'Revenue (FRW)', data: top.map(p => p.revenueRwf), backgroundColor: '#e8557a' }] },
-    options: { indexAxis: 'y', plugins: { legend: { display: false } } }
+    options: {
+      indexAxis: 'y',
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => fmt(ctx.parsed.x) } },
+      },
+      scales: { x: { ticks: { callback: v => compactRwf(v) } } },
+    }
   });
 
   // Recent orders table
@@ -817,3 +839,4 @@ document.addEventListener('keydown', e => {
 </script>
 </body>
 </html>
+
