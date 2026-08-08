@@ -78,7 +78,13 @@ const CheckoutPage: React.FC = () => {
 
       clearCart();
       navigate(`/order-confirmation/${result.orderNumber}`, {
-        state: { orderNumber: result.orderNumber, total: totalPrice, paymentInstructions: result.paymentInstructions, customerName: `${form.firstName} ${form.lastName}` },
+        state: {
+          orderNumber: result.orderNumber,
+          total: totalPrice,
+          paymentInstructions: result.paymentInstructions,
+          customerName: `${form.firstName} ${form.lastName}`,
+          paymentMethod,
+        },
       });
     } catch (err: any) {
       toast.error(err.message || 'Failed to create order. Please try again.');
