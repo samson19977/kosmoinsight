@@ -4,6 +4,7 @@ import { validate } from '../middleware/validate';
 import { orderSchema } from '../lib/validation/schemas';
 import { EmailService } from '../services/email.service';
 import { MomoService } from '../services/momo.service';
+import { InventoryService } from '../services/inventory.service';
 import { requireAdmin } from '../middleware/auth';
 import { db } from '../config/database';
 import { orders, orderItems, customers, payments } from '../db/schema';
@@ -172,6 +173,7 @@ router.get('/:orderNumber/status', async (req: Request, res: Response): Promise<
               await db.update(payments).set({ status: 'paid', paidAt: now, notes: 'Confirmed via order status poll reconciliation', updatedAt: now }).where(eq(payments.id, payment.id));
             }
             await db.update(orders).set({ paymentStatus: 'paid', orderStatus: 'confirmed', updatedAt: now }).where(eq(orders.id, order.id));
+            await InventoryService.deductStockForOrder(order.id);
             console.log(`✅ Order status poll reconciliation: order ${order.orderNumber} marked PAID`);
 
             if (order.customerEmail && payment) {
@@ -284,6 +286,8 @@ router.patch('/:orderNumber/confirm-payment', requireAdmin, async (req: Request,
         updatedAt: now,
       })
       .where(eq(orders.id, order.id));
+
+    await InventoryService.deductStockForOrder(order.id);
 
     // Keep the payments ledger in sync too, if a row already exists for this order
     // (e.g. a MoMo push was initiated). Cash orders may not have one — that's fine.

@@ -7,6 +7,7 @@ import { eq } from 'drizzle-orm';
 
 import { testDatabaseConnection, db } from './config/database';
 import { EmailService } from './services/email.service';
+import { InventoryService } from './services/inventory.service';
 import { orders, payments, orderItems } from './db/schema';
 
 import productsRouter from './routes/products';
@@ -186,6 +187,8 @@ app.post('/api/webhooks/momo', async (req, res) => {
           updatedAt: now,
         })
         .where(eq(orders.id, order.id));
+
+      await InventoryService.deductStockForOrder(order.id);
 
       console.log(`✅ Webhook: order ${order.orderNumber} marked PAID`);
 

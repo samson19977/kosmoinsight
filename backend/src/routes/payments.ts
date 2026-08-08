@@ -6,6 +6,7 @@ import { momoPaymentSchema } from '../lib/validation/schemas';
 import { db } from '../config/database';
 import { orders, payments, orderItems } from '../db/schema';
 import { EmailService } from '../services/email.service';
+import { InventoryService } from '../services/inventory.service';
 
 const router = Router();
 
@@ -116,6 +117,8 @@ router.get('/momo/status/:referenceId', async (req: Request, res: Response): Pro
             .update(orders)
             .set({ paymentStatus: 'paid', orderStatus: 'confirmed', updatedAt: now })
             .where(eq(orders.id, order.id));
+
+          await InventoryService.deductStockForOrder(order.id);
 
           console.log(`✅ Status-poll reconciliation: order ${order.orderNumber} marked PAID`);
 
