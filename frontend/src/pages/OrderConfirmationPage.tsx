@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { CheckCircle, Copy, Phone, MapPin, Clock, Printer, ArrowRight, Home, RefreshCw, Wallet } from 'lucide-react';
+import { CheckCircle, Copy, Phone, MapPin, Clock, Printer, ArrowRight, Home, RefreshCw } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { getOrderStatus } from '../services/orders.service';
 
@@ -23,15 +23,10 @@ const OrderConfirmationPage: React.FC = () => {
     if (!data && orderNumber) {
       fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000/api'}/orders/${orderNumber}/status`)
         .then((r) => r.json())
-        .then((d) => setData({ orderNumber: d.orderNumber, total: d.total, paymentMethod: d.paymentMethod }))
+        .then((d) => setData({ orderNumber: d.orderNumber, total: d.total }))
         .catch(() => {});
     }
   }, [orderNumber, data]);
-
-  // paymentMethod arrives either as the raw checkout value ('cash' | 'momo')
-  // or, if this page was loaded fresh via URL, as the descriptive string
-  // stored on the order ('Cash on Delivery', 'Mobile Money (MTN / Airtel)').
-  const isCash = /^cash/i.test(String(data?.paymentMethod ?? ''));
 
   // Live payment-status polling — auto-flips to "Paid" as soon as the
   // MoMo webhook confirms it, no manual refresh or status-page visit needed.
@@ -135,7 +130,7 @@ const OrderConfirmationPage: React.FC = () => {
             </AnimatePresence>
 
             {/* Payment Instructions — hidden once payment clears */}
-            {paymentStatus !== 'paid' && !isCash && (
+            {paymentStatus !== 'paid' && (
             <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5">
               <h3 className="font-bold text-amber-800 mb-4 flex items-center gap-2">
                 <Phone size={18} /> MTN MoMo Payment Instructions
@@ -159,22 +154,6 @@ const OrderConfirmationPage: React.FC = () => {
               </div>
               <p className="text-xs text-amber-700 mt-3 leading-relaxed">
                 <strong>Steps:</strong> Dial the USSD code → select Pay Bill → enter merchant code <strong>675566</strong> → enter amount → use Order Number as reference → confirm with PIN.
-              </p>
-            </div>
-            )}
-
-            {/* Cash on Delivery / Pickup — shown instead of MoMo instructions */}
-            {paymentStatus !== 'paid' && isCash && (
-            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5">
-              <h3 className="font-bold text-amber-800 mb-3 flex items-center gap-2">
-                <Wallet size={18} /> Cash Payment
-              </h3>
-              <div className="bg-white rounded-xl px-4 py-3 border border-amber-100 mb-3">
-                <p className="text-xs text-gray-400 mb-0.5">Amount to Pay</p>
-                <p className="font-mono font-bold text-gray-900">{data.total?.toLocaleString()} FRW</p>
-              </div>
-              <p className="text-xs text-amber-700 leading-relaxed">
-                You've chosen to pay in cash. Have the exact amount ready for our delivery agent, or at pickup. Your order will show as <strong>confirmed</strong> as soon as we've received payment — no action needed from you right now.
               </p>
             </div>
             )}

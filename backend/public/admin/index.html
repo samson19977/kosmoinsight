@@ -97,18 +97,6 @@
   .btn-danger{background:#fbe6e4;color:var(--danger);border:1px solid #f5c6c3;}
   .btn-danger:hover{background:#f5c6c3;}
   .btn-sm{padding:4px 9px;font-size:11px;}
-  .btn:disabled{opacity:.55;cursor:not-allowed;}
-
-  /* ── Payment method chip ── */
-  .method-chip{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;white-space:nowrap;}
-  .method-chip.cash{background:#fdf1dd;color:#8a5a10;}
-  .method-chip.momo{background:#e9f0fb;color:#1d4ed8;}
-
-  /* ── Orders table action cell ── */
-  .order-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
-  .status-select{border:1px solid var(--line);border-radius:6px;padding:4px 6px;font-size:11px;color:var(--ink);background:#fff;cursor:pointer;}
-  .status-select:disabled{opacity:.5;cursor:not-allowed;}
-  .paid-check{color:var(--success);font-size:12px;font-weight:600;display:inline-flex;align-items:center;gap:4px;}
 
   /* ── Stock input ── */
   .stock-edit{display:flex;align-items:center;gap:6px;}
@@ -268,11 +256,9 @@
             <th>Order #</th>
             <th>Customer</th>
             <th>Total</th>
-            <th>Method</th>
             <th>Payment</th>
             <th>Order status</th>
             <th>Date</th>
-            <th>Action</th>
           </tr>
         </thead>
         <tbody id="ordersBody"></tbody>
@@ -549,14 +535,13 @@ function renderDashboard(d) {
   if (!d.pendingConfirmation.length) { pc.innerHTML = '<p class="empty">No pending confirmations.</p>'; }
   else {
     pc.innerHTML = `<table>
-      <thead><tr><th>Order #</th><th>Customer</th><th>Phone</th><th>Total</th><th>Action</th></tr></thead>
+      <thead><tr><th>Order #</th><th>Customer</th><th>Phone</th><th>Total</th></tr></thead>
       <tbody>` +
       d.pendingConfirmation.map(o => `<tr>
         <td><strong>${o.orderNumber}</strong></td>
         <td>${o.customerName}</td>
         <td>${o.customerPhone}</td>
         <td>${fmt(o.totalRwf)}</td>
-        <td><button class="btn btn-teal btn-sm" onclick="confirmPayment('${o.orderNumber}', this, true)">✓ Confirm paid</button></td>
       </tr>`).join('') + `</tbody></table>`;
   }
 }
@@ -694,23 +679,6 @@ async function toggleProduct(productId) {
 // ============================================================
 // ORDERS PAGE
 // ============================================================
-const FULFILMENT_STATUSES = ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled'];
-
-function isCashMethod(method) { return /^cash/i.test(method || ''); }
-
-function methodChip(method) {
-  const cash = isCashMethod(method);
-  const label = cash ? 'Cash' : (method && /momo|mobile/i.test(method) ? 'MoMo' : (method || '—'));
-  return `<span class="method-chip ${cash ? 'cash' : 'momo'}">${cash ? '💵' : '📱'} ${label}</span>`;
-}
-
-function statusSelect(o) {
-  const opts = FULFILMENT_STATUSES.map(s =>
-    `<option value="${s}" ${s === o.orderStatus ? 'selected' : ''}>${s.charAt(0).toUpperCase() + s.slice(1)}</option>`
-  ).join('');
-  return `<select class="status-select" onchange="updateOrderStatus('${o.orderNumber}', this)">${opts}</select>`;
-}
-
 async function loadOrders() {
   try {
     const res = await fetch(`${API_BASE}/orders`, { headers: { Authorization: `Bearer ${token}` } });
@@ -719,73 +687,19 @@ async function loadOrders() {
     const tbody = document.getElementById('ordersBody');
     const list = Array.isArray(data) ? data : data.orders || [];
     if (!list.length) {
-      tbody.innerHTML = '<tr><td colspan="8" class="empty">No orders found.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" class="empty">No orders found.</td></tr>';
       return;
     }
     tbody.innerHTML = list.map(o => `<tr>
       <td><strong>${o.orderNumber}</strong></td>
       <td>${o.customerName}<div style="font-size:11px;color:var(--muted);">${o.customerPhone || ''}</div></td>
       <td>${(o.totalRwf || 0).toLocaleString()} FRW</td>
-      <td>${methodChip(o.paymentMethod)}</td>
       <td><span class="badge ${o.paymentStatus}">${o.paymentStatus || 'pending'}</span></td>
       <td><span class="badge ${o.orderStatus}">${o.orderStatus || 'pending'}</span></td>
       <td>${o.createdAt ? new Date(o.createdAt).toLocaleDateString() : '-'}</td>
-      <td><div class="order-actions">
-        ${o.paymentStatus === 'paid'
-          ? '<span class="paid-check">✓ Paid</span>'
-          : `<button class="btn btn-teal btn-sm" onclick="confirmPayment('${o.orderNumber}', this)">✓ Confirm paid</button>`}
-        ${statusSelect(o)}
-      </div></td>
     </tr>`).join('');
   } catch (e) {
     showToast('⚠️ ' + e.message, true);
-  }
-}
-
-// Admin manually marks an order's payment as received — this is how cash
-// (pay on delivery/pickup) orders get confirmed, and also how MoMo sandbox
-// orders get confirmed since no real webhook will ever fire for those.
-async function confirmPayment(orderNumber, btnEl, fromDashboard) {
-  if (!confirm(`Confirm that payment has been received for order ${orderNumber}?\n\nThis will mark the order as paid & confirmed, and notify the customer.`)) return;
-  const originalText = btnEl.textContent;
-  btnEl.disabled = true;
-  btnEl.textContent = 'Confirming…';
-  try {
-    const res = await fetch(`${API_BASE}/orders/${orderNumber}/confirm-payment`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({}),
-    });
-    if (res.status === 401) { logout(); return; }
-    const result = await res.json();
-    if (!res.ok) throw new Error(result.error || 'Failed to confirm payment');
-    showToast(result.alreadyConfirmed ? 'Already confirmed.' : `✓ ${orderNumber} marked as paid.`);
-    if (fromDashboard) loadDashboard(); else { loadOrders(); loadDashboard(); }
-  } catch (e) {
-    showToast('⚠️ ' + e.message, true);
-    btnEl.disabled = false;
-    btnEl.textContent = originalText;
-  }
-}
-
-async function updateOrderStatus(orderNumber, selectEl) {
-  const orderStatus = selectEl.value;
-  selectEl.disabled = true;
-  try {
-    const res = await fetch(`${API_BASE}/orders/${orderNumber}/status`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ orderStatus }),
-    });
-    if (res.status === 401) { logout(); return; }
-    const result = await res.json();
-    if (!res.ok) throw new Error(result.error || 'Failed to update status');
-    showToast(`✓ ${orderNumber} → ${orderStatus}`);
-    loadOrders();
-  } catch (e) {
-    showToast('⚠️ ' + e.message, true);
-  } finally {
-    selectEl.disabled = false;
   }
 }
 

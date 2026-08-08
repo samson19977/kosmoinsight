@@ -213,7 +213,6 @@ router.get('/:orderNumber/status', async (req: Request, res: Response): Promise<
       orderNumber: order.orderNumber,
       orderStatus: order.orderStatus,
       paymentStatus: order.paymentStatus,
-      paymentMethod: order.paymentMethod,
       total: order.totalRwf,
       createdAt: order.createdAt,
     });
@@ -248,11 +247,6 @@ router.get('/', requireAdmin, async (_req: Request, res: Response): Promise<void
 });
 
 // PATCH /api/orders/:orderNumber/confirm-payment (admin action)
-// Used for both: (a) cash-on-delivery/pickup orders, where there is no
-// automated gateway callback and the admin is confirming they physically
-// received the money, and (b) MTN MoMo sandbox orders, where no real
-// webhook will ever land, so the admin confirms manually after verifying
-// the transaction on their phone.
 router.patch('/:orderNumber/confirm-payment', requireAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
     const { orderNumber } = req.params;
@@ -264,36 +258,15 @@ router.patch('/:orderNumber/confirm-payment', requireAdmin, async (req: Request,
       return;
     }
 
-    if (order.orderStatus === 'cancelled') {
-      res.status(409).json({ error: 'This order was cancelled and cannot be confirmed.' });
-      return;
-    }
-
-    if (order.paymentStatus === 'paid') {
-      res.json({ success: true, alreadyConfirmed: true, message: 'This order was already marked as paid.' });
-      return;
-    }
-
-    const now = new Date();
     await db
       .update(orders)
       .set({
         paymentStatus: 'paid',
         orderStatus: 'confirmed',
-        momoReference: momoReference || order.momoReference || null,
-        updatedAt: now,
+        momoReference: momoReference || null,
+        updatedAt: new Date(),
       })
       .where(eq(orders.id, order.id));
-
-    // Keep the payments ledger in sync too, if a row already exists for this order
-    // (e.g. a MoMo push was initiated). Cash orders may not have one — that's fine.
-    const [payment] = await db.select().from(payments).where(eq(payments.orderId, order.id));
-    if (payment && payment.status !== 'paid') {
-      await db
-        .update(payments)
-        .set({ status: 'paid', paidAt: now, notes: 'Confirmed manually by admin', updatedAt: now })
-        .where(eq(payments.id, payment.id));
-    }
 
     if (order.customerEmail) {
       const items = await db.select().from(orderItems).where(eq(orderItems.orderId, order.id));
@@ -302,7 +275,7 @@ router.patch('/:orderNumber/confirm-payment', requireAdmin, async (req: Request,
         customerEmail: order.customerEmail,
         orderNumber: order.orderNumber,
         amountRwf: order.totalRwf,
-        paidAt: now,
+        paidAt: new Date(),
         items: items.map((i) => ({
           name: i.productName,
           quantity: i.quantity,
@@ -312,12 +285,7 @@ router.patch('/:orderNumber/confirm-payment', requireAdmin, async (req: Request,
       }).catch((err) => console.error('Receipt email error (non-fatal):', err));
     }
 
-    res.json({
-      success: true,
-      message: 'Payment confirmed and customer notified.',
-      orderStatus: 'confirmed',
-      paymentStatus: 'paid',
-    });
+    res.json({ success: true, message: 'Payment confirmed and customer notified.' });
   } catch (error) {
     console.error('Confirm payment error:', error);
     res.status(500).json({ error: 'Failed to confirm payment' });
@@ -341,14 +309,7 @@ router.patch('/:orderNumber/status', requireAdmin, async (req: Request, res: Res
       return;
     }
 
-    const updates: Record<string, unknown> = { orderStatus, updatedAt: new Date() };
-    // Cancelling an order that was never paid also closes out its payment state,
-    // so it stops showing up as "awaiting confirmation" on the dashboard.
-    if (orderStatus === 'cancelled' && order.paymentStatus !== 'paid') {
-      updates.paymentStatus = 'failed';
-    }
-
-    await db.update(orders).set(updates).where(eq(orders.id, order.id));
+    await db.update(orders).set({ orderStatus, updatedAt: new Date() }).where(eq(orders.id, order.id));
     res.json({ success: true, message: `Order marked as ${orderStatus}.` });
   } catch (error) {
     console.error('Update order status error:', error);

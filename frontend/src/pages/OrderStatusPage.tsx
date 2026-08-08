@@ -38,7 +38,6 @@ const OrderStatusPage: React.FC = () => {
   React.useEffect(() => { if (paramOrder) lookup(); }, []);
 
   const status = result ? (statusConfig[result.orderStatus] ?? statusConfig['pending']) : null;
-  const isCash = /^cash/i.test(String(result?.paymentMethod ?? ''));
 
   return (
     <div className="min-h-screen bg-gray-50 py-12">
@@ -113,17 +112,10 @@ const OrderStatusPage: React.FC = () => {
                   ))}
                 </div>
 
-                {result.paymentStatus !== 'paid' && !isCash && (
+                {result.paymentStatus !== 'paid' && (
                   <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm">
                     <p className="font-semibold text-amber-800 mb-1">⏳ Payment still pending</p>
                     <p className="text-amber-700 text-xs">Dial <strong className="font-mono">*182*8*1*675566#</strong> and use your order number <strong>{result.orderNumber}</strong> as reference.</p>
-                  </div>
-                )}
-
-                {result.paymentStatus !== 'paid' && isCash && (
-                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm">
-                    <p className="font-semibold text-amber-800 mb-1">⏳ Awaiting cash payment</p>
-                    <p className="text-amber-700 text-xs">You chose to pay in cash. This order will move to <strong>Confirmed</strong> once we've received your payment.</p>
                   </div>
                 )}
 
