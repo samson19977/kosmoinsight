@@ -54,14 +54,21 @@ router.get('/', async (_req: Request, res: Response): Promise<void> => {
     const averageOrderValueRwf =
       paidOrders.length > 0 ? Math.round(revenueAllTime / paidOrders.length) : 0;
 
+    // Money sitting in unconfirmed orders — mainly cash orders awaiting pickup/delivery
+    // and MoMo sandbox orders awaiting manual confirmation. Surfaced separately from
+    // "revenue" (which only counts confirmed-paid orders) so it's clear the money
+    // isn't lost, just not yet confirmed.
+    const unpaidOrders = allOrders.filter(
+      (o) => o.paymentStatus === 'pending' || o.paymentStatus === 'pending_manual'
+    );
+    const pendingRevenueRwf = unpaidOrders.reduce((sum, o) => sum + (o.totalRwf || 0), 0);
+
     // ---- Counts ----
     const [{ count: totalCustomers }] = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(customers);
 
-    const pendingPaymentConfirmations = allOrders.filter(
-      (o) => o.paymentStatus === 'pending' || o.paymentStatus === 'pending_manual'
-    ).length;
+    const pendingPaymentConfirmations = unpaidOrders.length;
 
     // ---- Revenue trend (last 14 days) ----
     const trendMap = new Map<string, number>();
@@ -101,6 +108,7 @@ router.get('/', async (_req: Request, res: Response): Promise<void> => {
       customerName: o.customerName,
       totalRwf: o.totalRwf,
       paymentStatus: o.paymentStatus,
+      paymentMethod: o.paymentMethod,
       createdAt: o.createdAt,
     }));
 
@@ -114,6 +122,7 @@ router.get('/', async (_req: Request, res: Response): Promise<void> => {
         customerName: o.customerName,
         customerPhone: o.customerPhone,
         totalRwf: o.totalRwf,
+        paymentMethod: o.paymentMethod,
       }));
 
     res.json({
@@ -124,6 +133,7 @@ router.get('/', async (_req: Request, res: Response): Promise<void> => {
         last30Days: revenueLast30Days,
         allTime: revenueAllTime,
         averageOrderValueRwf,
+        pending: pendingRevenueRwf,
       },
       counts: {
         totalOrders: allOrders.length,

@@ -504,7 +504,10 @@ function renderDashboard(d) {
     <div class="kpi"><div class="label">Avg. order value</div><div class="value">${fmt(d.revenue.averageOrderValueRwf)}</div></div>
     <div class="kpi"><div class="label">Total orders</div><div class="value">${d.counts.totalOrders}</div></div>
     <div class="kpi"><div class="label">Customers</div><div class="value">${d.counts.totalCustomers}</div></div>
-    <div class="kpi"><div class="label">Awaiting confirmation</div><div class="value amber">${d.counts.pendingPaymentConfirmations}</div></div>
+    <div class="kpi" title="Orders placed but not yet confirmed as paid — confirm them below to move this into revenue">
+      <div class="label">Pending revenue (${d.counts.pendingPaymentConfirmations} orders)</div>
+      <div class="value amber">${fmt(d.revenue.pending)}</div>
+    </div>
   `;
 
   // Trend chart
@@ -531,12 +534,13 @@ function renderDashboard(d) {
   if (!d.recentOrders.length) { ro.innerHTML = '<p class="empty">No orders yet.</p>'; }
   else {
     ro.innerHTML = `<table>
-      <thead><tr><th>Order #</th><th>Customer</th><th>Total</th><th>Payment</th><th>Date</th></tr></thead>
+      <thead><tr><th>Order #</th><th>Customer</th><th>Total</th><th>Method</th><th>Payment</th><th>Date</th></tr></thead>
       <tbody>` +
       d.recentOrders.map(o => `<tr>
         <td><strong>${o.orderNumber}</strong></td>
         <td>${o.customerName}</td>
         <td>${fmt(o.totalRwf)}</td>
+        <td>${methodChip(o.paymentMethod)}</td>
         <td><span class="badge ${o.paymentStatus}">${o.paymentStatus}</span></td>
         <td>${new Date(o.createdAt).toLocaleDateString()}</td>
       </tr>`).join('') + `</tbody></table>`;
@@ -549,12 +553,13 @@ function renderDashboard(d) {
   if (!d.pendingConfirmation.length) { pc.innerHTML = '<p class="empty">No pending confirmations.</p>'; }
   else {
     pc.innerHTML = `<table>
-      <thead><tr><th>Order #</th><th>Customer</th><th>Phone</th><th>Total</th><th>Action</th></tr></thead>
+      <thead><tr><th>Order #</th><th>Customer</th><th>Phone</th><th>Method</th><th>Total</th><th>Action</th></tr></thead>
       <tbody>` +
       d.pendingConfirmation.map(o => `<tr>
         <td><strong>${o.orderNumber}</strong></td>
         <td>${o.customerName}</td>
         <td>${o.customerPhone}</td>
+        <td>${methodChip(o.paymentMethod)}</td>
         <td>${fmt(o.totalRwf)}</td>
         <td><button class="btn btn-teal btn-sm" onclick="confirmPayment('${o.orderNumber}', this, true)">✓ Confirm paid</button></td>
       </tr>`).join('') + `</tbody></table>`;
