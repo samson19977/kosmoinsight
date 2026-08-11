@@ -8,7 +8,9 @@ import { eq } from 'drizzle-orm';
 import { testDatabaseConnection, db } from './config/database';
 import { EmailService } from './services/email.service';
 import { InventoryService } from './services/inventory.service';
-import { orders, payments, orderItems } from './db/schema';
+import { orders, payments, orderItems, loanTransactions } from './db/schema';
+import { LoanService } from './services/loan.service';
+import { startLoanAutomation } from './jobs/scheduler';
 
 import productsRouter from './routes/products';
 import ordersRouter from './routes/orders';
@@ -16,6 +18,7 @@ import paymentsRouter from './routes/payments';
 import adminAuthRouter from './routes/admin-auth';
 import adminDashboardRouter from './routes/admin-dashboard';
 import adminInventoryRouter from './routes/admin-inventory';
+import loansRouter from './routes/loans';
 
 // Load environment variables first
 dotenv.config();
@@ -99,6 +102,7 @@ app.use('/api/payments', paymentsRouter);
 app.use('/api/admin', adminAuthRouter);
 app.use('/api/admin/dashboard', adminDashboardRouter);
 app.use('/api/admin/inventory', adminInventoryRouter);
+app.use('/api/admin/loans', loansRouter);
 
 // ============================================
 // MoMo Webhook
@@ -143,7 +147,44 @@ app.post('/api/webhooks/momo', async (req, res) => {
       .where(eq(payments.momoTransactionId, referenceId));
 
     if (!payment) {
-      console.warn(`Webhook: no payment row found for referenceId=${referenceId}`);
+      // Not a one-time order payment — check if it's a PayGo loan
+      // installment collection instead. Real-time webhook confirmation
+      // when MTN delivers it; the 3-minute reconciliation job is the
+      // fallback for sandbox/unreliable-webhook environments either way.
+      const [loanTxn] = await db
+        .select()
+        .from(loanTransactions)
+        .where(eq(loanTransactions.momoTransactionId, referenceId));
+
+      if (!loanTxn) {
+        console.warn(`Webhook: no payment or loan transaction found for referenceId=${referenceId}`);
+        return;
+      }
+
+      if (loanTxn.status !== 'pending') {
+        console.log(`Webhook: loan transaction ${loanTxn.id} already in terminal state "${loanTxn.status}" — skipping`);
+        return;
+      }
+
+      if (rawStatus === 'SUCCESSFUL') {
+        await LoanService.recordLoanPayment({
+          loanId: loanTxn.loanId,
+          amountRwf: loanTxn.amountRwf,
+          paymentMethod: 'momo',
+          momoTransactionId: referenceId,
+          note: 'Auto-confirmed via MoMo webhook',
+        });
+        await db.update(loanTransactions).set({ status: 'completed' }).where(eq(loanTransactions.id, loanTxn.id));
+        console.log(`✅ Webhook: loan ${loanTxn.loanId} payment of ${loanTxn.amountRwf} RWF auto-allocated`);
+      } else if (rawStatus === 'FAILED') {
+        await db
+          .update(loanTransactions)
+          .set({ status: 'failed', note: `${loanTxn.note || ''} — declined via webhook (${payload.reason || 'unspecified'})`.trim() })
+          .where(eq(loanTransactions.id, loanTxn.id));
+        console.log(`❌ Webhook: loan ${loanTxn.loanId} MoMo collection FAILED`);
+      } else {
+        console.log(`Webhook: unhandled status "${rawStatus}" for loan transaction ${loanTxn.id} — leaving pending for reconciliation job`);
+      }
       return;
     }
 
@@ -329,8 +370,29 @@ async function startServer() {
     PATCH /api/admin/inventory/:id/stock
     PATCH /api/admin/inventory/:id/threshold
     GET  /api/admin/inventory/:id/movements
+    POST /api/admin/loans                  ← create PayGo loan + schedule
+    GET  /api/admin/loans                  ← list loans (?status=)
+    GET  /api/admin/loans/:id              ← loan + installments + ledger
+    GET  /api/admin/loans/:id/collectible  ← what's owed right now
+    POST /api/admin/loans/:id/pay          ← record cash/bank payment (auto-allocated)
+    POST /api/admin/loans/:id/collect      ← push MoMo request-to-pay (auto-allocated on success)
+    POST /api/admin/loans/installments/pay ← record payment on ONE installment (manual override)
+    POST /api/admin/loans/sweep-overdue    ← flag overdue + apply penalties + auto-default
+    POST /api/admin/loans/reconcile-momo   ← manually trigger MoMo reconciliation
+    GET  /api/admin/loans/metrics/repayment-rate
+    GET  /api/admin/loans/metrics/cac-ltv
+
+  🤖 PayGo automation: daily overdue sweep + 3-min MoMo reconciliation running in background
       `);
     });
+
+    // Background automation: overdue/penalty sweep + MoMo reconciliation.
+    // Set DISABLE_LOAN_AUTOMATION=true to turn off (e.g. if running
+    // multiple instances behind a load balancer and doing this via an
+    // external scheduled job hitting /sweep-overdue and /reconcile-momo instead).
+    if (process.env.DISABLE_LOAN_AUTOMATION !== 'true') {
+      startLoanAutomation();
+    }
   } catch (error) {
     console.error('❌ Server startup failed:', error);
     process.exit(1);

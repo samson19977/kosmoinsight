@@ -33,6 +33,8 @@ export const customers = pgTable('customers', {
   district: varchar('district', { length: 100 }),
   village: varchar('village', { length: 100 }),
   nationalId: varchar('national_id', { length: 20 }),
+  acquisitionChannel: varchar('acquisition_channel', { length: 50 }), // e.g. 'field-agent', 'referral', 'school-partnership'
+  acquisitionCostRwf: integer('acquisition_cost_rwf'), // cost to acquire this customer, for CAC calculations
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),
 });
@@ -113,6 +115,72 @@ export const stockMovements = pgTable('stock_movements', {
   reason: varchar('reason', { length: 100 }).notNull(), // 'sale', 'restock', 'adjustment', 'correction'
   orderId: integer('order_id').references(() => orders.id),
   adminId: integer('admin_id').references(() => admins.id),
+  note: text('note'),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// ============================================
+// LOANS TABLE (PayGo installment plans)
+// One row per installment plan, linked back to the order that created it.
+// This is the queryable "loan state" a raw wallet-ledger export doesn't give you.
+// ============================================
+export const loans = pgTable('loans', {
+  id: serial('id').primaryKey(),
+  orderId: integer('order_id').references(() => orders.id).notNull(),
+  customerId: integer('customer_id').references(() => customers.id).notNull(),
+  principalRwf: integer('principal_rwf').notNull(), // financed amount (total - down payment)
+  downPaymentRwf: integer('down_payment_rwf').notNull().default(0),
+  interestRateBps: integer('interest_rate_bps').notNull().default(0), // basis points, e.g. 1500 = 15%
+  termMonths: integer('term_months').notNull(),
+  status: varchar('status', { length: 30 }).notNull().default('active'), // active | completed | defaulted | cancelled
+  guarantorName: varchar('guarantor_name', { length: 100 }), // school/NGO/co-signer, optional
+  guarantorPhone: varchar('guarantor_phone', { length: 20 }),
+  acquisitionChannel: varchar('acquisition_channel', { length: 50 }), // for CAC/LTV attribution
+  startDate: timestamp('start_date').defaultNow(),
+  expectedPayoffDate: timestamp('expected_payoff_date'),
+  completedAt: timestamp('completed_at'),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// ============================================
+// INSTALLMENTS TABLE
+// One row per scheduled payment on a loan. Repayment rate is a direct
+// query against this table (SUM(amount_paid_rwf) / SUM(amount_due_rwf)),
+// no ledger reconstruction needed.
+// ============================================
+export const installments = pgTable('installments', {
+  id: serial('id').primaryKey(),
+  loanId: integer('loan_id').references(() => loans.id).notNull(),
+  installmentNumber: integer('installment_number').notNull(), // 1-indexed
+  dueDate: timestamp('due_date').notNull(),
+  amountDueRwf: integer('amount_due_rwf').notNull(),
+  amountPaidRwf: integer('amount_paid_rwf').notNull().default(0),
+  penaltyRwf: integer('penalty_rwf').notNull().default(0),
+  status: varchar('status', { length: 30 }).notNull().default('upcoming'), // upcoming | due | paid | overdue | waived
+  paidAt: timestamp('paid_at'),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// ============================================
+// LOAN TRANSACTIONS TABLE (audit trail)
+// Keeps the ledger idea from a wallet-style export, but scoped to a loan
+// instead of a free-floating customer wallet.
+// ============================================
+export const loanTransactions = pgTable('loan_transactions', {
+  id: serial('id').primaryKey(),
+  loanId: integer('loan_id').references(() => loans.id).notNull(),
+  installmentId: integer('installment_id').references(() => installments.id),
+  type: varchar('type', { length: 30 }).notNull(), // disbursement | payment | penalty | waiver
+  amountRwf: integer('amount_rwf').notNull(),
+  paymentMethod: varchar('payment_method', { length: 50 }), // momo | cash | bank
+  momoTransactionId: varchar('momo_transaction_id', { length: 100 }),
+  // 'completed' for immediate entries (cash/bank/manual, or a settled momo push).
+  // 'pending' while a MoMo request-to-pay is awaiting customer approval —
+  // the reconciliation job flips this to 'completed'/'failed' automatically.
+  status: varchar('status', { length: 20 }).notNull().default('completed'),
+  adminId: integer('admin_id').references(() => admins.id), // set when an admin recorded it manually
   note: text('note'),
   createdAt: timestamp('created_at').defaultNow(),
 });

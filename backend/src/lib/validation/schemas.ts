@@ -108,9 +108,56 @@ export const momoPaymentSchema = z.object({
   description: z.string().optional(),
 });
 
+// ============================================
+// LOAN CREATION SCHEMA (PayGo installment plan)
+// ============================================
+export const loanSchema = z.object({
+  orderId: z.number().positive('Order ID is required'),
+  customerId: z.number().positive('Customer ID is required'),
+  principalRwf: z.number()
+    .int('Principal must be a whole number')
+    .positive('Principal must be greater than 0'),
+  downPaymentRwf: z.number()
+    .int('Down payment must be a whole number')
+    .min(0, 'Down payment cannot be negative')
+    .default(0),
+  interestRateBps: z.number()
+    .int('Interest rate must be a whole number of basis points')
+    .min(0, 'Interest rate cannot be negative')
+    .max(10000, 'Interest rate cannot exceed 100%')
+    .default(0),
+  termMonths: z.number()
+    .int('Term must be a whole number of months')
+    .min(1, 'Term must be at least 1 month')
+    .max(60, 'Term cannot exceed 60 months'),
+  guarantorName: z.string().max(100).optional().or(z.literal('')),
+  guarantorPhone: z.string()
+    .regex(/^(\+250|0)[78][0-9]{8}$/, 'Guarantor phone must be a valid Rwandan number')
+    .optional()
+    .or(z.literal('')),
+  acquisitionChannel: z.string().max(50).optional().or(z.literal('')),
+  startDate: z.string().datetime().optional(), // ISO string, defaults to now in the service
+});
+
+// ============================================
+// INSTALLMENT PAYMENT SCHEMA
+// Records a payment (full or partial) against a specific installment.
+// ============================================
+export const installmentPaymentSchema = z.object({
+  installmentId: z.number().positive('Installment ID is required'),
+  amountRwf: z.number()
+    .int('Amount must be a whole number')
+    .positive('Amount must be greater than 0'),
+  paymentMethod: z.enum(['momo', 'cash', 'bank']),
+  momoTransactionId: z.string().max(100).optional(),
+  note: z.string().max(500).optional(),
+});
+
 // Types
 export type CustomerInput = z.infer<typeof customerSchema>;
 export type OrderInput = z.infer<typeof orderSchema>;
 export type TokenInput = z.infer<typeof tokenSchema>;
 export type PaymentInput = z.infer<typeof paymentSchema>;
 export type MomoPaymentInput = z.infer<typeof momoPaymentSchema>;
+export type LoanInput = z.infer<typeof loanSchema>;
+export type InstallmentPaymentInput = z.infer<typeof installmentPaymentSchema>;

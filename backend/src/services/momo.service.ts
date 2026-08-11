@@ -8,7 +8,7 @@ interface MomoPaymentRequest {
   description?: string;
 }
 
-interface MomoPaymentResult {
+export interface MomoPaymentResult {
   success: boolean;
   transactionId?: string;
   status?: string;
