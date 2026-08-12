@@ -33,8 +33,9 @@ export const customers = pgTable('customers', {
   district: varchar('district', { length: 100 }),
   village: varchar('village', { length: 100 }),
   nationalId: varchar('national_id', { length: 20 }),
-  acquisitionChannel: varchar('acquisition_channel', { length: 50 }), // e.g. 'field-agent', 'referral', 'school-partnership'
-  acquisitionCostRwf: integer('acquisition_cost_rwf'), // cost to acquire this customer, for CAC calculations
+  // Acquisition tracking — feeds CAC (cost) against LTV (sum of payments/installments).
+  acquisitionChannel: varchar('acquisition_channel', { length: 50 }), // e.g. 'field-agent', 'school-partner', 'referral', 'walk-in'
+  acquisitionCostRwf: integer('acquisition_cost_rwf'), // one-time cost to acquire this customer, entered manually by admin
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),
 });
@@ -92,6 +93,77 @@ export const payments = pgTable('payments', {
 });
 
 // ============================================
+// LOANS TABLE (PayGo installment plans)
+// One row per installment plan taken out against an order — replaces the
+// free-floating wallet model (Terra/WaaS) with a queryable loan state, so
+// repayment rate is a direct aggregate over `installments` instead of a
+// ledger reconstruction.
+// ============================================
+export const loans = pgTable('loans', {
+  id: serial('id').primaryKey(),
+  loanNumber: varchar('loan_number', { length: 50 }).notNull().unique(),
+  orderId: integer('order_id').references(() => orders.id),
+  customerId: integer('customer_id').references(() => customers.id).notNull(),
+  principalRwf: integer('principal_rwf').notNull(), // total price financed (excludes down payment)
+  downPaymentRwf: integer('down_payment_rwf').default(0),
+  interestRateBps: integer('interest_rate_bps').default(0), // basis points, flat rate over the term (e.g. 500 = 5%)
+  termMonths: integer('term_months').notNull(),
+  totalPayableRwf: integer('total_payable_rwf').notNull(), // principal + interest, what installments sum to
+  status: varchar('status', { length: 20 }).default('active'), // active | completed | defaulted | cancelled
+  guarantorType: varchar('guarantor_type', { length: 20 }).default('none'), // none | school | ngo | individual
+  guarantorName: varchar('guarantor_name', { length: 100 }),
+  guarantorPhone: varchar('guarantor_phone', { length: 20 }),
+  disbursedAt: timestamp('disbursed_at').defaultNow(),
+  expectedPayoffDate: timestamp('expected_payoff_date'),
+  completedAt: timestamp('completed_at'),
+  notes: text('notes'),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// ============================================
+// INSTALLMENTS TABLE
+// One row per scheduled payment on a loan. Repayment rate for any slice
+// (a loan, a district, a cohort, all-time) is:
+//   SUM(amount_paid_rwf) / SUM(amount_due_rwf)
+// computed directly from this table — no ledger walk required.
+// ============================================
+export const installments = pgTable('installments', {
+  id: serial('id').primaryKey(),
+  loanId: integer('loan_id').references(() => loans.id).notNull(),
+  installmentNumber: integer('installment_number').notNull(), // 1-indexed position in the schedule
+  dueDate: timestamp('due_date').notNull(),
+  amountDueRwf: integer('amount_due_rwf').notNull(),
+  amountPaidRwf: integer('amount_paid_rwf').default(0),
+  penaltyRwf: integer('penalty_rwf').default(0), // accrued late-payment penalty, tracked separately from principal/interest
+  status: varchar('status', { length: 20 }).default('upcoming'), // upcoming | due | paid | partial | overdue
+  paidAt: timestamp('paid_at'),
+  reminderSentAt: timestamp('reminder_sent_at'), // gates the pre-due-date reminder email so it only fires once
+  overdueAlertSentAt: timestamp('overdue_alert_sent_at'), // gates the overdue email so it only fires once
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// ============================================
+// LOAN TRANSACTIONS TABLE (audit trail)
+// Keeps the ledger idea Terra used, but scoped to a loan instead of a
+// free-floating wallet, so every entry ties back to a queryable loan/installment.
+// ============================================
+export const loanTransactions = pgTable('loan_transactions', {
+  id: serial('id').primaryKey(),
+  loanId: integer('loan_id').references(() => loans.id).notNull(),
+  installmentId: integer('installment_id').references(() => installments.id),
+  type: varchar('type', { length: 20 }).notNull(), // disbursement | payment | penalty | waiver
+  amountRwf: integer('amount_rwf').notNull(),
+  method: varchar('method', { length: 30 }), // momo | cash | bank | agent
+  phone: varchar('phone', { length: 20 }),
+  momoTransactionId: varchar('momo_transaction_id', { length: 100 }),
+  adminId: integer('admin_id').references(() => admins.id),
+  note: text('note'),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// ============================================
 // ADMINS TABLE (dashboard / back-office login)
 // ============================================
 export const admins = pgTable('admins', {
@@ -115,72 +187,6 @@ export const stockMovements = pgTable('stock_movements', {
   reason: varchar('reason', { length: 100 }).notNull(), // 'sale', 'restock', 'adjustment', 'correction'
   orderId: integer('order_id').references(() => orders.id),
   adminId: integer('admin_id').references(() => admins.id),
-  note: text('note'),
-  createdAt: timestamp('created_at').defaultNow(),
-});
-
-// ============================================
-// LOANS TABLE (PayGo installment plans)
-// One row per installment plan, linked back to the order that created it.
-// This is the queryable "loan state" a raw wallet-ledger export doesn't give you.
-// ============================================
-export const loans = pgTable('loans', {
-  id: serial('id').primaryKey(),
-  orderId: integer('order_id').references(() => orders.id).notNull(),
-  customerId: integer('customer_id').references(() => customers.id).notNull(),
-  principalRwf: integer('principal_rwf').notNull(), // financed amount (total - down payment)
-  downPaymentRwf: integer('down_payment_rwf').notNull().default(0),
-  interestRateBps: integer('interest_rate_bps').notNull().default(0), // basis points, e.g. 1500 = 15%
-  termMonths: integer('term_months').notNull(),
-  status: varchar('status', { length: 30 }).notNull().default('active'), // active | completed | defaulted | cancelled
-  guarantorName: varchar('guarantor_name', { length: 100 }), // school/NGO/co-signer, optional
-  guarantorPhone: varchar('guarantor_phone', { length: 20 }),
-  acquisitionChannel: varchar('acquisition_channel', { length: 50 }), // for CAC/LTV attribution
-  startDate: timestamp('start_date').defaultNow(),
-  expectedPayoffDate: timestamp('expected_payoff_date'),
-  completedAt: timestamp('completed_at'),
-  createdAt: timestamp('created_at').defaultNow(),
-  updatedAt: timestamp('updated_at').defaultNow(),
-});
-
-// ============================================
-// INSTALLMENTS TABLE
-// One row per scheduled payment on a loan. Repayment rate is a direct
-// query against this table (SUM(amount_paid_rwf) / SUM(amount_due_rwf)),
-// no ledger reconstruction needed.
-// ============================================
-export const installments = pgTable('installments', {
-  id: serial('id').primaryKey(),
-  loanId: integer('loan_id').references(() => loans.id).notNull(),
-  installmentNumber: integer('installment_number').notNull(), // 1-indexed
-  dueDate: timestamp('due_date').notNull(),
-  amountDueRwf: integer('amount_due_rwf').notNull(),
-  amountPaidRwf: integer('amount_paid_rwf').notNull().default(0),
-  penaltyRwf: integer('penalty_rwf').notNull().default(0),
-  status: varchar('status', { length: 30 }).notNull().default('upcoming'), // upcoming | due | paid | overdue | waived
-  paidAt: timestamp('paid_at'),
-  createdAt: timestamp('created_at').defaultNow(),
-  updatedAt: timestamp('updated_at').defaultNow(),
-});
-
-// ============================================
-// LOAN TRANSACTIONS TABLE (audit trail)
-// Keeps the ledger idea from a wallet-style export, but scoped to a loan
-// instead of a free-floating customer wallet.
-// ============================================
-export const loanTransactions = pgTable('loan_transactions', {
-  id: serial('id').primaryKey(),
-  loanId: integer('loan_id').references(() => loans.id).notNull(),
-  installmentId: integer('installment_id').references(() => installments.id),
-  type: varchar('type', { length: 30 }).notNull(), // disbursement | payment | penalty | waiver
-  amountRwf: integer('amount_rwf').notNull(),
-  paymentMethod: varchar('payment_method', { length: 50 }), // momo | cash | bank
-  momoTransactionId: varchar('momo_transaction_id', { length: 100 }),
-  // 'completed' for immediate entries (cash/bank/manual, or a settled momo push).
-  // 'pending' while a MoMo request-to-pay is awaiting customer approval —
-  // the reconciliation job flips this to 'completed'/'failed' automatically.
-  status: varchar('status', { length: 20 }).notNull().default('completed'),
-  adminId: integer('admin_id').references(() => admins.id), // set when an admin recorded it manually
   note: text('note'),
   createdAt: timestamp('created_at').defaultNow(),
 });

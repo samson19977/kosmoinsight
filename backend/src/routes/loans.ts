@@ -1,100 +1,222 @@
 import { Router, Request, Response } from 'express';
 import { eq, desc } from 'drizzle-orm';
-import { db } from '../config/database';
-import { loans, customers } from '../db/schema';
 import { validate } from '../middleware/validate';
+import { loanSchema, installmentPaymentSchema, installmentAdjustmentSchema } from '../lib/validation/schemas';
 import { requireAdmin, AuthedRequest } from '../middleware/auth';
-import { loanSchema, installmentPaymentSchema } from '../lib/validation/schemas';
+import { db } from '../config/database';
+import { loans, installments, loanTransactions, customers } from '../db/schema';
 import { LoanService } from '../services/loan.service';
 
 const router = Router();
 
-// All loan/installment management is admin-only — this is back-office
-// PayGo administration, not a customer-facing storefront surface.
-router.use(requireAdmin);
-
 // ============================================
-// POST /api/admin/loans
-// Creates a PayGo loan for an existing order + generates its full
-// installment schedule in one step.
+// POST /api/admin/loans — create a new PayGo installment plan
 // ============================================
-router.post('/', validate(loanSchema), async (req: Request, res: Response): Promise<void> => {
+router.post('/', requireAdmin, validate(loanSchema), async (req: AuthedRequest, res: Response): Promise<void> => {
   try {
-    const { loan, installments: schedule } = await LoanService.createLoanWithSchedule(req.body);
-    res.status(201).json({ success: true, loan, installments: schedule });
+    const loan = await LoanService.createLoan({ ...req.body, adminId: req.admin?.id ?? null });
+    const schedule = await db.select().from(installments).where(eq(installments.loanId, loan.id));
+    res.status(201).json({ success: true, loan, schedule });
   } catch (error: any) {
     console.error('Create loan error:', error);
-    res.status(500).json({ error: error.message || 'Failed to create loan' });
+    res.status(400).json({ error: error.message || 'Failed to create loan' });
   }
 });
 
 // ============================================
-// GET /api/admin/loans
-// Lists loans with customer name/phone attached, most recent first.
-// Optional ?status=active|completed|defaulted|cancelled filter.
+// GET /api/admin/loans — list all loans (most recent first), lightly filterable
 // ============================================
-router.get('/', async (req: Request, res: Response): Promise<void> => {
+router.get('/', requireAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
     const { status } = req.query;
+    let allLoans = await db.select().from(loans).orderBy(desc(loans.createdAt));
+    if (status && typeof status === 'string') {
+      allLoans = allLoans.filter((l) => l.status === status);
+    }
 
-    const query = db
-      .select({
-        id: loans.id,
-        orderId: loans.orderId,
-        customerId: loans.customerId,
-        customerFirstName: customers.firstName,
-        customerLastName: customers.lastName,
-        customerPhone: customers.phone,
-        customerDistrict: customers.district,
-        principalRwf: loans.principalRwf,
-        downPaymentRwf: loans.downPaymentRwf,
-        interestRateBps: loans.interestRateBps,
-        termMonths: loans.termMonths,
-        status: loans.status,
-        startDate: loans.startDate,
-        expectedPayoffDate: loans.expectedPayoffDate,
-        createdAt: loans.createdAt,
-      })
-      .from(loans)
-      .innerJoin(customers, eq(loans.customerId, customers.id))
-      .orderBy(desc(loans.createdAt))
-      .$dynamic();
+    // Attach customer name + repayment progress per loan for the list view
+    const allInstallments = await db.select().from(installments);
+    const allCustomers = await db.select().from(customers);
 
-    const rows = status
-      ? await query.where(eq(loans.status, String(status)))
-      : await query;
+    const enriched = allLoans.map((loan) => {
+      const rows = allInstallments.filter((i) => i.loanId === loan.id);
+      const paidRwf = rows.reduce((s, i) => s + (i.amountPaidRwf || 0), 0);
+      const dueRwf = rows.reduce((s, i) => s + (i.amountDueRwf || 0), 0);
+      const overdueCount = rows.filter((i) => i.status === 'overdue').length;
+      const customer = allCustomers.find((c) => c.id === loan.customerId);
+      return {
+        ...loan,
+        customerName: customer ? `${customer.firstName} ${customer.lastName}` : null,
+        customerPhone: customer?.phone || null,
+        repaymentRatePercent: dueRwf > 0 ? Math.round((paidRwf / dueRwf) * 1000) / 10 : 0,
+        overdueInstallments: overdueCount,
+      };
+    });
 
-    res.json({ success: true, loans: rows });
+    res.json({ success: true, loans: enriched });
   } catch (error) {
     console.error('List loans error:', error);
-    res.status(500).json({ error: 'Failed to fetch loans' });
+    res.status(500).json({ error: 'Failed to load loans' });
   }
 });
 
 // ============================================
-// GET /api/admin/loans/metrics/repayment-rate
-// ?district=Kicukiro (optional)
+// GET /api/admin/loans/:loanNumber — full loan detail with schedule + transaction history
 // ============================================
-router.get('/metrics/repayment-rate', async (req: Request, res: Response): Promise<void> => {
+router.get('/:loanNumber', requireAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
-    const { district } = req.query;
-    const metrics = await LoanService.getRepaymentRate({ district: district ? String(district) : undefined });
-    res.json({ success: true, ...metrics });
+    const [loan] = await db.select().from(loans).where(eq(loans.loanNumber, req.params.loanNumber));
+    if (!loan) {
+      res.status(404).json({ error: 'Loan not found' });
+      return;
+    }
+    const [customer] = await db.select().from(customers).where(eq(customers.id, loan.customerId));
+    const schedule = (
+      await db.select().from(installments).where(eq(installments.loanId, loan.id))
+    ).sort((a, b) => a.installmentNumber - b.installmentNumber);
+    const transactions = await db
+      .select()
+      .from(loanTransactions)
+      .where(eq(loanTransactions.loanId, loan.id))
+      .orderBy(desc(loanTransactions.createdAt));
+
+    res.json({ success: true, loan, customer, schedule, transactions });
   } catch (error) {
-    console.error('Repayment rate error:', error);
-    res.status(500).json({ error: 'Failed to compute repayment rate' });
+    console.error('Loan detail error:', error);
+    res.status(500).json({ error: 'Failed to load loan' });
   }
 });
 
 // ============================================
-// GET /api/admin/loans/metrics/cac-ltv
-// ?channel=field-agent (optional)
+// POST /api/admin/loans/installments/:installmentId/pay — record a payment
 // ============================================
-router.get('/metrics/cac-ltv', async (req: Request, res: Response): Promise<void> => {
+router.post(
+  '/installments/:installmentId/pay',
+  requireAdmin,
+  validate(installmentPaymentSchema),
+  async (req: AuthedRequest, res: Response): Promise<void> => {
+    try {
+      const installmentId = Number(req.params.installmentId);
+      const result = await LoanService.recordPayment(installmentId, { ...req.body, adminId: req.admin?.id ?? null });
+      res.json({ success: true, ...result });
+    } catch (error: any) {
+      console.error('Record installment payment error:', error);
+      res.status(400).json({ error: error.message || 'Failed to record payment' });
+    }
+  }
+);
+
+// ============================================
+// POST /api/admin/loans/installments/:installmentId/penalty — manual penalty
+// ============================================
+router.post(
+  '/installments/:installmentId/penalty',
+  requireAdmin,
+  validate(installmentAdjustmentSchema),
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const installmentId = Number(req.params.installmentId);
+      await LoanService.applyPenalty(installmentId, req.body.amountRwf, req.body.note);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error('Apply penalty error:', error);
+      res.status(400).json({ error: error.message || 'Failed to apply penalty' });
+    }
+  }
+);
+
+// ============================================
+// POST /api/admin/loans/installments/:installmentId/waive — waive a penalty (goodwill/dispute resolution)
+// ============================================
+router.post(
+  '/installments/:installmentId/waive',
+  requireAdmin,
+  validate(installmentAdjustmentSchema),
+  async (req: AuthedRequest, res: Response): Promise<void> => {
+    try {
+      const installmentId = Number(req.params.installmentId);
+      const [installment] = await db.select().from(installments).where(eq(installments.id, installmentId));
+      if (!installment) {
+        res.status(404).json({ error: 'Installment not found' });
+        return;
+      }
+      const waiveAmount = Math.min(req.body.amountRwf, installment.penaltyRwf || 0);
+      await db
+        .update(installments)
+        .set({ penaltyRwf: (installment.penaltyRwf || 0) - waiveAmount, updatedAt: new Date() })
+        .where(eq(installments.id, installmentId));
+      await db.insert(loanTransactions).values({
+        loanId: installment.loanId,
+        installmentId: installment.id,
+        type: 'waiver',
+        amountRwf: waiveAmount,
+        adminId: req.admin?.id ?? null,
+        note: req.body.note || 'Penalty waived',
+      });
+      res.json({ success: true, waivedRwf: waiveAmount });
+    } catch (error: any) {
+      console.error('Waive penalty error:', error);
+      res.status(400).json({ error: error.message || 'Failed to waive penalty' });
+    }
+  }
+);
+
+// ============================================
+// PATCH /api/admin/loans/:loanNumber/cancel — cancel a loan (e.g. entered in error)
+// ============================================
+router.patch('/:loanNumber/cancel', requireAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
-    const { channel } = req.query;
-    const metrics = await LoanService.getCacLtvMetrics({ channel: channel ? String(channel) : undefined });
-    res.json({ success: true, ...metrics });
+    const [loan] = await db.select().from(loans).where(eq(loans.loanNumber, req.params.loanNumber));
+    if (!loan) {
+      res.status(404).json({ error: 'Loan not found' });
+      return;
+    }
+    if (loan.status === 'completed') {
+      res.status(400).json({ error: 'Cannot cancel a completed loan' });
+      return;
+    }
+    await db.update(loans).set({ status: 'cancelled', updatedAt: new Date() }).where(eq(loans.id, loan.id));
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Cancel loan error:', error);
+    res.status(500).json({ error: 'Failed to cancel loan' });
+  }
+});
+
+// ============================================
+// POST /api/admin/loans/run-automation — manually trigger the daily automation
+// (reminders, overdue sweep + penalties, default detection). Also runs on a
+// timer from app.ts — this endpoint lets an admin trigger it on demand.
+// ============================================
+router.post('/run-automation', requireAdmin, async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const summary = await LoanService.runDailyAutomation();
+    res.json({ success: true, summary });
+  } catch (error) {
+    console.error('Run automation error:', error);
+    res.status(500).json({ error: 'Automation run failed' });
+  }
+});
+
+// ============================================
+// GET /api/admin/loans-metrics/portfolio — repayment rate, overdue, at-risk, defaults
+// GET /api/admin/loans-metrics/cac-ltv — CAC vs LTV
+// (mounted here for convenience; also surfaced inside the main dashboard payload)
+// ============================================
+router.get('/metrics/portfolio', requireAdmin, async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const metrics = await LoanService.getPortfolioMetrics();
+    res.json({ success: true, metrics });
+  } catch (error) {
+    console.error('Portfolio metrics error:', error);
+    res.status(500).json({ error: 'Failed to compute portfolio metrics' });
+  }
+});
+
+router.get('/metrics/cac-ltv', requireAdmin, async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const metrics = await LoanService.getCacLtvMetrics();
+    res.json({ success: true, metrics });
   } catch (error) {
     console.error('CAC/LTV metrics error:', error);
     res.status(500).json({ error: 'Failed to compute CAC/LTV metrics' });
@@ -102,177 +224,56 @@ router.get('/metrics/cac-ltv', async (req: Request, res: Response): Promise<void
 });
 
 // ============================================
-// POST /api/admin/loans/sweep-overdue
-// Runs the overdue/penalty sweep. Intended to be called by a daily
-// cron (or manually from the dashboard) — idempotent to re-run.
+// GET /api/loans/:loanNumber/status?phone=07... — PUBLIC customer-facing
+// loan status lookup, phone-gated the same way order tracking works.
+// Mounted separately (see app.ts) at /api/loans, not /api/admin/loans.
 // ============================================
-router.post('/sweep-overdue', async (_req: Request, res: Response): Promise<void> => {
+export const publicLoanRouter = Router();
+publicLoanRouter.get('/:loanNumber/status', async (req: Request, res: Response): Promise<void> => {
   try {
-    const result = await LoanService.applyOverduePenalties();
-    res.json({ success: true, ...result });
-  } catch (error) {
-    console.error('Overdue sweep error:', error);
-    res.status(500).json({ error: 'Failed to run overdue sweep' });
-  }
-});
+    const { loanNumber } = req.params;
+    const { phone } = req.query;
 
-// ============================================
-// GET /api/admin/loans/:id
-// Full loan detail: loan + installment schedule + transaction log.
-// ============================================
-router.get('/:id', async (req: Request, res: Response): Promise<void> => {
-  try {
-    const loanId = Number(req.params.id);
-    if (!Number.isInteger(loanId) || loanId <= 0) {
-      res.status(400).json({ error: 'Invalid loan ID' });
-      return;
-    }
-
-    const detail = await LoanService.getLoanDetail(loanId);
-    if (!detail) {
+    const [loan] = await db.select().from(loans).where(eq(loans.loanNumber, loanNumber));
+    if (!loan) {
       res.status(404).json({ error: 'Loan not found' });
       return;
     }
 
-    res.json({ success: true, ...detail });
+    const [customer] = await db.select().from(customers).where(eq(customers.id, loan.customerId));
+    if (!customer || !phone || customer.phone !== phone) {
+      res.status(403).json({ error: 'Phone number does not match this loan' });
+      return;
+    }
+
+    const schedule = (
+      await db.select().from(installments).where(eq(installments.loanId, loan.id))
+    ).sort((a, b) => a.installmentNumber - b.installmentNumber);
+
+    const paidRwf = schedule.reduce((s, i) => s + (i.amountPaidRwf || 0), 0);
+    const dueRwf = schedule.reduce((s, i) => s + (i.amountDueRwf || 0), 0);
+
+    res.json({
+      success: true,
+      loanNumber: loan.loanNumber,
+      status: loan.status,
+      totalPayableRwf: loan.totalPayableRwf,
+      paidRwf,
+      remainingRwf: Math.max(0, dueRwf - paidRwf),
+      repaymentRatePercent: dueRwf > 0 ? Math.round((paidRwf / dueRwf) * 1000) / 10 : 0,
+      nextInstallment: schedule.find((i) => i.status !== 'paid') || null,
+      schedule: schedule.map((i) => ({
+        installmentNumber: i.installmentNumber,
+        dueDate: i.dueDate,
+        amountDueRwf: i.amountDueRwf,
+        amountPaidRwf: i.amountPaidRwf,
+        penaltyRwf: i.penaltyRwf,
+        status: i.status,
+      })),
+    });
   } catch (error) {
-    console.error('Loan detail error:', error);
-    res.status(500).json({ error: 'Failed to fetch loan detail' });
-  }
-});
-
-// ============================================
-// POST /api/admin/loans/installments/pay
-// Records a payment against ONE specific installment — for precise
-// manual correction. General collections should use POST /:id/pay.
-// ============================================
-router.post(
-  '/installments/pay',
-  validate(installmentPaymentSchema),
-  async (req: AuthedRequest, res: Response): Promise<void> => {
-    try {
-      const updated = await LoanService.recordInstallmentPayment({
-        ...req.body,
-        adminId: req.admin?.id,
-      });
-      res.json({ success: true, installment: updated });
-    } catch (error: any) {
-      console.error('Record installment payment error:', error);
-      res.status(error.message?.includes('not found') ? 404 : 500).json({
-        error: error.message || 'Failed to record payment',
-      });
-    }
-  }
-);
-
-// ============================================
-// POST /api/admin/loans/:id/pay
-// Records a cash/bank payment against a LOAN (not one installment) —
-// auto-allocates across outstanding installments oldest-first. Covers
-// both "pay one installment in full" and "pay several at once" from a
-// single amount, same waterfall logic the automated MoMo path uses.
-// ============================================
-router.post('/:id/pay', async (req: AuthedRequest, res: Response): Promise<void> => {
-  try {
-    const loanId = Number(req.params.id);
-    const { amountRwf, paymentMethod, note } = req.body;
-
-    if (!Number.isInteger(loanId) || loanId <= 0) {
-      res.status(400).json({ error: 'Invalid loan ID' });
-      return;
-    }
-    if (!Number.isInteger(amountRwf) || amountRwf <= 0) {
-      res.status(400).json({ error: 'amountRwf must be a positive whole number' });
-      return;
-    }
-    if (!['cash', 'bank', 'momo'].includes(paymentMethod)) {
-      res.status(400).json({ error: 'paymentMethod must be one of cash, bank, momo' });
-      return;
-    }
-
-    const result = await LoanService.recordLoanPayment({
-      loanId,
-      amountRwf,
-      paymentMethod,
-      adminId: req.admin?.id,
-      note,
-    });
-    res.json({ success: true, ...result });
-  } catch (error: any) {
-    console.error('Record loan payment error:', error);
-    res.status(error.message?.includes('not found') ? 404 : 500).json({
-      error: error.message || 'Failed to record payment',
-    });
-  }
-});
-
-// ============================================
-// POST /api/admin/loans/:id/collect
-// Pushes a MoMo request-to-pay to the customer's phone for what's
-// currently due on the loan (or a custom/full-payoff amount). Returns
-// immediately with a pending transaction — the background reconciler
-// (or POST /reconcile-momo) confirms it and auto-allocates once MTN
-// reports success, no further admin action needed.
-// Body: { amountRwf?: number, payoffAll?: boolean }
-// ============================================
-router.post('/:id/collect', async (req: AuthedRequest, res: Response): Promise<void> => {
-  try {
-    const loanId = Number(req.params.id);
-    if (!Number.isInteger(loanId) || loanId <= 0) {
-      res.status(400).json({ error: 'Invalid loan ID' });
-      return;
-    }
-
-    const { amountRwf, payoffAll } = req.body || {};
-    const result = await LoanService.initiateMomoCollection({
-      loanId,
-      amountRwf: Number.isInteger(amountRwf) && amountRwf > 0 ? amountRwf : undefined,
-      payoffAll: Boolean(payoffAll),
-      adminId: req.admin?.id,
-    });
-    res.json({ success: true, ...result });
-  } catch (error: any) {
-    console.error('Initiate MoMo collection error:', error);
-    res.status(error.message?.includes('not found') || error.message?.includes('Nothing') ? 400 : 500).json({
-      error: error.message || 'Failed to initiate MoMo collection',
-    });
-  }
-});
-
-// ============================================
-// GET /api/admin/loans/:id/collectible
-// "What's owed right now" for a loan — used to prefill the collection
-// amount in the dashboard. ?payoffAll=true includes future installments.
-// ============================================
-router.get('/:id/collectible', async (req: Request, res: Response): Promise<void> => {
-  try {
-    const loanId = Number(req.params.id);
-    if (!Number.isInteger(loanId) || loanId <= 0) {
-      res.status(400).json({ error: 'Invalid loan ID' });
-      return;
-    }
-    const payoffAll = req.query.payoffAll === 'true';
-    const result = await LoanService.getCollectibleAmount(loanId, payoffAll);
-    res.json({ success: true, ...result });
-  } catch (error) {
-    console.error('Get collectible amount error:', error);
-    res.status(500).json({ error: 'Failed to compute collectible amount' });
-  }
-});
-
-// ============================================
-// POST /api/admin/loans/reconcile-momo
-// Manually triggers the same reconciliation the background scheduler
-// runs automatically every few minutes — checks all pending MoMo
-// collections against MTN and auto-allocates any that succeeded.
-// ============================================
-router.post('/reconcile-momo', async (_req: Request, res: Response): Promise<void> => {
-  try {
-    const result = await LoanService.reconcilePendingMomoTransactions();
-    res.json({ success: true, ...result });
-  } catch (error) {
-    console.error('Reconcile MoMo error:', error);
-    res.status(500).json({ error: 'Failed to reconcile pending MoMo collections' });
+    console.error('Public loan status error:', error);
+    res.status(500).json({ error: 'Failed to load loan status' });
   }
 });
 

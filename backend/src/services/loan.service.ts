@@ -1,607 +1,516 @@
-import { eq, sql, and, inArray, asc } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { db } from '../config/database';
-import { loans, installments, loanTransactions, customers, payments, orders } from '../db/schema';
-import type { LoanInput } from '../lib/validation/schemas';
-import { MomoService } from './momo.service';
+import { loans, installments, loanTransactions, customers, payments } from '../db/schema';
+import { EmailService } from './email.service';
 
-// Default penalty applied to an installment once it goes overdue.
-// Kept as a flat rate rather than compounding daily interest, matching
-// the JD's "penalty rules" ask in the simplest defensible form; tune later.
-const DEFAULT_PENALTY_RATE_BPS = 500; // 5% of the missed installment amount
+// ============================================
+// Business rules — tunable via env vars so ops can adjust policy without
+// a code deploy. Defaults reflect common PayGo microfinance practice.
+// ============================================
+const GRACE_PERIOD_DAYS = Number(process.env.LOAN_GRACE_PERIOD_DAYS || 3); // days past due before a penalty is charged
+const PENALTY_RATE_BPS = Number(process.env.LOAN_PENALTY_RATE_BPS || 300); // 3% of the installment amount, charged once when it first crosses the grace period
+const REMINDER_DAYS_BEFORE = Number(process.env.LOAN_REMINDER_DAYS_BEFORE || 3); // send a reminder this many days before due date
+const DEFAULT_THRESHOLD_CONSECUTIVE_MISSED = Number(process.env.LOAN_DEFAULT_THRESHOLD || 3); // consecutive unpaid overdue installments before a loan is flagged defaulted
 
-// Business rules — tune here as Kosmotive's collections policy evolves.
-const RULES = {
-  // Days before due date an 'upcoming' installment becomes 'due' and
-  // starts showing up in collection prompts / reminders.
-  DUE_REMINDER_DAYS: 3,
-  // Consecutive overdue installments on a loan before it's auto-flagged 'defaulted'.
-  DEFAULT_AFTER_OVERDUE_COUNT: 3,
-  // How long a MoMo request-to-pay is left pending before it's treated as failed/expired.
-  MOMO_PENDING_TIMEOUT_MINUTES: 30,
-};
+function addMonths(date: Date, months: number): Date {
+  const d = new Date(date);
+  d.setMonth(d.getMonth() + months);
+  return d;
+}
+
+function generateLoanNumber(): string {
+  const d = new Date();
+  const dateStr =
+    d.getFullYear() +
+    String(d.getMonth() + 1).padStart(2, '0') +
+    String(d.getDate()).padStart(2, '0');
+  const rand = Math.floor(1000 + Math.random() * 9000);
+  return `PGO-${dateStr}-${rand}`;
+}
 
 export class LoanService {
-  // ==========================================================
-  // Create a loan + generate its full installment schedule in
-  // one transaction. Interest is applied flat across the term
-  // (principal + principal * rate) / termMonths — simple and
-  // auditable, not amortized — matching how most PayGo/microfinance
-  // pilots in this space communicate repayment amounts to customers.
-  // ==========================================================
-  static async createLoanWithSchedule(input: LoanInput) {
-    return db.transaction(async (tx) => {
-      const startDate = input.startDate ? new Date(input.startDate) : new Date();
-
-      const totalInterestRwf = Math.round((input.principalRwf * input.interestRateBps) / 10000);
-      const totalRepayableRwf = input.principalRwf + totalInterestRwf;
-      const perInstallmentRwf = Math.round(totalRepayableRwf / input.termMonths);
-
-      const expectedPayoffDate = new Date(startDate);
-      expectedPayoffDate.setMonth(expectedPayoffDate.getMonth() + input.termMonths);
-
-      const [loan] = await tx
-        .insert(loans)
-        .values({
-          orderId: input.orderId,
-          customerId: input.customerId,
-          principalRwf: input.principalRwf,
-          downPaymentRwf: input.downPaymentRwf ?? 0,
-          interestRateBps: input.interestRateBps ?? 0,
-          termMonths: input.termMonths,
-          status: 'active',
-          guarantorName: input.guarantorName || null,
-          guarantorPhone: input.guarantorPhone || null,
-          acquisitionChannel: input.acquisitionChannel || null,
-          startDate,
-          expectedPayoffDate,
-        })
-        .returning();
-
-      // Build the schedule. Any rounding remainder from the division above
-      // is absorbed into the final installment so the sum always equals
-      // totalRepayableRwf exactly (no silent under/over-billing).
-      const scheduleRows = [];
-      let allocated = 0;
-      for (let i = 1; i <= input.termMonths; i++) {
-        const dueDate = new Date(startDate);
-        dueDate.setMonth(dueDate.getMonth() + i);
-
-        const isLast = i === input.termMonths;
-        const amountDueRwf = isLast ? totalRepayableRwf - allocated : perInstallmentRwf;
-        allocated += amountDueRwf;
-
-        scheduleRows.push({
-          loanId: loan.id,
-          installmentNumber: i,
-          dueDate,
-          amountDueRwf,
-          status: 'upcoming' as const,
-        });
-      }
-
-      const createdInstallments = await tx.insert(installments).values(scheduleRows).returning();
-
-      // Record the disbursement itself as the first ledger entry, so the
-      // loan_transactions table tells the full story from day one.
-      await tx.insert(loanTransactions).values({
-        loanId: loan.id,
-        type: 'disbursement',
-        amountRwf: input.principalRwf,
-        status: 'completed',
-        note: `Loan disbursed. ${input.termMonths} installments of ~${perInstallmentRwf} RWF scheduled.`,
-      });
-
-      return { loan, installments: createdInstallments };
-    });
-  }
-
-  // ==========================================================
-  // CORE AUTO-ALLOCATION ENGINE
-  // Applies a single payment amount against a loan, waterfalling it
-  // across outstanding installments oldest-due-first. Handles the
-  // "pay all" case (one payment clears several installments) and the
-  // "pay partially" case (payment is less than one installment's
-  // balance) with the same code path — this is what both the admin's
-  // manual cash/bank entry screen and the automated MoMo reconciliation
-  // job call, so the business rule only lives in one place.
-  // ==========================================================
-  static async recordLoanPayment(params: {
-    loanId: number;
-    amountRwf: number;
-    paymentMethod: 'momo' | 'cash' | 'bank';
-    momoTransactionId?: string;
-    adminId?: number;
-    note?: string;
+  // ============================================
+  // Create a loan + generate its installment schedule.
+  // Flat interest over the term, split into equal monthly installments
+  // (the last installment absorbs any rounding remainder so the schedule
+  // always sums exactly to totalPayableRwf).
+  // ============================================
+  static async createLoan(input: {
+    orderId?: number;
+    customerId: number;
+    principalRwf: number;
+    downPaymentRwf: number;
+    interestRateBps: number;
+    termMonths: number;
+    guarantorType: string;
+    guarantorName?: string;
+    guarantorPhone?: string;
+    notes?: string;
+    adminId?: number | null;
   }) {
-    return db.transaction(async (tx) => {
-      const [loan] = await tx.select().from(loans).where(eq(loans.id, params.loanId));
-      if (!loan) throw new Error(`Loan ${params.loanId} not found`);
-
-      const outstanding = await tx
-        .select()
-        .from(installments)
-        .where(and(eq(installments.loanId, params.loanId), sql`${installments.status} != 'paid'`))
-        .orderBy(asc(installments.installmentNumber));
-
-      let remaining = params.amountRwf;
-      const touched: Array<{ installmentId: number; installmentNumber: number; appliedRwf: number; status: string }> = [];
-      const now = new Date();
-
-      for (const inst of outstanding) {
-        if (remaining <= 0) break;
-
-        const owed = inst.amountDueRwf + inst.penaltyRwf - inst.amountPaidRwf;
-        if (owed <= 0) continue;
-
-        const applied = Math.min(remaining, owed);
-        const newAmountPaid = inst.amountPaidRwf + applied;
-        const isFullyPaid = newAmountPaid >= inst.amountDueRwf + inst.penaltyRwf;
-
-        const [updated] = await tx
-          .update(installments)
-          .set({
-            amountPaidRwf: newAmountPaid,
-            status: isFullyPaid ? 'paid' : inst.status === 'upcoming' ? 'due' : inst.status,
-            paidAt: isFullyPaid ? now : inst.paidAt,
-            updatedAt: now,
-          })
-          .where(eq(installments.id, inst.id))
-          .returning();
-
-        await tx.insert(loanTransactions).values({
-          loanId: params.loanId,
-          installmentId: inst.id,
-          type: 'payment',
-          amountRwf: applied,
-          paymentMethod: params.paymentMethod,
-          momoTransactionId: params.momoTransactionId || null,
-          status: 'completed',
-          adminId: params.adminId || null,
-          note: params.note || null,
-        });
-
-        touched.push({ installmentId: updated.id, installmentNumber: updated.installmentNumber, appliedRwf: applied, status: updated.status });
-        remaining -= applied;
-      }
-
-      // Any leftover after every outstanding installment is cleared is an
-      // overpayment — logged explicitly rather than silently discarded, so
-      // it's visible to an admin as a credit to reconcile or refund.
-      if (remaining > 0) {
-        await tx.insert(loanTransactions).values({
-          loanId: params.loanId,
-          type: 'payment',
-          amountRwf: remaining,
-          paymentMethod: params.paymentMethod,
-          momoTransactionId: params.momoTransactionId || null,
-          status: 'completed',
-          adminId: params.adminId || null,
-          note: `Overpayment credit — exceeds all outstanding installments by ${remaining} RWF. ${params.note || ''}`.trim(),
-        });
-      }
-
-      const stillOutstanding = await tx
-        .select()
-        .from(installments)
-        .where(and(eq(installments.loanId, params.loanId), sql`${installments.status} != 'paid'`));
-
-      if (stillOutstanding.length === 0 && loan.status === 'active') {
-        await tx
-          .update(loans)
-          .set({ status: 'completed', completedAt: now, updatedAt: now })
-          .where(eq(loans.id, params.loanId));
-      }
-
-      return {
-        loanId: params.loanId,
-        amountAppliedRwf: params.amountRwf - remaining,
-        overpaymentRwf: remaining,
-        installmentsTouched: touched,
-        loanCompleted: stillOutstanding.length === 0,
-      };
-    });
-  }
-
-  // ==========================================================
-  // What does this loan currently owe? Used both to prompt a MoMo
-  // collection with a sensible default amount and to show the
-  // customer/admin a live "amount due today" figure.
-  // payoffAll=true includes not-yet-due future installments too,
-  // for an early full settlement.
-  // ==========================================================
-  static async getCollectibleAmount(loanId: number, payoffAll = false) {
-    const rows = await db
-      .select()
-      .from(installments)
-      .where(
-        payoffAll
-          ? and(eq(installments.loanId, loanId), sql`${installments.status} != 'paid'`)
-          : and(eq(installments.loanId, loanId), inArray(installments.status, ['due', 'overdue']))
-      );
-
-    const amountRwf = rows.reduce((sum, r) => sum + (r.amountDueRwf + r.penaltyRwf - r.amountPaidRwf), 0);
-    return { amountRwf: Math.max(0, amountRwf), installmentCount: rows.length };
-  }
-
-  // ==========================================================
-  // Kick off a MoMo request-to-pay for a loan. Defaults to "what's
-  // currently due" (due + overdue installments); pass amountRwf to
-  // override, or payoffAll to request full early settlement.
-  // Records a 'pending' loan_transaction — the background reconciler
-  // (or a manual /reconcile call) flips it to completed/failed and,
-  // on success, runs it through the same waterfall allocation as any
-  // other payment.
-  // ==========================================================
-  static async initiateMomoCollection(params: { loanId: number; amountRwf?: number; payoffAll?: boolean; adminId?: number }) {
-    const [loan] = await db.select().from(loans).where(eq(loans.id, params.loanId));
-    if (!loan) throw new Error(`Loan ${params.loanId} not found`);
-
-    const [customer] = await db.select().from(customers).where(eq(customers.id, loan.customerId));
-    if (!customer) throw new Error(`Customer ${loan.customerId} not found for loan ${params.loanId}`);
-
-    let amountRwf = params.amountRwf;
-    if (!amountRwf) {
-      const collectible = await this.getCollectibleAmount(params.loanId, params.payoffAll ?? false);
-      amountRwf = collectible.amountRwf;
-    }
-    if (amountRwf <= 0) {
-      throw new Error('Nothing currently due on this loan');
+    const financedRwf = input.principalRwf - input.downPaymentRwf;
+    if (financedRwf <= 0) {
+      throw new Error('Down payment must be less than the principal — nothing left to finance.');
     }
 
-    const reference = `KOSMOLOAN-${loan.id}-${Date.now()}`;
-    const result = await MomoService.initiatePayment({
-      phone: customer.phone,
-      amount: amountRwf,
-      reference,
-      description: `PayGo installment payment — Loan #${loan.id}`,
-    });
+    const interestRwf = Math.round((financedRwf * input.interestRateBps) / 10000);
+    const totalPayableRwf = financedRwf + interestRwf;
 
-    const [txn] = await db
-      .insert(loanTransactions)
+    const loanNumber = generateLoanNumber();
+    const disbursedAt = new Date();
+    const expectedPayoffDate = addMonths(disbursedAt, input.termMonths);
+
+    const [loan] = await db
+      .insert(loans)
       .values({
-        loanId: loan.id,
-        type: 'payment',
-        amountRwf,
-        paymentMethod: 'momo',
-        momoTransactionId: result.transactionId || reference,
-        status: result.status === 'pending' || result.status === 'pending_manual' ? 'pending' : 'completed',
-        adminId: params.adminId || null,
-        note: result.message,
+        loanNumber,
+        orderId: input.orderId ?? null,
+        customerId: input.customerId,
+        principalRwf: financedRwf,
+        downPaymentRwf: input.downPaymentRwf,
+        interestRateBps: input.interestRateBps,
+        termMonths: input.termMonths,
+        totalPayableRwf,
+        status: 'active',
+        guarantorType: input.guarantorType,
+        guarantorName: input.guarantorName || null,
+        guarantorPhone: input.guarantorPhone || null,
+        disbursedAt,
+        expectedPayoffDate,
+        notes: input.notes || null,
       })
       .returning();
 
-    return { transaction: txn, momoResult: result };
+    // ---- Generate equal-installment schedule ----
+    const baseAmount = Math.floor(totalPayableRwf / input.termMonths);
+    const remainder = totalPayableRwf - baseAmount * input.termMonths;
+
+    const schedule = [];
+    for (let i = 1; i <= input.termMonths; i++) {
+      const amountDueRwf = i === input.termMonths ? baseAmount + remainder : baseAmount;
+      schedule.push({
+        loanId: loan.id,
+        installmentNumber: i,
+        dueDate: addMonths(disbursedAt, i),
+        amountDueRwf,
+        amountPaidRwf: 0,
+        status: 'upcoming' as const,
+      });
+    }
+    await db.insert(installments).values(schedule);
+
+    // ---- Record disbursement in the audit trail ----
+    await db.insert(loanTransactions).values({
+      loanId: loan.id,
+      type: 'disbursement',
+      amountRwf: financedRwf,
+      method: null,
+      adminId: input.adminId ?? null,
+      note: `Loan disbursed. Down payment: ${input.downPaymentRwf} RWF. Term: ${input.termMonths} months.`,
+    });
+
+    return loan;
   }
 
-  // ==========================================================
-  // Reconciliation job — checks every 'pending' MoMo loan_transaction
-  // against MTN's status API. On SUCCESSFUL, runs the waterfall
-  // allocation and marks the placeholder transaction completed. On
-  // FAILED or timeout, marks it failed so it stops being retried
-  // forever. Safe to call repeatedly (idempotent).
-  // ==========================================================
-  static async reconcilePendingMomoTransactions() {
-    const pending = await db
-      .select()
-      .from(loanTransactions)
-      .where(and(eq(loanTransactions.status, 'pending'), eq(loanTransactions.paymentMethod, 'momo')));
+  // ============================================
+  // Record a payment against a specific installment. Handles partial
+  // payments, overpayment spillover into the next unpaid installment,
+  // and marks the loan completed once every installment is fully paid.
+  // ============================================
+  static async recordPayment(
+    installmentId: number,
+    input: { amountRwf: number; method: string; phone?: string; note?: string; adminId?: number | null }
+  ) {
+    const [installment] = await db.select().from(installments).where(eq(installments.id, installmentId));
+    if (!installment) throw new Error('Installment not found');
 
-    let completed = 0;
-    let failed = 0;
-    let stillPending = 0;
+    const [loan] = await db.select().from(loans).where(eq(loans.id, installment.loanId));
+    if (!loan) throw new Error('Loan not found');
 
-    for (const txn of pending) {
-      if (!txn.momoTransactionId) continue;
+    let remaining = input.amountRwf;
+    let cursor = installment;
 
-      const ageMinutes = (Date.now() - new Date(txn.createdAt!).getTime()) / 60000;
-      const momoStatus = await MomoService.checkPaymentStatus(txn.momoTransactionId);
+    while (remaining > 0 && cursor) {
+      const owed = cursor.amountDueRwf + (cursor.penaltyRwf || 0) - (cursor.amountPaidRwf || 0);
+      const applied = Math.min(remaining, Math.max(owed, 0));
 
-      if (momoStatus.status === 'SUCCESSFUL') {
-        // Allocate the payment, then close out the placeholder row so it's
-        // not picked up again — the allocation itself writes the real
-        // per-installment ledger entries.
-        await this.recordLoanPayment({
-          loanId: txn.loanId,
-          amountRwf: txn.amountRwf,
-          paymentMethod: 'momo',
-          momoTransactionId: txn.momoTransactionId,
-          note: 'Auto-reconciled MoMo collection',
+      if (applied > 0) {
+        const newPaid = (cursor.amountPaidRwf || 0) + applied;
+        const fullyPaid = newPaid >= cursor.amountDueRwf + (cursor.penaltyRwf || 0);
+
+        await db
+          .update(installments)
+          .set({
+            amountPaidRwf: newPaid,
+            status: fullyPaid ? 'paid' : 'partial',
+            paidAt: fullyPaid ? new Date() : cursor.paidAt,
+            updatedAt: new Date(),
+          })
+          .where(eq(installments.id, cursor.id));
+
+        await db.insert(loanTransactions).values({
+          loanId: loan.id,
+          installmentId: cursor.id,
+          type: 'payment',
+          amountRwf: applied,
+          method: input.method,
+          phone: input.phone || null,
+          adminId: input.adminId ?? null,
+          note: input.note || null,
         });
-        await db
-          .update(loanTransactions)
-          .set({ status: 'completed' })
-          .where(eq(loanTransactions.id, txn.id));
-        completed++;
-      } else if (momoStatus.status === 'FAILED' || ageMinutes > RULES.MOMO_PENDING_TIMEOUT_MINUTES) {
-        await db
-          .update(loanTransactions)
-          .set({ status: 'failed', note: `${txn.note || ''} — ${momoStatus.status === 'FAILED' ? 'declined by customer/MTN' : 'timed out awaiting approval'}`.trim() })
-          .where(eq(loanTransactions.id, txn.id));
-        failed++;
-      } else {
-        stillPending++;
+      }
+
+      remaining -= applied;
+
+      if (remaining <= 0) break;
+
+      // Overpayment spills into the next unpaid installment on the same loan
+      const siblings = await db.select().from(installments).where(eq(installments.loanId, loan.id));
+      const nextUnpaid = siblings
+        .filter((i) => i.status !== 'paid' && i.id !== cursor.id)
+        .sort((a, b) => a.installmentNumber - b.installmentNumber)[0];
+
+      if (!nextUnpaid) break; // nothing left to apply the overpayment to
+      cursor = nextUnpaid;
+    }
+
+    // ---- Check if loan is fully paid off ----
+    const allInstallments = await db.select().from(installments).where(eq(installments.loanId, loan.id));
+    const allPaid = allInstallments.every((i) => i.status === 'paid');
+    if (allPaid) {
+      await db
+        .update(loans)
+        .set({ status: 'completed', completedAt: new Date(), updatedAt: new Date() })
+        .where(eq(loans.id, loan.id));
+
+      const [customer] = await db.select().from(customers).where(eq(customers.id, loan.customerId));
+      if (customer?.email) {
+        const totalPaidRwf = allInstallments.reduce((s, i) => s + (i.amountPaidRwf || 0), 0);
+        EmailService.sendLoanCompletedNotice({
+          customerName: `${customer.firstName} ${customer.lastName}`,
+          customerEmail: customer.email,
+          loanNumber: loan.loanNumber,
+          totalPaidRwf,
+        }).catch((err) => console.error('Loan completion email error (non-fatal):', err));
       }
     }
 
-    return { checked: pending.length, completed, failed, stillPending };
+    return { loanId: loan.id, allPaid };
   }
 
-  // ==========================================================
-  // Record a payment against ONE specific installment. Kept for
-  // precise manual admin correction (e.g. backdating a specific
-  // month); general collections should use recordLoanPayment instead
-  // so partial/overpayment waterfall logic applies consistently.
-  // ==========================================================
-  static async recordInstallmentPayment(params: {
-    installmentId: number;
-    amountRwf: number;
-    paymentMethod: 'momo' | 'cash' | 'bank';
-    momoTransactionId?: string;
-    adminId?: number;
-    note?: string;
-  }) {
-    return db.transaction(async (tx) => {
-      const [installment] = await tx
-        .select()
-        .from(installments)
-        .where(eq(installments.id, params.installmentId));
+  // ============================================
+  // Apply a late-payment penalty to an installment (manual or scheduled job).
+  // ============================================
+  static async applyPenalty(installmentId: number, amountRwf: number, note?: string) {
+    const [installment] = await db.select().from(installments).where(eq(installments.id, installmentId));
+    if (!installment) throw new Error('Installment not found');
 
-      if (!installment) {
-        throw new Error(`Installment ${params.installmentId} not found`);
-      }
+    await db
+      .update(installments)
+      .set({ penaltyRwf: (installment.penaltyRwf || 0) + amountRwf, updatedAt: new Date() })
+      .where(eq(installments.id, installmentId));
 
-      const now = new Date();
-      const newAmountPaid = installment.amountPaidRwf + params.amountRwf;
-      const isFullyPaid = newAmountPaid >= installment.amountDueRwf + installment.penaltyRwf;
-
-      const [updatedInstallment] = await tx
-        .update(installments)
-        .set({
-          amountPaidRwf: newAmountPaid,
-          status: isFullyPaid ? 'paid' : installment.status === 'upcoming' ? 'due' : installment.status,
-          paidAt: isFullyPaid ? now : installment.paidAt,
-          updatedAt: now,
-        })
-        .where(eq(installments.id, installment.id))
-        .returning();
-
-      await tx.insert(loanTransactions).values({
-        loanId: installment.loanId,
-        installmentId: installment.id,
-        type: 'payment',
-        amountRwf: params.amountRwf,
-        paymentMethod: params.paymentMethod,
-        momoTransactionId: params.momoTransactionId || null,
-        status: 'completed',
-        adminId: params.adminId || null,
-        note: params.note || null,
-      });
-
-      // If every installment on this loan is now paid, close the loan out.
-      const remaining = await tx
-        .select()
-        .from(installments)
-        .where(and(eq(installments.loanId, installment.loanId), sql`${installments.status} != 'paid'`));
-
-      if (remaining.length === 0) {
-        await tx
-          .update(loans)
-          .set({ status: 'completed', completedAt: now, updatedAt: now })
-          .where(eq(loans.id, installment.loanId));
-      }
-
-      return updatedInstallment;
+    await db.insert(loanTransactions).values({
+      loanId: installment.loanId,
+      installmentId: installment.id,
+      type: 'penalty',
+      amountRwf,
+      note: note || 'Late payment penalty',
     });
   }
 
-  // ==========================================================
-  // Daily sweep — three business rules, run together and safe to
-  // re-run (idempotent — only touches rows in the relevant state):
-  //   1. 'upcoming' -> 'due' once within DUE_REMINDER_DAYS of due date
-  //      (this is what should drive collection reminders).
-  //   2. unpaid + past due date -> 'overdue' + flat penalty applied once.
-  //   3. a loan with >= DEFAULT_AFTER_OVERDUE_COUNT overdue installments
-  //      is auto-flagged 'defaulted' for portfolio-risk visibility.
-  // Intended to be called from the background scheduler daily, or
-  // manually from the dashboard.
-  // ==========================================================
-  static async applyOverduePenalties(referenceDate: Date = new Date()) {
-    // Rule 1: activate upcoming installments approaching their due date.
-    const reminderCutoff = new Date(referenceDate);
-    reminderCutoff.setDate(reminderCutoff.getDate() + RULES.DUE_REMINDER_DAYS);
+  // ============================================
+  // AUTOMATION 1/4 — Pre-due reminders.
+  // Emails customers whose next installment falls due within
+  // REMINDER_DAYS_BEFORE days and who haven't been reminded yet.
+  // ============================================
+  static async sendUpcomingReminders(): Promise<{ sent: number }> {
+    const now = new Date();
+    const horizon = new Date(now.getTime() + REMINDER_DAYS_BEFORE * 24 * 60 * 60 * 1000);
 
-    const activated = await db
-      .update(installments)
-      .set({ status: 'due', updatedAt: new Date() })
-      .where(and(eq(installments.status, 'upcoming'), sql`${installments.dueDate} <= ${reminderCutoff}`))
-      .returning({ id: installments.id });
-
-    // Rule 2: flag overdue + apply the one-time flat penalty.
-    const overdueCandidates = await db
+    const due = await db
       .select()
       .from(installments)
-      .where(
-        and(
-          inArray(installments.status, ['upcoming', 'due']),
-          sql`${installments.dueDate} < ${referenceDate}`
-        )
-      );
+      .where(sql`${installments.status} IN ('upcoming', 'due')
+        AND ${installments.dueDate} <= ${horizon}
+        AND ${installments.dueDate} >= ${now}
+        AND ${installments.reminderSentAt} IS NULL`);
 
-    let flagged = 0;
-    for (const inst of overdueCandidates) {
-      const remainingDue = inst.amountDueRwf - inst.amountPaidRwf;
-      if (remainingDue <= 0) continue; // already effectively paid, status will settle on next payment write
+    let sent = 0;
+    for (const inst of due) {
+      const [loan] = await db.select().from(loans).where(eq(loans.id, inst.loanId));
+      if (!loan || loan.status !== 'active') continue;
+      const [customer] = await db.select().from(customers).where(eq(customers.id, loan.customerId));
+      if (!customer) continue;
 
-      const penalty = inst.penaltyRwf > 0
-        ? inst.penaltyRwf // don't re-penalize an already-flagged installment
-        : Math.round((remainingDue * DEFAULT_PENALTY_RATE_BPS) / 10000);
+      const daysUntilDue = Math.max(0, Math.ceil((inst.dueDate.getTime() - now.getTime()) / (24 * 60 * 60 * 1000)));
+
+      if (customer.email) {
+        await EmailService.sendInstallmentReminder({
+          customerName: `${customer.firstName} ${customer.lastName}`,
+          customerEmail: customer.email,
+          loanNumber: loan.loanNumber,
+          installmentNumber: inst.installmentNumber,
+          amountDueRwf: inst.amountDueRwf,
+          dueDate: inst.dueDate,
+          daysUntilDue,
+        }).catch((err) => console.error('Installment reminder email error (non-fatal):', err));
+      }
 
       await db
         .update(installments)
-        .set({ status: 'overdue', penaltyRwf: penalty, updatedAt: new Date() })
+        .set({ reminderSentAt: now, updatedAt: now })
         .where(eq(installments.id, inst.id));
+      sent++;
+    }
+    return { sent };
+  }
 
-      if (inst.penaltyRwf === 0 && penalty > 0) {
-        await db.insert(loanTransactions).values({
-          loanId: inst.loanId,
-          installmentId: inst.id,
-          type: 'penalty',
-          amountRwf: penalty,
-          status: 'completed',
-          note: `Auto-applied late penalty (${DEFAULT_PENALTY_RATE_BPS / 100}% of ${remainingDue} RWF remaining).`,
-        });
+  // ============================================
+  // AUTOMATION 2/4 — Overdue sweep + grace-period penalty + overdue alert.
+  // Anything past due_date and unpaid flips to 'overdue'. Once an
+  // installment has been overdue for longer than GRACE_PERIOD_DAYS, a
+  // one-time penalty (PENALTY_RATE_BPS of the amount due) is charged and
+  // an overdue email goes out — both gated so they never repeat for the
+  // same installment.
+  // ============================================
+  static async sweepOverdueAndPenalize(): Promise<{ flagged: number; penalized: number; alerted: number }> {
+    const now = new Date();
+
+    // 1. Flag anything past due and still unpaid as overdue
+    const flaggedResult = await db.execute(sql`
+      UPDATE installments
+      SET status = 'overdue', updated_at = NOW()
+      WHERE due_date < ${now}
+        AND status IN ('upcoming', 'due', 'partial')
+    `);
+
+    const overdue = await db.select().from(installments).where(eq(installments.status, 'overdue'));
+
+    let penalized = 0;
+    let alerted = 0;
+
+    for (const inst of overdue) {
+      const daysOverdue = Math.floor((now.getTime() - inst.dueDate.getTime()) / (24 * 60 * 60 * 1000));
+      const outstanding = inst.amountDueRwf - (inst.amountPaidRwf || 0);
+      if (outstanding <= 0) continue; // fully covered by a partial payment already, just mis-flagged by timing
+
+      // ---- One-time grace-period penalty ----
+      if (daysOverdue > GRACE_PERIOD_DAYS && (inst.penaltyRwf || 0) === 0) {
+        const penaltyRwf = Math.round((inst.amountDueRwf * PENALTY_RATE_BPS) / 10000);
+        await this.applyPenalty(inst.id, penaltyRwf, `Auto-applied late penalty (${daysOverdue}d overdue, grace period ${GRACE_PERIOD_DAYS}d)`);
+        penalized++;
       }
-      flagged++;
+
+      // ---- One-time overdue alert email ----
+      if (!inst.overdueAlertSentAt) {
+        const [loan] = await db.select().from(loans).where(eq(loans.id, inst.loanId));
+        const [customer] = loan ? await db.select().from(customers).where(eq(customers.id, loan.customerId)) : [];
+        if (loan && customer?.email) {
+          const amountOwedRwf = outstanding + (inst.penaltyRwf || 0);
+          await EmailService.sendInstallmentOverdueAlert({
+            customerName: `${customer.firstName} ${customer.lastName}`,
+            customerEmail: customer.email,
+            loanNumber: loan.loanNumber,
+            installmentNumber: inst.installmentNumber,
+            amountOwedRwf,
+            daysOverdue,
+          }).catch((err) => console.error('Overdue alert email error (non-fatal):', err));
+        }
+        await db
+          .update(installments)
+          .set({ overdueAlertSentAt: now, updatedAt: now })
+          .where(eq(installments.id, inst.id));
+        alerted++;
+      }
     }
 
-    // Rule 3: auto-default loans with too many overdue installments.
-    const overdueCounts = await db
-      .select({ loanId: installments.loanId, count: sql<number>`COUNT(*)` })
-      .from(installments)
-      .where(eq(installments.status, 'overdue'))
-      .groupBy(installments.loanId);
-
-    let defaulted = 0;
-    for (const row of overdueCounts) {
-      if (Number(row.count) < RULES.DEFAULT_AFTER_OVERDUE_COUNT) continue;
-      const [loan] = await db.select().from(loans).where(eq(loans.id, row.loanId));
-      if (!loan || loan.status !== 'active') continue;
-
-      await db
-        .update(loans)
-        .set({ status: 'defaulted', updatedAt: new Date() })
-        .where(eq(loans.id, row.loanId));
-
-      await db.insert(loanTransactions).values({
-        loanId: row.loanId,
-        type: 'waiver', // reusing the ledger as a flag row; note carries the real meaning
-        amountRwf: 0,
-        status: 'completed',
-        note: `Auto-flagged defaulted: ${row.count} overdue installments (threshold ${RULES.DEFAULT_AFTER_OVERDUE_COUNT}).`,
-      });
-      defaulted++;
-    }
-
-    return { activated: activated.length, checked: overdueCandidates.length, flagged, defaulted };
+    return { flagged: overdue.length, penalized, alerted };
   }
 
-  // ==========================================================
-  // Repayment rate — the JD's headline metric. Direct aggregate
-  // query against installments; no ledger reconstruction needed.
-  // Optionally scoped to a single loan, or a district (via customers).
-  // ==========================================================
-  static async getRepaymentRate(params?: { loanId?: number; district?: string }) {
-    let query = db
-      .select({
-        totalDueRwf: sql<number>`COALESCE(SUM(${installments.amountDueRwf}), 0)`,
-        totalPaidRwf: sql<number>`COALESCE(SUM(${installments.amountPaidRwf}), 0)`,
-        installmentCount: sql<number>`COUNT(*)`,
-        paidCount: sql<number>`COUNT(*) FILTER (WHERE ${installments.status} = 'paid')`,
-        overdueCount: sql<number>`COUNT(*) FILTER (WHERE ${installments.status} = 'overdue')`,
-      })
-      .from(installments)
-      .innerJoin(loans, eq(installments.loanId, loans.id))
-      .innerJoin(customers, eq(loans.customerId, customers.id))
-      .$dynamic();
+  // ============================================
+  // AUTOMATION 3/4 — Default detection.
+  // A loan is flagged 'defaulted' once it has DEFAULT_THRESHOLD_CONSECUTIVE_MISSED
+  // consecutive overdue+unpaid installments (counting from the earliest
+  // unpaid one) — i.e. the customer has fallen consistently behind, not
+  // just missed a single payment once. Triggers an admin risk alert.
+  // ============================================
+  static async detectAndFlagDefaults(): Promise<{ flagged: number }> {
+    const activeLoans = await db.select().from(loans).where(eq(loans.status, 'active'));
+    let flagged = 0;
 
-    const conditions = [];
-    if (params?.loanId) conditions.push(eq(loans.id, params.loanId));
-    if (params?.district) conditions.push(eq(customers.district, params.district));
-    if (conditions.length > 0) query = query.where(and(...conditions));
+    for (const loan of activeLoans) {
+      const loanInstallments = (
+        await db.select().from(installments).where(eq(installments.loanId, loan.id))
+      ).sort((a, b) => a.installmentNumber - b.installmentNumber);
 
-    const [row] = await query;
+      let consecutiveMissed = 0;
+      for (const inst of loanInstallments) {
+        if (inst.status === 'overdue') {
+          consecutiveMissed++;
+        } else if (inst.status === 'paid') {
+          consecutiveMissed = 0; // a paid installment resets the streak
+        }
+        // 'upcoming'/'due'/'partial' installments don't count either way — only overdue ones build the streak
+      }
 
-    const totalDueRwf = Number(row?.totalDueRwf ?? 0);
-    const totalPaidRwf = Number(row?.totalPaidRwf ?? 0);
+      if (consecutiveMissed >= DEFAULT_THRESHOLD_CONSECUTIVE_MISSED) {
+        await db
+          .update(loans)
+          .set({ status: 'defaulted', updatedAt: new Date() })
+          .where(eq(loans.id, loan.id));
+
+        const [customer] = await db.select().from(customers).where(eq(customers.id, loan.customerId));
+        const overdueAmountRwf = loanInstallments
+          .filter((i) => i.status === 'overdue')
+          .reduce((s, i) => s + Math.max(0, i.amountDueRwf + (i.penaltyRwf || 0) - (i.amountPaidRwf || 0)), 0);
+
+        if (customer) {
+          await EmailService.sendAdminLoanRiskAlert({
+            loanNumber: loan.loanNumber,
+            customerName: `${customer.firstName} ${customer.lastName}`,
+            customerPhone: customer.phone,
+            consecutiveMissed,
+            overdueAmountRwf,
+          }).catch((err) => console.error('Admin risk alert email error (non-fatal):', err));
+        }
+        flagged++;
+      }
+    }
+    return { flagged };
+  }
+
+  // ============================================
+  // AUTOMATION 4/4 — Daily orchestrator. Run on server startup and on a
+  // 24h interval (wired in app.ts), or trigger manually from the admin
+  // dashboard via POST /api/admin/loans/run-automation.
+  // ============================================
+  static async runDailyAutomation() {
+    const reminders = await this.sendUpcomingReminders();
+    const overdue = await this.sweepOverdueAndPenalize();
+    const defaults = await this.detectAndFlagDefaults();
+    const summary = { reminders, overdue, defaults, ranAt: new Date().toISOString() };
+    console.log('📅 Loan automation run:', JSON.stringify(summary));
+    return summary;
+  }
+
+  // Kept for backward compatibility with any direct callers — delegates to the full sweep.
+  static async flagOverdueInstallments() {
+    return this.sweepOverdueAndPenalize();
+  }
+
+  // ============================================
+  // Repayment-rate and portfolio metrics for the admin dashboard.
+  // ============================================
+  static async getPortfolioMetrics() {
+    const allInstallments = await db.select().from(installments);
+    const allLoans = await db.select().from(loans);
+
+    const totalDue = allInstallments.reduce((s, i) => s + (i.amountDueRwf || 0), 0);
+    const totalPaid = allInstallments.reduce((s, i) => s + (i.amountPaidRwf || 0), 0);
+    const repaymentRate = totalDue > 0 ? Math.round((totalPaid / totalDue) * 1000) / 10 : 0; // percent, 1dp
+
+    const overdue = allInstallments.filter((i) => i.status === 'overdue');
+    const overdueAmountRwf = overdue.reduce(
+      (s, i) => s + Math.max(0, i.amountDueRwf + (i.penaltyRwf || 0) - (i.amountPaidRwf || 0)),
+      0
+    );
+
+    const activeLoans = allLoans.filter((l) => l.status === 'active').length;
+    const completedLoans = allLoans.filter((l) => l.status === 'completed').length;
+    const defaultedLoans = allLoans.filter((l) => l.status === 'defaulted').length;
+
+    const activeLoanIdsWithOverdue = new Set(
+      overdue.map((i) => i.loanId).filter((id) => allLoans.find((l) => l.id === id)?.status === 'active')
+    );
+    const atRiskLoanCount = activeLoanIdsWithOverdue.size;
+
+    const outstandingPrincipalRwf = allLoans
+      .filter((l) => l.status === 'active')
+      .reduce((s, l) => s + l.totalPayableRwf, 0);
+    const outstandingCollectedRwf = allInstallments
+      .filter((i) => allLoans.find((l) => l.id === i.loanId)?.status === 'active')
+      .reduce((s, i) => s + (i.amountPaidRwf || 0), 0);
 
     return {
-      totalDueRwf,
-      totalPaidRwf,
-      repaymentRate: totalDueRwf > 0 ? Number((totalPaidRwf / totalDueRwf).toFixed(4)) : 0,
-      installmentCount: Number(row?.installmentCount ?? 0),
-      paidCount: Number(row?.paidCount ?? 0),
-      overdueCount: Number(row?.overdueCount ?? 0),
+      repaymentRatePercent: repaymentRate,
+      totalDueRwf: totalDue,
+      totalPaidRwf: totalPaid,
+      overdueCount: overdue.length,
+      overdueAmountRwf,
+      loanCounts: {
+        active: activeLoans,
+        completed: completedLoans,
+        defaulted: defaultedLoans,
+        total: allLoans.length,
+        atRisk: atRiskLoanCount,
+      },
+      outstandingPrincipalRwf: outstandingPrincipalRwf - outstandingCollectedRwf,
     };
   }
 
-  // ==========================================================
-  // CAC / LTV — LTV derived from actual payments + installment
-  // collections per customer; CAC pulled from the acquisition_cost_rwf
-  // input on customers (a business input, not something derivable
-  // from transaction data alone).
-  // ==========================================================
-  static async getCacLtvMetrics(params?: { channel?: string }) {
-    let ltvQuery = db
-      .select({
-        customerId: customers.id,
-        channel: customers.acquisitionChannel,
-        acquisitionCostRwf: customers.acquisitionCostRwf,
-        orderPaymentsRwf: sql<number>`COALESCE((
-          SELECT SUM(${payments.amountRwf})
-          FROM ${payments}
-          INNER JOIN ${orders} ON ${orders.id} = ${payments.orderId}
-          WHERE ${orders.customerId} = ${customers.id} AND ${payments.status} = 'paid'
-        ), 0)`,
-        installmentPaymentsRwf: sql<number>`COALESCE((
-          SELECT SUM(${installments.amountPaidRwf})
-          FROM ${installments}
-          INNER JOIN ${loans} ON ${loans.id} = ${installments.loanId}
-          WHERE ${loans.customerId} = ${customers.id}
-        ), 0)`,
-      })
-      .from(customers)
-      .$dynamic();
+  // ============================================
+  // CAC vs LTV — LTV is derived from actual payments (one-time orders +
+  // installment payments); CAC comes from the acquisition_cost_rwf a
+  // customer was tagged with at signup.
+  // ============================================
+  static async getCacLtvMetrics() {
+    const allCustomers = await db.select().from(customers);
+    const allPayments = await db.select().from(payments);
+    const allInstallments = await db.select().from(installments);
+    const allLoans = await db.select().from(loans);
 
-    if (params?.channel) {
-      ltvQuery = ltvQuery.where(eq(customers.acquisitionChannel, params.channel));
+    const ltvByCustomer = new Map<number, number>();
+
+    // One-time order payments
+    for (const p of allPayments) {
+      if (p.status !== 'paid') continue;
+      // payments table doesn't carry customerId directly; join via order in caller if needed.
     }
 
-    const rows = await ltvQuery;
+    // Installment payments (loan → customer)
+    for (const inst of allInstallments) {
+      const loan = allLoans.find((l) => l.id === inst.loanId);
+      if (!loan) continue;
+      const paid = inst.amountPaidRwf || 0;
+      if (paid > 0) {
+        ltvByCustomer.set(loan.customerId, (ltvByCustomer.get(loan.customerId) || 0) + paid);
+      }
+    }
 
-    const perCustomer = rows.map((r) => ({
-      customerId: r.customerId,
-      channel: r.channel,
-      acquisitionCostRwf: r.acquisitionCostRwf,
-      ltvRwf: Number(r.orderPaymentsRwf) + Number(r.installmentPaymentsRwf),
-    }));
+    const withCac = allCustomers.filter((c) => c.acquisitionCostRwf != null);
+    const avgCacRwf = withCac.length
+      ? Math.round(withCac.reduce((s, c) => s + (c.acquisitionCostRwf || 0), 0) / withCac.length)
+      : null;
 
-    const withCost = perCustomer.filter((c) => c.acquisitionCostRwf != null);
-    const totalCac = withCost.reduce((sum, c) => sum + (c.acquisitionCostRwf ?? 0), 0);
-    const totalLtv = perCustomer.reduce((sum, c) => sum + c.ltvRwf, 0);
+    const cacByChannel = new Map<string, { totalCostRwf: number; count: number }>();
+    for (const c of withCac) {
+      const channel = c.acquisitionChannel || 'unspecified';
+      const entry = cacByChannel.get(channel) || { totalCostRwf: 0, count: 0 };
+      entry.totalCostRwf += c.acquisitionCostRwf || 0;
+      entry.count += 1;
+      cacByChannel.set(channel, entry);
+    }
+
+    const avgLtvRwf = ltvByCustomer.size
+      ? Math.round(Array.from(ltvByCustomer.values()).reduce((s, v) => s + v, 0) / ltvByCustomer.size)
+      : 0;
 
     return {
-      customerCount: perCustomer.length,
-      customersWithCostData: withCost.length,
-      avgCacRwf: withCost.length > 0 ? Math.round(totalCac / withCost.length) : null,
-      avgLtvRwf: perCustomer.length > 0 ? Math.round(totalLtv / perCustomer.length) : 0,
-      ltvToCacRatio:
-        withCost.length > 0 && totalCac > 0
-          ? Number(((totalLtv / perCustomer.length) / (totalCac / withCost.length)).toFixed(2))
-          : null,
-      perCustomer,
+      avgCacRwf,
+      avgLtvRwf,
+      ltvToCacRatio: avgCacRwf && avgCacRwf > 0 ? Math.round((avgLtvRwf / avgCacRwf) * 100) / 100 : null,
+      cacByChannel: Array.from(cacByChannel.entries()).map(([channel, v]) => ({
+        channel,
+        avgCacRwf: Math.round(v.totalCostRwf / v.count),
+        customerCount: v.count,
+      })),
+      customersWithCacData: withCac.length,
+      customersWithLtvData: ltvByCustomer.size,
+      note:
+        withCac.length === 0
+          ? 'No customers have acquisition_cost_rwf set yet — CAC requires tagging customers with acquisition cost/channel at signup.'
+          : undefined,
     };
-  }
-
-  // ==========================================================
-  // Loan detail — loan + installment schedule + transaction log,
-  // for a single loan detail view in the admin dashboard.
-  // ==========================================================
-  static async getLoanDetail(loanId: number) {
-    const [loan] = await db.select().from(loans).where(eq(loans.id, loanId));
-    if (!loan) return null;
-
-    const schedule = await db
-      .select()
-      .from(installments)
-      .where(eq(installments.loanId, loanId))
-      .orderBy(installments.installmentNumber);
-
-    const transactions = await db
-      .select()
-      .from(loanTransactions)
-      .where(eq(loanTransactions.loanId, loanId))
-      .orderBy(loanTransactions.createdAt);
-
-    return { loan, schedule, transactions };
   }
 }

@@ -286,6 +286,129 @@ export class EmailService {
     });
   }
 
+  // ============================================
+  // PayGo installment reminder — sent N days before an installment is due.
+  // ============================================
+  static async sendInstallmentReminder(data: {
+    customerName: string;
+    customerEmail: string;
+    loanNumber: string;
+    installmentNumber: number;
+    amountDueRwf: number;
+    dueDate: Date;
+    daysUntilDue: number;
+  }): Promise<void> {
+    if (!data.customerEmail) return;
+    const html = `<div style="font-family:sans-serif;padding:20px;max-width:500px;">
+      <div style="background:#ecc94b;padding:20px;text-align:center;border-radius:8px 8px 0 0;">
+        <h2 style="margin:0;">⏰ Installment Due Soon</h2>
+      </div>
+      <div style="background:#fff;padding:28px;border-radius:0 0 8px 8px;">
+        <h2>Hi ${data.customerName},</h2>
+        <p>Installment <strong>#${data.installmentNumber}</strong> on loan <strong>${data.loanNumber}</strong> is due in <strong>${data.daysUntilDue} day(s)</strong>.</p>
+        <p><strong>Amount due:</strong> ${data.amountDueRwf.toLocaleString()} RWF</p>
+        <p><strong>Due date:</strong> ${data.dueDate.toDateString()}</p>
+        <p>Pay via Mobile Money to keep your PayGo plan on track and avoid a late penalty.</p>
+      </div>
+    </div>`;
+    await this.sendEmail({
+      to: data.customerEmail,
+      subject: `⏰ PayGo reminder — ${data.amountDueRwf.toLocaleString()} RWF due ${data.dueDate.toDateString()}`,
+      html,
+      text: `Installment #${data.installmentNumber} on loan ${data.loanNumber} (${data.amountDueRwf.toLocaleString()} RWF) is due on ${data.dueDate.toDateString()}.`,
+    });
+  }
+
+  // ============================================
+  // PayGo overdue alert — sent once an installment passes its due date.
+  // ============================================
+  static async sendInstallmentOverdueAlert(data: {
+    customerName: string;
+    customerEmail: string;
+    loanNumber: string;
+    installmentNumber: number;
+    amountOwedRwf: number;
+    daysOverdue: number;
+  }): Promise<void> {
+    if (!data.customerEmail) return;
+    const html = `<div style="font-family:sans-serif;padding:20px;max-width:500px;">
+      <div style="background:#e53e3e;padding:20px;text-align:center;border-radius:8px 8px 0 0;">
+        <h2 style="margin:0;color:#fff;">⚠️ Installment Overdue</h2>
+      </div>
+      <div style="background:#fff;padding:28px;border-radius:0 0 8px 8px;">
+        <h2>Hi ${data.customerName},</h2>
+        <p>Installment <strong>#${data.installmentNumber}</strong> on loan <strong>${data.loanNumber}</strong> is now <strong>${data.daysOverdue} day(s) overdue</strong>.</p>
+        <p><strong>Amount owed (incl. any penalty):</strong> ${data.amountOwedRwf.toLocaleString()} RWF</p>
+        <p>Please pay as soon as possible to avoid further penalties or loss of your PayGo access.</p>
+      </div>
+    </div>`;
+    await this.sendEmail({
+      to: data.customerEmail,
+      subject: `⚠️ Overdue — ${data.amountOwedRwf.toLocaleString()} RWF (${data.daysOverdue}d late)`,
+      html,
+      text: `Installment #${data.installmentNumber} on loan ${data.loanNumber} is ${data.daysOverdue} day(s) overdue. Amount owed: ${data.amountOwedRwf.toLocaleString()} RWF.`,
+    });
+  }
+
+  // ============================================
+  // PayGo loan completed — congratulatory notice once all installments are paid.
+  // ============================================
+  static async sendLoanCompletedNotice(data: {
+    customerName: string;
+    customerEmail: string;
+    loanNumber: string;
+    totalPaidRwf: number;
+  }): Promise<void> {
+    if (!data.customerEmail) return;
+    const html = `<div style="font-family:sans-serif;padding:20px;max-width:500px;">
+      <div style="background:#38a169;padding:20px;text-align:center;border-radius:8px 8px 0 0;">
+        <h2 style="margin:0;color:#fff;">🎉 Loan Fully Paid</h2>
+      </div>
+      <div style="background:#fff;padding:28px;border-radius:0 0 8px 8px;">
+        <h2>Hi ${data.customerName},</h2>
+        <p>Congratulations — your PayGo loan <strong>${data.loanNumber}</strong> is fully paid off!</p>
+        <p><strong>Total paid:</strong> ${data.totalPaidRwf.toLocaleString()} RWF</p>
+        <p>Thank you for staying on track with your payments.</p>
+      </div>
+    </div>`;
+    await this.sendEmail({
+      to: data.customerEmail,
+      subject: `🎉 Your PayGo loan ${data.loanNumber} is fully paid off`,
+      html,
+      text: `Your PayGo loan ${data.loanNumber} is fully paid. Total paid: ${data.totalPaidRwf.toLocaleString()} RWF.`,
+    });
+  }
+
+  // ============================================
+  // Admin alert — high-risk loan (e.g. crossed default threshold)
+  // ============================================
+  static async sendAdminLoanRiskAlert(data: {
+    loanNumber: string;
+    customerName: string;
+    customerPhone: string;
+    consecutiveMissed: number;
+    overdueAmountRwf: number;
+  }): Promise<void> {
+    const html = `<div style="font-family:sans-serif;padding:20px;max-width:500px;">
+      <div style="background:#e53e3e;padding:20px;text-align:center;border-radius:8px 8px 0 0;">
+        <h2 style="margin:0;color:#fff;">🚨 Loan At Risk of Default</h2>
+      </div>
+      <div style="background:#fff;padding:28px;border-radius:0 0 8px 8px;">
+        <p><strong>Loan:</strong> ${data.loanNumber}</p>
+        <p><strong>Customer:</strong> ${data.customerName} (${data.customerPhone})</p>
+        <p><strong>Consecutive missed installments:</strong> ${data.consecutiveMissed}</p>
+        <p><strong>Overdue amount:</strong> ${data.overdueAmountRwf.toLocaleString()} RWF</p>
+        <p>This loan has crossed the default risk threshold — consider a follow-up call or field visit.</p>
+      </div>
+    </div>`;
+    await this.sendEmail({
+      to: this.adminEmail,
+      subject: `🚨 Loan risk alert — ${data.loanNumber} (${data.consecutiveMissed} missed)`,
+      html,
+      text: `Loan ${data.loanNumber} for ${data.customerName} (${data.customerPhone}) has ${data.consecutiveMissed} consecutive missed installments. Overdue: ${data.overdueAmountRwf.toLocaleString()} RWF.`,
+    });
+  }
+
   static async testConnection(): Promise<boolean> {
     if (!process.env.RESEND_API_KEY) {
       console.error('❌ RESEND_API_KEY is not set — emails will fail to send.');

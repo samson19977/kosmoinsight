@@ -82,10 +82,58 @@ async function seedAdmin() {
   }
 }
 
+async function seedDemoLoan() {
+  // Opt-in only — never runs against production unless explicitly requested,
+  // so `npm run db:seed` stays safe to re-run in prod (products + admin only).
+  if (process.env.SEED_DEMO_LOAN !== 'true') return;
+
+  const { customers, loans } = await import('./schema');
+  const { LoanService } = await import('../services/loan.service');
+
+  const demoPhone = '0788000111';
+  let [customer] = await db.select().from(customers).where(eq(customers.phone, demoPhone));
+  if (!customer) {
+    [customer] = await db
+      .insert(customers)
+      .values({
+        firstName: 'Demo',
+        lastName: 'Customer',
+        phone: demoPhone,
+        email: 'demo.customer@example.com',
+        district: 'Gasabo',
+        village: 'Kimironko',
+        acquisitionChannel: 'field-agent',
+        acquisitionCostRwf: 1500,
+      })
+      .returning();
+    console.log(`✓ Created demo customer: ${customer.firstName} ${customer.lastName}`);
+  }
+
+  const [existingLoan] = await db.select().from(loans).where(eq(loans.customerId, customer.id));
+  if (existingLoan) {
+    console.log(`↻ Demo loan already exists for this customer (${existingLoan.loanNumber}) — skipping`);
+    return;
+  }
+
+  const loan = await LoanService.createLoan({
+    customerId: customer.id,
+    principalRwf: 30000,
+    downPaymentRwf: 5000,
+    interestRateBps: 500, // 5%
+    termMonths: 6,
+    guarantorType: 'school',
+    guarantorName: 'GS Kimironko Parents Association',
+    guarantorPhone: '0788000222',
+    notes: 'Demo PayGo loan for dashboard testing',
+  });
+  console.log(`✓ Created demo loan: ${loan.loanNumber}`);
+}
+
 async function main() {
   console.log('🌱 Seeding KosmoPads database...\n');
   await seedProducts();
   await seedAdmin();
+  await seedDemoLoan();
   console.log('\n✅ Seeding complete.');
   process.exit(0);
 }

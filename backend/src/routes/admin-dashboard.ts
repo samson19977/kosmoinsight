@@ -3,6 +3,7 @@ import { desc, sql } from 'drizzle-orm';
 import { db } from '../config/database';
 import { orders, orderItems, customers } from '../db/schema';
 import { requireAdmin } from '../middleware/auth';
+import { LoanService } from '../services/loan.service';
 
 const router = Router();
 router.use(requireAdmin);
@@ -125,6 +126,10 @@ router.get('/', async (_req: Request, res: Response): Promise<void> => {
         paymentMethod: o.paymentMethod,
       }));
 
+    // ---- PayGo installment portfolio (repayment rate, overdue, at-risk, CAC/LTV) ----
+    const loanPortfolio = await LoanService.getPortfolioMetrics();
+    const cacLtv = await LoanService.getCacLtvMetrics();
+
     res.json({
       success: true,
       revenue: {
@@ -144,6 +149,8 @@ router.get('/', async (_req: Request, res: Response): Promise<void> => {
       topProducts,
       recentOrders,
       pendingConfirmation,
+      loanPortfolio,
+      cacLtv,
     });
   } catch (error) {
     console.error('Dashboard fetch error:', error);

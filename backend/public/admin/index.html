@@ -87,20 +87,6 @@
   .badge.cancelled,.badge.inactive{background:#f1f1f1;color:#777;}
   .badge.low{background:#fff3cd;color:#856404;}
   .badge.out{background:#fbe6e4;color:var(--danger);}
-  .badge.active{background:var(--teal-light);color:var(--teal-dark);}
-  .badge.completed{background:#e5f6ec;color:var(--success);}
-  .badge.defaulted{background:#fbe6e4;color:var(--danger);}
-  .badge.overdue{background:#fbe6e4;color:var(--danger);}
-  .badge.upcoming{background:#f1f1f1;color:#777;}
-  .badge.due{background:#fdf1dd;color:var(--amber);}
-  .badge.waived{background:#f1f1f1;color:#777;}
-  .badge.cancelled{background:#f1f1f1;color:#777;}
-  .badge.pending-txn{background:#e9f0fb;color:#1d4ed8;}
-  .badge.failed-txn{background:#fbe6e4;color:var(--danger);}
-
-  /* ── Loan progress bar ── */
-  .loan-progress{height:6px;border-radius:3px;background:#e2e8f0;overflow:hidden;width:110px;}
-  .loan-progress-fill{height:100%;border-radius:3px;background:var(--teal);transition:width .4s;}
 
   /* ── Buttons ── */
   .btn{border:none;border-radius:6px;padding:5px 11px;font-size:12px;cursor:pointer;font-weight:500;transition:.15s;}
@@ -212,7 +198,7 @@
     <button class="active" data-page="dashPage">📊 Dashboard</button>
     <button data-page="inventoryPage">📦 Inventory</button>
     <button data-page="ordersPage">🛒 Orders</button>
-    <button data-page="loansPage">💳 PayGo Loans</button>
+    <button data-page="loansPage">💳 PayGo</button>
   </nav>
 
   <!-- DASHBOARD PAGE -->
@@ -222,6 +208,12 @@
       <button id="refreshBtn" onclick="loadDashboard()">⟳ Refresh</button>
     </div>
     <div class="kpis" id="kpis"></div>
+
+    <div style="display:flex;align-items:center;justify-content:space-between;margin:24px 0 14px;">
+      <span class="section-title">PayGo Installment Portfolio</span>
+    </div>
+    <div class="kpis" id="loanKpis"></div>
+
     <div class="grid2">
       <div>
         <div class="card">
@@ -294,29 +286,25 @@
       </table>
     </div>
   </div>
-
-  <!-- PAYGO LOANS PAGE -->
+  <!-- PAYGO PAGE -->
   <div class="page" id="loansPage">
     <div style="display:flex;align-items:center;justify-content:space-between;margin:20px 0 14px;">
-      <span class="section-title">PayGo Installment Loans</span>
-      <div class="card-actions">
-        <button class="btn btn-ghost btn-sm" onclick="runOverdueSweep()">⟳ Run overdue sweep</button>
-        <button class="btn btn-ghost btn-sm" onclick="runMomoReconcile()">🔄 Reconcile MoMo</button>
-        <button class="btn btn-ghost btn-sm" onclick="loadLoans()">⟳ Refresh</button>
+      <span class="section-title">PayGo Installment Plans</span>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-ghost" onclick="runLoanAutomation()">⚙ Run automation now</button>
+        <button class="btn btn-teal" onclick="openNewLoanModal()">+ New loan</button>
       </div>
     </div>
-    <div class="kpis" id="loanKpis"></div>
     <div class="card">
       <table>
         <thead>
           <tr>
-            <th>Loan</th>
+            <th>Loan #</th>
             <th>Customer</th>
-            <th>Principal</th>
-            <th>Term</th>
+            <th>Total payable</th>
+            <th>Repayment</th>
             <th>Status</th>
-            <th>Next due</th>
-            <th>Progress</th>
+            <th>Overdue</th>
             <th>Action</th>
           </tr>
         </thead>
@@ -326,57 +314,78 @@
   </div>
 </div>
 
+<!-- New Loan Modal -->
+<div class="modal-overlay" id="newLoanModal">
+  <div class="modal">
+    <h3>New PayGo Installment Plan</h3>
+    <label>Customer ID</label>
+    <input type="number" id="loanCustomerId" min="1" placeholder="e.g. 12 — from the customer's order" />
+    <label>Order ID (optional)</label>
+    <input type="number" id="loanOrderId" min="1" placeholder="Links this plan to an existing order" />
+    <label>Principal (RWF)</label>
+    <input type="number" id="loanPrincipal" min="1000" placeholder="e.g. 30000" />
+    <label>Down payment (RWF)</label>
+    <input type="number" id="loanDownPayment" min="0" value="0" />
+    <label>Interest rate (%)</label>
+    <input type="number" id="loanInterestPct" min="0" max="50" step="0.5" value="5" />
+    <label>Term (months)</label>
+    <input type="number" id="loanTermMonths" min="1" max="24" value="6" />
+    <label>Guarantor type</label>
+    <select id="loanGuarantorType">
+      <option value="none">None</option>
+      <option value="school">School</option>
+      <option value="ngo">NGO</option>
+      <option value="individual">Individual</option>
+    </select>
+    <label>Guarantor name (optional)</label>
+    <input type="text" id="loanGuarantorName" placeholder="e.g. GS Kigali Parents' Association" />
+    <label>Guarantor phone (optional)</label>
+    <input type="text" id="loanGuarantorPhone" placeholder="0788123456" />
+    <div class="modal-btns">
+      <button class="btn btn-ghost" onclick="closeNewLoanModal()">Cancel</button>
+      <button class="btn btn-teal" id="saveLoanBtn" onclick="saveNewLoan()">Create loan</button>
+    </div>
+  </div>
+</div>
+
 <!-- Loan Detail Modal -->
 <div class="modal-overlay" id="loanDetailModal">
-  <div class="modal" style="max-width:640px;width:92vw;max-height:86vh;overflow-y:auto;">
+  <div class="modal" style="max-width:640px;">
     <h3 id="loanDetailTitle">Loan detail</h3>
-    <div id="loanDetailSummary" style="font-size:13px;color:var(--muted);margin-bottom:12px;"></div>
-
-    <div style="background:var(--teal-light);border-radius:10px;padding:12px 14px;margin-bottom:14px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
-        <div>
-          <div style="font-size:11px;color:var(--muted);text-transform:uppercase;">Currently owed</div>
-          <div id="loanCollectibleAmount" style="font-size:20px;font-weight:700;color:var(--teal-dark);">—</div>
-        </div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;">
-          <button class="btn btn-teal btn-sm" onclick="collectMomo(false)">📱 Send MoMo request</button>
-          <button class="btn btn-ghost btn-sm" onclick="collectMomo(true)">Payoff in full</button>
-        </div>
-      </div>
-    </div>
-
-    <div style="margin-bottom:14px;">
-      <label style="display:block;font-size:13px;color:var(--muted);margin-bottom:5px;font-weight:500;">Record a manual payment (cash/bank)</label>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;">
-        <input type="number" id="manualPayAmount" placeholder="Amount RWF" style="flex:1;min-width:120px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px;" />
-        <select id="manualPayMethod" style="padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px;">
-          <option value="cash">Cash</option>
-          <option value="bank">Bank</option>
-        </select>
-        <button class="btn btn-teal btn-sm" id="manualPayBtn" onclick="recordManualPayment()">Record payment</button>
-      </div>
-      <div style="font-size:11px;color:var(--muted);margin-top:5px;">Auto-allocated oldest-installment-first — covers a full payment or a partial one.</div>
-    </div>
-
-    <h3 style="margin-top:0;">Installment schedule</h3>
+    <div id="loanDetailSummary" style="margin-bottom:12px;"></div>
     <table>
-      <thead><tr><th>#</th><th>Due date</th><th>Amount due</th><th>Paid</th><th>Penalty</th><th>Status</th></tr></thead>
+      <thead><tr><th>#</th><th>Due</th><th>Due amt</th><th>Paid</th><th>Penalty</th><th>Status</th><th>Action</th></tr></thead>
       <tbody id="loanScheduleBody"></tbody>
     </table>
-
-    <h3>Transaction ledger</h3>
-    <table>
-      <thead><tr><th>Date</th><th>Type</th><th>Amount</th><th>Method</th><th>Status</th></tr></thead>
-      <tbody id="loanLedgerBody"></tbody>
-    </table>
-
     <div class="modal-btns">
       <button class="btn btn-ghost" onclick="closeLoanDetailModal()">Close</button>
     </div>
   </div>
 </div>
 
-<!-- Stock Edit Modal -->
+<!-- Record Payment Modal -->
+<div class="modal-overlay" id="payInstallmentModal">
+  <div class="modal">
+    <h3>Record Installment Payment</h3>
+    <label>Amount (RWF)</label>
+    <input type="number" id="payAmount" min="1" />
+    <label>Method</label>
+    <select id="payMethod">
+      <option value="momo">Mobile Money</option>
+      <option value="cash">Cash</option>
+      <option value="bank">Bank</option>
+      <option value="agent">Field agent</option>
+    </select>
+    <label>Phone (optional)</label>
+    <input type="text" id="payPhone" placeholder="0788123456" />
+    <label>Note (optional)</label>
+    <input type="text" id="payNote" placeholder="e.g. Paid at kiosk" />
+    <div class="modal-btns">
+      <button class="btn btn-ghost" onclick="closePayInstallmentModal()">Cancel</button>
+      <button class="btn btn-teal" id="savePayBtn" onclick="savePayInstallment()">Save payment</button>
+    </div>
+  </div>
+</div>
 <div class="modal-overlay" id="stockModal">
   <div class="modal">
     <h3 id="modalProductName">Update Stock</h3>
@@ -612,6 +621,33 @@ function renderDashboard(d) {
     <div class="kpi" title="Orders placed but not yet confirmed as paid — confirm them below to move this into revenue">
       <div class="label">Pending revenue (${d.counts.pendingPaymentConfirmations} orders)</div>
       <div class="value amber">${money(d.revenue.pending)}</div>
+    </div>
+  `;
+
+  // PayGo loan portfolio KPIs (repayment rate, risk, CAC/LTV) — computed
+  // server-side in LoanService.getPortfolioMetrics / getCacLtvMetrics.
+  const lp = d.loanPortfolio || {};
+  const cl = d.cacLtv || {};
+  const counts = lp.loanCounts || {};
+  document.getElementById('loanKpis').innerHTML = `
+    <div class="kpi"><div class="label">Repayment rate</div><div class="value pink">${lp.repaymentRatePercent ?? 0}%</div></div>
+    <div class="kpi"><div class="label">Active loans</div><div class="value">${counts.active ?? 0}</div></div>
+    <div class="kpi"><div class="label">Completed loans</div><div class="value">${counts.completed ?? 0}</div></div>
+    <div class="kpi" title="Active loans with at least one currently overdue installment">
+      <div class="label">At-risk loans</div><div class="value amber">${counts.atRisk ?? 0}</div>
+    </div>
+    <div class="kpi" title="Loans flagged defaulted after ${'consecutive missed installments crossing the policy threshold'}">
+      <div class="label">Defaulted loans</div><div class="value">${counts.defaulted ?? 0}</div>
+    </div>
+    <div class="kpi"><div class="label">Overdue amount</div><div class="value amber">${money(lp.overdueAmountRwf)}</div></div>
+    <div class="kpi" title="Average acquisition cost per customer where tagged">
+      <div class="label">Avg. CAC</div><div class="value">${cl.avgCacRwf != null ? money(cl.avgCacRwf) : '—'}</div>
+    </div>
+    <div class="kpi" title="Average lifetime value from installment payments">
+      <div class="label">Avg. LTV</div><div class="value">${money(cl.avgLtvRwf)}</div>
+    </div>
+    <div class="kpi" title="LTV ÷ CAC — above 3 is generally considered healthy">
+      <div class="label">LTV : CAC</div><div class="value pink">${cl.ltvToCacRatio != null ? cl.ltvToCacRatio + '×' : '—'}</div>
     </div>
   `;
 
@@ -913,229 +949,185 @@ async function updateOrderStatus(orderNumber, selectEl) {
 }
 
 // ============================================================
-// PAYGO LOANS PAGE
+// PAYGO INSTALLMENT LOANS
 // ============================================================
-let currentLoanId = null;
+let currentLoanNumber = null;
 
 async function loadLoans() {
   try {
-    const [loansRes, rateRes] = await Promise.all([
-      fetch(`${API_BASE}/admin/loans`, { headers: { Authorization: `Bearer ${token}` } }),
-      fetch(`${API_BASE}/admin/loans/metrics/repayment-rate`, { headers: { Authorization: `Bearer ${token}` } }),
-    ]);
-    if (loansRes.status === 401 || rateRes.status === 401) { logout(); return; }
-    const loansData = await loansRes.json();
-    const rateData = await rateRes.json();
-    if (!loansRes.ok) throw new Error(loansData.error || 'Failed to load loans');
-    renderLoanKpis(loansData.loans || [], rateData);
-    renderLoansTable(loansData.loans || []);
-  } catch (e) {
-    showToast('⚠️ ' + e.message, true);
-  }
-}
-
-function renderLoanKpis(loans, rate) {
-  const active = loans.filter(l => l.status === 'active').length;
-  const defaulted = loans.filter(l => l.status === 'defaulted').length;
-  const outstanding = loans
-    .filter(l => l.status === 'active')
-    .reduce((sum, l) => sum + (l.principalRwf || 0), 0);
-
-  document.getElementById('loanKpis').innerHTML = `
-    <div class="kpi"><div class="label">Active loans</div><div class="value">${active}</div></div>
-    <div class="kpi"><div class="label">Total principal outstanding</div><div class="value">${fmt(outstanding)}</div></div>
-    <div class="kpi"><div class="label">Repayment rate</div><div class="value">${Math.round((rate.repaymentRate || 0) * 100)}%</div></div>
-    <div class="kpi"><div class="label">Overdue installments</div><div class="value ${rate.overdueCount > 0 ? 'danger' : ''}">${rate.overdueCount || 0}</div></div>
-    <div class="kpi"><div class="label">Defaulted loans</div><div class="value ${defaulted > 0 ? 'danger' : ''}">${defaulted}</div></div>
-  `;
-}
-
-function renderLoansTable(loans) {
-  const tbody = document.getElementById('loansBody');
-  if (!loans.length) {
-    tbody.innerHTML = '<tr><td colspan="8" class="empty">No PayGo loans yet.</td></tr>';
-    return;
-  }
-  tbody.innerHTML = loans.map(l => {
-    const nextDue = l.expectedPayoffDate ? new Date(l.expectedPayoffDate).toLocaleDateString() : '—';
-    return `<tr>
-      <td><strong>#${l.id}</strong><div style="font-size:11px;color:var(--muted);">Order #${l.orderId}</div></td>
-      <td>${l.customerFirstName || ''} ${l.customerLastName || ''}<div style="font-size:11px;color:var(--muted);">${l.customerPhone || ''}</div></td>
-      <td>${fmt(l.principalRwf)}</td>
-      <td>${l.termMonths} mo</td>
-      <td><span class="badge ${l.status}">${l.status}</span></td>
-      <td>${nextDue}</td>
-      <td><div class="loan-progress"><div class="loan-progress-fill" style="width:0%;" id="loanProgress-${l.id}"></div></div></td>
-      <td><button class="btn btn-teal btn-sm" onclick="openLoanDetail(${l.id})">View</button></td>
-    </tr>`;
-  }).join('');
-
-  // Fetch collectible-vs-principal for a rough progress bar per loan (lightweight, best-effort).
-  loans.forEach(l => {
-    fetch(`${API_BASE}/admin/loans/${l.id}/collectible?payoffAll=true`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json())
-      .then(d => {
-        const el = document.getElementById(`loanProgress-${l.id}`);
-        if (!el || typeof d.amountRwf !== 'number') return;
-        const total = l.principalRwf || 1;
-        const paidPct = Math.max(0, Math.min(100, Math.round(((total - d.amountRwf) / total) * 100)));
-        el.style.width = paidPct + '%';
-      })
-      .catch(() => {});
-  });
-}
-
-async function openLoanDetail(loanId) {
-  currentLoanId = loanId;
-  try {
-    const res = await fetch(`${API_BASE}/admin/loans/${loanId}`, { headers: { Authorization: `Bearer ${token}` } });
+    const res = await fetch(`${API_BASE}/admin/loans`, { headers: { Authorization: `Bearer ${token}` } });
     if (res.status === 401) { logout(); return; }
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Failed to load loan');
-    renderLoanDetail(data);
-    document.getElementById('loanDetailModal').classList.add('show');
-    refreshCollectible();
+    if (!res.ok) throw new Error(data.error || 'Failed to load loans');
+    renderLoans(data.loans);
   } catch (e) {
     showToast('⚠️ ' + e.message, true);
   }
 }
 
-function closeLoanDetailModal() {
-  document.getElementById('loanDetailModal').classList.remove('show');
-  currentLoanId = null;
+function loanStatusBadge(status) {
+  const cls = status === 'active' ? 'pending' : status === 'completed' ? 'paid' : status === 'defaulted' ? 'failed' : 'amber';
+  return `<span class="badge ${cls}">${status}</span>`;
 }
 
-function renderLoanDetail(data) {
-  const { loan, schedule, transactions } = data;
-  document.getElementById('loanDetailTitle').textContent = `Loan #${loan.id} — ${fmt(loan.principalRwf)} over ${loan.termMonths} months`;
-  document.getElementById('loanDetailSummary').innerHTML =
-    `<span class="badge ${loan.status}">${loan.status}</span> &nbsp; Down payment: ${fmt(loan.downPaymentRwf)} &nbsp;·&nbsp; Interest: ${(loan.interestRateBps / 100).toFixed(1)}%` +
-    (loan.guarantorName ? ` &nbsp;·&nbsp; Guarantor: ${loan.guarantorName}` : '');
-
-  document.getElementById('loanScheduleBody').innerHTML = schedule.map(s => `<tr>
-    <td>${s.installmentNumber}</td>
-    <td>${new Date(s.dueDate).toLocaleDateString()}</td>
-    <td>${fmt(s.amountDueRwf)}</td>
-    <td>${fmt(s.amountPaidRwf)}</td>
-    <td>${s.penaltyRwf > 0 ? fmt(s.penaltyRwf) : '—'}</td>
-    <td><span class="badge ${s.status}">${s.status}</span></td>
-  </tr>`).join('') || '<tr><td colspan="6" class="empty">No installments.</td></tr>';
-
-  document.getElementById('loanLedgerBody').innerHTML = transactions.map(t => `<tr>
-    <td>${new Date(t.createdAt).toLocaleString()}</td>
-    <td>${t.type}</td>
-    <td>${fmt(t.amountRwf)}</td>
-    <td>${t.paymentMethod ? methodChip(t.paymentMethod) : '—'}</td>
-    <td><span class="badge ${t.status === 'pending' ? 'pending-txn' : t.status === 'failed' ? 'failed-txn' : 'completed'}">${t.status}</span></td>
-  </tr>`).join('') || '<tr><td colspan="5" class="empty">No transactions yet.</td></tr>';
+function renderLoans(loans) {
+  const body = document.getElementById('loansBody');
+  if (!loans.length) { body.innerHTML = '<tr><td colspan="7" class="empty">No PayGo loans yet — create one to get started.</td></tr>'; return; }
+  body.innerHTML = loans.map(l => `
+    <tr>
+      <td><strong>${l.loanNumber}</strong></td>
+      <td>${l.customerName || 'Customer #' + l.customerId}<br><span style="color:#8a8f9c;font-size:11px;">${l.customerPhone || ''}</span></td>
+      <td>${fmt(l.totalPayableRwf)}</td>
+      <td>${l.repaymentRatePercent}%</td>
+      <td>${loanStatusBadge(l.status)}</td>
+      <td>${l.overdueInstallments > 0 ? `<span class="badge amber">${l.overdueInstallments}</span>` : '—'}</td>
+      <td><button class="btn btn-ghost btn-sm" onclick="openLoanDetail('${l.loanNumber}')">View</button></td>
+    </tr>
+  `).join('');
 }
 
-async function refreshCollectible() {
-  if (!currentLoanId) return;
+async function runLoanAutomation() {
   try {
-    const res = await fetch(`${API_BASE}/admin/loans/${currentLoanId}/collectible`, { headers: { Authorization: `Bearer ${token}` } });
-    const data = await res.json();
-    document.getElementById('loanCollectibleAmount').textContent = res.ok ? fmt(data.amountRwf) : '—';
-  } catch {
-    document.getElementById('loanCollectibleAmount').textContent = '—';
-  }
-}
-
-// Pushes a MoMo request-to-pay to the customer for what's currently due
-// (or full early payoff). The payment auto-allocates the moment MTN
-// confirms it — via the real-time webhook if it fires, and guaranteed
-// within a few minutes either way via the background reconciliation job.
-async function collectMomo(payoffAll) {
-  if (!currentLoanId) return;
-  if (!confirm(payoffAll
-    ? 'Send a MoMo request for the full remaining loan balance?'
-    : 'Send a MoMo request for the current amount due?')) return;
-  try {
-    const res = await fetch(`${API_BASE}/admin/loans/${currentLoanId}/collect`, {
+    showToast('Running reminders, overdue sweep + default check…');
+    const res = await fetch(`${API_BASE}/admin/loans/run-automation`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ payoffAll }),
+      headers: { Authorization: `Bearer ${token}` },
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Failed to send MoMo request');
-    showToast(`📱 MoMo request sent for ${fmt(data.transaction.amountRwf)}. It will auto-apply once approved.`);
-    openLoanDetail(currentLoanId);
+    if (!res.ok) throw new Error(data.error || 'Automation run failed');
+    const s = data.summary;
+    showToast(`✓ Reminders: ${s.reminders.sent}, penalties: ${s.overdue.penalized}, defaults flagged: ${s.defaults.flagged}`);
     loadLoans();
+    loadDashboard();
   } catch (e) {
     showToast('⚠️ ' + e.message, true);
   }
 }
 
-// Records a cash/bank payment against the loan as a whole — auto-allocated
-// oldest-installment-first, so one entry can cover a single partial
-// installment or clear several installments in one go.
-async function recordManualPayment() {
-  if (!currentLoanId) return;
-  const amountRwf = parseInt(document.getElementById('manualPayAmount').value);
-  const paymentMethod = document.getElementById('manualPayMethod').value;
+// ---- New loan modal ----
+function openNewLoanModal() {
+  ['loanCustomerId','loanOrderId','loanPrincipal','loanGuarantorName','loanGuarantorPhone'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('loanDownPayment').value = 0;
+  document.getElementById('loanInterestPct').value = 5;
+  document.getElementById('loanTermMonths').value = 6;
+  document.getElementById('loanGuarantorType').value = 'none';
+  document.getElementById('newLoanModal').classList.add('show');
+}
+function closeNewLoanModal() { document.getElementById('newLoanModal').classList.remove('show'); }
 
-  if (isNaN(amountRwf) || amountRwf <= 0) {
-    showToast('Enter a valid amount', true);
-    return;
-  }
+async function saveNewLoan() {
+  const btn = document.getElementById('saveLoanBtn');
+  const customerId = Number(document.getElementById('loanCustomerId').value);
+  const principalRwf = Number(document.getElementById('loanPrincipal').value);
+  if (!customerId || !principalRwf) { showToast('⚠️ Customer ID and principal are required', true); return; }
 
-  const btn = document.getElementById('manualPayBtn');
+  const payload = {
+    customerId,
+    orderId: document.getElementById('loanOrderId').value ? Number(document.getElementById('loanOrderId').value) : undefined,
+    principalRwf,
+    downPaymentRwf: Number(document.getElementById('loanDownPayment').value) || 0,
+    interestRateBps: Math.round(Number(document.getElementById('loanInterestPct').value) * 100),
+    termMonths: Number(document.getElementById('loanTermMonths').value),
+    guarantorType: document.getElementById('loanGuarantorType').value,
+    guarantorName: document.getElementById('loanGuarantorName').value || undefined,
+    guarantorPhone: document.getElementById('loanGuarantorPhone').value || undefined,
+  };
+
   btn.disabled = true;
-  btn.textContent = 'Recording…';
-
   try {
-    const res = await fetch(`${API_BASE}/admin/loans/${currentLoanId}/pay`, {
+    const res = await fetch(`${API_BASE}/admin/loans`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ amountRwf, paymentMethod }),
+      body: JSON.stringify(payload),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Failed to record payment');
-
-    const touched = data.installmentsTouched?.length || 0;
-    showToast(`✅ ${fmt(data.amountAppliedRwf)} applied across ${touched} installment${touched === 1 ? '' : 's'}${data.loanCompleted ? ' — loan fully paid off! 🎉' : ''}`);
-    document.getElementById('manualPayAmount').value = '';
-    openLoanDetail(currentLoanId);
+    if (!res.ok) throw new Error(data.error || (data.details ? data.details.map(d => d.message).join(', ') : 'Failed to create loan'));
+    showToast(`✓ Loan ${data.loan.loanNumber} created`);
+    closeNewLoanModal();
     loadLoans();
+    loadDashboard();
   } catch (e) {
     showToast('⚠️ ' + e.message, true);
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Record payment';
   }
 }
 
-// Manual triggers for the same jobs that run automatically in the
-// background (daily sweep, 3-min MoMo reconciliation) — useful to force
-// a refresh right after a demo payment instead of waiting for the timer.
-async function runOverdueSweep() {
+// ---- Loan detail modal ----
+async function openLoanDetail(loanNumber) {
+  currentLoanNumber = loanNumber;
   try {
-    const res = await fetch(`${API_BASE}/admin/loans/sweep-overdue`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const res = await fetch(`${API_BASE}/admin/loans/${loanNumber}`, { headers: { Authorization: `Bearer ${token}` } });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Sweep failed');
-    showToast(`Sweep done: ${data.activated} activated, ${data.flagged} flagged overdue, ${data.defaulted} defaulted`);
-    loadLoans();
+    if (!res.ok) throw new Error(data.error || 'Failed to load loan');
+    renderLoanDetail(data);
+    document.getElementById('loanDetailModal').classList.add('show');
   } catch (e) {
     showToast('⚠️ ' + e.message, true);
   }
 }
+function closeLoanDetailModal() { document.getElementById('loanDetailModal').classList.remove('show'); currentLoanNumber = null; }
 
-async function runMomoReconcile() {
+function renderLoanDetail(data) {
+  const { loan, customer, schedule } = data;
+  document.getElementById('loanDetailTitle').textContent = `Loan ${loan.loanNumber} — ${loanStatusBadge(loan.status).replace(/<[^>]+>/g, '')}`;
+  document.getElementById('loanDetailSummary').innerHTML = `
+    <div>Customer: <strong>${customer ? customer.firstName + ' ' + customer.lastName : '—'}</strong> (${customer ? customer.phone : '—'})</div>
+    <div>Principal: ${fmt(loan.principalRwf)} · Total payable: ${fmt(loan.totalPayableRwf)} · Term: ${loan.termMonths} months</div>
+    ${loan.guarantorType !== 'none' ? `<div>Guarantor (${loan.guarantorType}): ${loan.guarantorName || '—'} ${loan.guarantorPhone || ''}</div>` : ''}
+  `;
+  document.getElementById('loanScheduleBody').innerHTML = schedule.map(i => `
+    <tr>
+      <td>${i.installmentNumber}</td>
+      <td>${new Date(i.dueDate).toLocaleDateString()}</td>
+      <td>${fmt(i.amountDueRwf)}</td>
+      <td>${fmt(i.amountPaidRwf)}</td>
+      <td>${i.penaltyRwf ? fmt(i.penaltyRwf) : '—'}</td>
+      <td><span class="badge ${i.status === 'paid' ? 'paid' : i.status === 'overdue' ? 'failed' : 'pending'}">${i.status}</span></td>
+      <td>${i.status !== 'paid' ? `<button class="btn btn-teal btn-sm" onclick="openPayInstallmentModal(${i.id})">Pay</button>` : '✓'}</td>
+    </tr>
+  `).join('');
+}
+
+// ---- Record payment modal ----
+let currentInstallmentId = null;
+function openPayInstallmentModal(installmentId) {
+  currentInstallmentId = installmentId;
+  document.getElementById('payAmount').value = '';
+  document.getElementById('payPhone').value = '';
+  document.getElementById('payNote').value = '';
+  document.getElementById('payMethod').value = 'momo';
+  document.getElementById('payInstallmentModal').classList.add('show');
+}
+function closePayInstallmentModal() { document.getElementById('payInstallmentModal').classList.remove('show'); currentInstallmentId = null; }
+
+async function savePayInstallment() {
+  const btn = document.getElementById('savePayBtn');
+  const amountRwf = Number(document.getElementById('payAmount').value);
+  if (!amountRwf) { showToast('⚠️ Enter an amount', true); return; }
+  btn.disabled = true;
   try {
-    const res = await fetch(`${API_BASE}/admin/loans/reconcile-momo`, {
+    const res = await fetch(`${API_BASE}/admin/loans/installments/${currentInstallmentId}/pay`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        amountRwf,
+        method: document.getElementById('payMethod').value,
+        phone: document.getElementById('payPhone').value || undefined,
+        note: document.getElementById('payNote').value || undefined,
+      }),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Reconcile failed');
-    showToast(`Reconciled: ${data.completed} completed, ${data.failed} failed, ${data.stillPending} still pending`);
+    if (!res.ok) throw new Error(data.error || 'Failed to record payment');
+    showToast(data.allPaid ? '🎉 Loan fully paid off!' : '✓ Payment recorded');
+    closePayInstallmentModal();
+    if (currentLoanNumber) openLoanDetail(currentLoanNumber);
     loadLoans();
-    if (currentLoanId) openLoanDetail(currentLoanId);
+    loadDashboard();
   } catch (e) {
     showToast('⚠️ ' + e.message, true);
+  } finally {
+    btn.disabled = false;
   }
 }
 
@@ -1154,13 +1146,10 @@ function showToast(msg, isError = false) {
 document.getElementById('stockModal').addEventListener('click', function(e) {
   if (e.target === this) closeModal();
 });
-document.getElementById('loanDetailModal').addEventListener('click', function(e) {
-  if (e.target === this) closeLoanDetailModal();
-});
 
 // Keyboard shortcuts
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') { closeModal(); closeLoanDetailModal(); }
+  if (e.key === 'Escape') closeModal();
 });
 </script>
 </body>

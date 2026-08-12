@@ -109,14 +109,14 @@ export const momoPaymentSchema = z.object({
 });
 
 // ============================================
-// LOAN CREATION SCHEMA (PayGo installment plan)
+// LOAN SCHEMA (PayGo installment plan)
 // ============================================
 export const loanSchema = z.object({
-  orderId: z.number().positive('Order ID is required'),
+  orderId: z.number().positive().optional(),
   customerId: z.number().positive('Customer ID is required'),
   principalRwf: z.number()
     .int('Principal must be a whole number')
-    .positive('Principal must be greater than 0'),
+    .min(1000, 'Principal must be at least 1,000 RWF'),
   downPaymentRwf: z.number()
     .int('Down payment must be a whole number')
     .min(0, 'Down payment cannot be negative')
@@ -124,32 +124,41 @@ export const loanSchema = z.object({
   interestRateBps: z.number()
     .int('Interest rate must be a whole number of basis points')
     .min(0, 'Interest rate cannot be negative')
-    .max(10000, 'Interest rate cannot exceed 100%')
+    .max(5000, 'Interest rate looks unreasonably high (max 50%)')
     .default(0),
   termMonths: z.number()
     .int('Term must be a whole number of months')
     .min(1, 'Term must be at least 1 month')
-    .max(60, 'Term cannot exceed 60 months'),
+    .max(24, 'Term must be at most 24 months'),
+  guarantorType: z.enum(['none', 'school', 'ngo', 'individual']).default('none'),
   guarantorName: z.string().max(100).optional().or(z.literal('')),
   guarantorPhone: z.string()
     .regex(/^(\+250|0)[78][0-9]{8}$/, 'Guarantor phone must be a valid Rwandan number')
     .optional()
     .or(z.literal('')),
-  acquisitionChannel: z.string().max(50).optional().or(z.literal('')),
-  startDate: z.string().datetime().optional(), // ISO string, defaults to now in the service
+  notes: z.string().max(500).optional(),
 });
 
 // ============================================
 // INSTALLMENT PAYMENT SCHEMA
-// Records a payment (full or partial) against a specific installment.
 // ============================================
 export const installmentPaymentSchema = z.object({
-  installmentId: z.number().positive('Installment ID is required'),
   amountRwf: z.number()
     .int('Amount must be a whole number')
     .positive('Amount must be greater than 0'),
-  paymentMethod: z.enum(['momo', 'cash', 'bank']),
-  momoTransactionId: z.string().max(100).optional(),
+  method: z.enum(['momo', 'cash', 'bank', 'agent']),
+  phone: z.string()
+    .regex(/^(\+250|0)[78][0-9]{8}$/, 'Phone number must be a valid Rwandan number')
+    .optional()
+    .or(z.literal('')),
+  note: z.string().max(500).optional(),
+});
+
+// ============================================
+// INSTALLMENT PENALTY/WAIVER SCHEMA
+// ============================================
+export const installmentAdjustmentSchema = z.object({
+  amountRwf: z.number().int().positive('Amount must be greater than 0'),
   note: z.string().max(500).optional(),
 });
 
@@ -161,3 +170,4 @@ export type PaymentInput = z.infer<typeof paymentSchema>;
 export type MomoPaymentInput = z.infer<typeof momoPaymentSchema>;
 export type LoanInput = z.infer<typeof loanSchema>;
 export type InstallmentPaymentInput = z.infer<typeof installmentPaymentSchema>;
+export type InstallmentAdjustmentInput = z.infer<typeof installmentAdjustmentSchema>;
