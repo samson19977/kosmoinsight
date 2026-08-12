@@ -140,6 +140,13 @@ export const installments = pgTable('installments', {
   paidAt: timestamp('paid_at'),
   reminderSentAt: timestamp('reminder_sent_at'), // gates the pre-due-date reminder email so it only fires once
   overdueAlertSentAt: timestamp('overdue_alert_sent_at'), // gates the overdue email so it only fires once
+  // ---- Self-service MoMo payment tracking ----
+  // Set when a customer initiates a Request-to-Pay against this installment;
+  // cleared once the reconciliation poll or webhook resolves it (paid or failed).
+  pendingMomoReferenceId: varchar('pending_momo_reference_id', { length: 100 }),
+  pendingMomoAmountRwf: integer('pending_momo_amount_rwf'),
+  pendingMomoPhone: varchar('pending_momo_phone', { length: 20 }),
+  pendingMomoInitiatedAt: timestamp('pending_momo_initiated_at'),
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),
 });

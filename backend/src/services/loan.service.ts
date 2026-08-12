@@ -2,6 +2,7 @@ import { eq, sql } from 'drizzle-orm';
 import { db } from '../config/database';
 import { loans, installments, loanTransactions, customers, payments } from '../db/schema';
 import { EmailService } from './email.service';
+import { MomoService } from './momo.service';
 
 // ============================================
 // Business rules — tunable via env vars so ops can adjust policy without
@@ -11,6 +12,7 @@ const GRACE_PERIOD_DAYS = Number(process.env.LOAN_GRACE_PERIOD_DAYS || 3); // da
 const PENALTY_RATE_BPS = Number(process.env.LOAN_PENALTY_RATE_BPS || 300); // 3% of the installment amount, charged once when it first crosses the grace period
 const REMINDER_DAYS_BEFORE = Number(process.env.LOAN_REMINDER_DAYS_BEFORE || 3); // send a reminder this many days before due date
 const DEFAULT_THRESHOLD_CONSECUTIVE_MISSED = Number(process.env.LOAN_DEFAULT_THRESHOLD || 3); // consecutive unpaid overdue installments before a loan is flagged defaulted
+const MOMO_PENDING_TIMEOUT_MINUTES = Number(process.env.MOMO_PENDING_TIMEOUT_MINUTES || 20); // how long a Request-to-Pay can sit unresolved before we let the customer retry
 
 function addMonths(date: Date, months: number): Date {
   const d = new Date(date);
@@ -217,6 +219,195 @@ export class LoanService {
       amountRwf,
       note: note || 'Late payment penalty',
     });
+  }
+
+  // ============================================
+  // CUSTOMER SELF-SERVICE — initiate a MoMo Request-to-Pay against a
+  // specific installment. The customer's phone gets an approval prompt;
+  // resolution happens later via webhook (fast) or the reconciliation
+  // poll (safety net) — see resolveMomoReference / reconcilePendingMomoTransactions.
+  //
+  // Guards:
+  //  - blocks a second concurrent request on the same installment unless
+  //    the prior one has expired (prevents duplicate MTN prompts)
+  //  - caps the amount at what's actually outstanding on the loan, so a
+  //    typo or a malicious client can't request more than is owed
+  //  - rejects on a non-active loan or an already-paid installment
+  // ============================================
+  static async initiateMomoPayment(installmentId: number, amountRwf: number, phone: string) {
+    if (amountRwf < 100) throw new Error('Minimum payment amount is 100 RWF');
+
+    const [installment] = await db.select().from(installments).where(eq(installments.id, installmentId));
+    if (!installment) throw new Error('Installment not found');
+    if (installment.status === 'paid') throw new Error('This installment is already fully paid');
+
+    const [loan] = await db.select().from(loans).where(eq(loans.id, installment.loanId));
+    if (!loan) throw new Error('Loan not found');
+    if (loan.status !== 'active') throw new Error(`This loan is ${loan.status} — no payment is needed`);
+
+    // Block a duplicate concurrent request unless the existing one is stale
+    if (installment.pendingMomoReferenceId) {
+      const ageMinutes = installment.pendingMomoInitiatedAt
+        ? (Date.now() - installment.pendingMomoInitiatedAt.getTime()) / 60000
+        : Infinity;
+      if (ageMinutes < MOMO_PENDING_TIMEOUT_MINUTES) {
+        throw new Error(
+          'A payment request is already pending on this installment — approve it on your phone, or wait a few minutes and try again.'
+        );
+      }
+      // stale (customer likely ignored/missed the earlier prompt) — fall through and overwrite it
+    }
+
+    // Cap at total outstanding across the whole loan (covers deliberate
+    // early-payoff amounts that exceed a single installment) so a bad
+    // amount can never overcharge past what's actually owed.
+    const allInstallments = await db.select().from(installments).where(eq(installments.loanId, loan.id));
+    const totalOutstandingRwf = allInstallments.reduce(
+      (s, i) => s + Math.max(0, i.amountDueRwf + (i.penaltyRwf || 0) - (i.amountPaidRwf || 0)),
+      0
+    );
+    if (amountRwf > totalOutstandingRwf) {
+      throw new Error(`Amount exceeds what's owed on this loan (${totalOutstandingRwf.toLocaleString()} RWF outstanding)`);
+    }
+
+    const reference = `${loan.loanNumber}-INST${installment.installmentNumber}-${Date.now()}`;
+    const result = await MomoService.initiatePayment({
+      phone,
+      amount: amountRwf,
+      reference,
+      description: `PayGo installment #${installment.installmentNumber} — ${loan.loanNumber}`,
+    });
+
+    if (!result.transactionId) {
+      throw new Error(result.message || 'Failed to initiate MoMo payment');
+    }
+
+    await db
+      .update(installments)
+      .set({
+        pendingMomoReferenceId: result.transactionId,
+        pendingMomoAmountRwf: amountRwf,
+        pendingMomoPhone: phone,
+        pendingMomoInitiatedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(installments.id, installmentId));
+
+    return {
+      referenceId: result.transactionId,
+      status: result.status, // 'pending' (real MTN request) or 'pending_manual' (USSD fallback)
+      message: result.message,
+    };
+  }
+
+  // ============================================
+  // Resolve one pending MoMo reference — called by both the webhook (fast
+  // path, app.ts) and the polling reconciler (safety net below). Race-safe:
+  // the conditional UPDATE only succeeds for whichever caller gets there
+  // first, so a webhook and a poll landing at the same moment can never
+  // both apply the same payment.
+  // ============================================
+  static async resolveMomoReference(
+    referenceId: string,
+    mtnStatus: 'SUCCESSFUL' | 'FAILED'
+  ): Promise<{ resolved: boolean; installmentId?: number; allPaid?: boolean }> {
+    const [installment] = await db
+      .select()
+      .from(installments)
+      .where(eq(installments.pendingMomoReferenceId, referenceId));
+    if (!installment) return { resolved: false }; // not one of ours, or already claimed by a concurrent caller
+
+    // Atomic claim — only proceeds if this row still has this exact
+    // referenceId pending (i.e. nobody else has processed it yet).
+    const claimed = await db
+      .update(installments)
+      .set({
+        pendingMomoReferenceId: null,
+        pendingMomoAmountRwf: null,
+        pendingMomoPhone: null,
+        pendingMomoInitiatedAt: null,
+        updatedAt: new Date(),
+      })
+      .where(
+        sql`${installments.id} = ${installment.id} AND ${installments.pendingMomoReferenceId} = ${referenceId}`
+      )
+      .returning();
+
+    if (claimed.length === 0) return { resolved: false }; // lost the race — another caller already handled this
+
+    if (mtnStatus === 'SUCCESSFUL' && installment.pendingMomoAmountRwf) {
+      const result = await this.recordPayment(installment.id, {
+        amountRwf: installment.pendingMomoAmountRwf,
+        method: 'momo',
+        phone: installment.pendingMomoPhone || undefined,
+        note: `MoMo payment confirmed (ref ${referenceId})`,
+      });
+      return { resolved: true, installmentId: installment.id, allPaid: result.allPaid };
+    }
+
+    // FAILED — nothing charged; pending state is already cleared above so the customer can retry immediately
+    return { resolved: true, installmentId: installment.id };
+  }
+
+  // ============================================
+  // AUTOMATION 5/5 — poll MTN for any installment with a still-pending
+  // MoMo request. Runs on a short interval (minutes, wired in app.ts)
+  // rather than the daily sweep, since this is what makes "customer taps
+  // approve on their phone" actually mark the installment paid without
+  // depending on the webhook arriving.
+  // ============================================
+  static async reconcilePendingMomoTransactions(): Promise<{
+    checked: number;
+    completed: number;
+    failed: number;
+    stillPending: number;
+  }> {
+    const pending = await db
+      .select()
+      .from(installments)
+      .where(sql`${installments.pendingMomoReferenceId} IS NOT NULL`);
+
+    let completed = 0;
+    let failedCount = 0;
+    let stillPending = 0;
+
+    for (const inst of pending) {
+      if (!inst.pendingMomoReferenceId) continue;
+
+      const ageMinutes = inst.pendingMomoInitiatedAt
+        ? (Date.now() - inst.pendingMomoInitiatedAt.getTime()) / 60000
+        : Infinity;
+
+      const status = await MomoService.checkPaymentStatus(inst.pendingMomoReferenceId);
+
+      if (status.status === 'SUCCESSFUL') {
+        const result = await this.resolveMomoReference(inst.pendingMomoReferenceId, 'SUCCESSFUL');
+        if (result.resolved) completed++;
+      } else if (status.status === 'FAILED') {
+        await this.resolveMomoReference(inst.pendingMomoReferenceId, 'FAILED');
+        failedCount++;
+      } else if (ageMinutes > MOMO_PENDING_TIMEOUT_MINUTES) {
+        // Timed out without ever resolving — clear it so the customer can
+        // retry. Race-safe conditional clear, same pattern as resolveMomoReference.
+        await db
+          .update(installments)
+          .set({
+            pendingMomoReferenceId: null,
+            pendingMomoAmountRwf: null,
+            pendingMomoPhone: null,
+            pendingMomoInitiatedAt: null,
+            updatedAt: new Date(),
+          })
+          .where(
+            sql`${installments.id} = ${inst.id} AND ${installments.pendingMomoReferenceId} = ${inst.pendingMomoReferenceId}`
+          );
+        failedCount++;
+      } else {
+        stillPending++;
+      }
+    }
+
+    return { checked: pending.length, completed, failed: failedCount, stillPending };
   }
 
   // ============================================

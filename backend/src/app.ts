@@ -147,7 +147,19 @@ app.post('/api/webhooks/momo', async (req, res) => {
       .where(eq(payments.momoTransactionId, referenceId));
 
     if (!payment) {
-      console.warn(`Webhook: no payment row found for referenceId=${referenceId}`);
+      // Not a one-time order payment — check if it's a PayGo installment
+      // payment instead (same webhook URL is used for both flows).
+      const outcome = rawStatus === 'SUCCESSFUL' ? 'SUCCESSFUL' : rawStatus === 'FAILED' ? 'FAILED' : null;
+      if (outcome) {
+        const result = await LoanService.resolveMomoReference(referenceId, outcome);
+        if (result.resolved) {
+          console.log(
+            `✅ Webhook: PayGo installment ${result.installmentId} resolved via MoMo (${outcome})${result.allPaid ? ' — loan fully paid off' : ''}`
+          );
+          return;
+        }
+      }
+      console.warn(`Webhook: no payment or pending installment found for referenceId=${referenceId}`);
       return;
     }
 
@@ -363,6 +375,25 @@ async function startServer() {
         console.error('Scheduled loan automation run failed (non-fatal):', err)
       );
     }, 24 * 60 * 60 * 1000);
+
+    // ============================================
+    // PayGo MoMo reconciliation — the webhook above is the fast path, but
+    // MTN's sandbox (and flaky networks generally) don't always deliver
+    // webhooks reliably. This poll is the safety net: it checks any
+    // installment with a pending MoMo request directly against MTN every
+    // few minutes, so "customer approves on their phone" reliably marks
+    // the installment paid even if the webhook never arrives.
+    // ============================================
+    setTimeout(() => {
+      LoanService.reconcilePendingMomoTransactions().catch((err) =>
+        console.error('Initial MoMo reconciliation failed (non-fatal):', err)
+      );
+    }, 30_000);
+    setInterval(() => {
+      LoanService.reconcilePendingMomoTransactions().catch((err) =>
+        console.error('Scheduled MoMo reconciliation failed (non-fatal):', err)
+      );
+    }, 3 * 60 * 1000);
   } catch (error) {
     console.error('❌ Server startup failed:', error);
     process.exit(1);

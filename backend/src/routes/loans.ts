@@ -1,7 +1,12 @@
 import { Router, Request, Response } from 'express';
 import { eq, desc } from 'drizzle-orm';
 import { validate } from '../middleware/validate';
-import { loanSchema, installmentPaymentSchema, installmentAdjustmentSchema } from '../lib/validation/schemas';
+import {
+  loanSchema,
+  installmentPaymentSchema,
+  installmentAdjustmentSchema,
+  momoInstallmentPaymentSchema,
+} from '../lib/validation/schemas';
 import { requireAdmin, AuthedRequest } from '../middleware/auth';
 import { db } from '../config/database';
 import { loans, installments, loanTransactions, customers } from '../db/schema';
@@ -263,12 +268,18 @@ publicLoanRouter.get('/:loanNumber/status', async (req: Request, res: Response):
       repaymentRatePercent: dueRwf > 0 ? Math.round((paidRwf / dueRwf) * 1000) / 10 : 0,
       nextInstallment: schedule.find((i) => i.status !== 'paid') || null,
       schedule: schedule.map((i) => ({
+        id: i.id,
         installmentNumber: i.installmentNumber,
         dueDate: i.dueDate,
         amountDueRwf: i.amountDueRwf,
         amountPaidRwf: i.amountPaidRwf,
         penaltyRwf: i.penaltyRwf,
         status: i.status,
+        // Never leak the raw MTN reference id to the client — just enough
+        // for the UI to show "waiting for you to approve on your phone".
+        pendingPayment: i.pendingMomoReferenceId
+          ? { amountRwf: i.pendingMomoAmountRwf, initiatedAt: i.pendingMomoInitiatedAt }
+          : null,
       })),
     });
   } catch (error) {
@@ -276,5 +287,80 @@ publicLoanRouter.get('/:loanNumber/status', async (req: Request, res: Response):
     res.status(500).json({ error: 'Failed to load loan status' });
   }
 });
+
+// ============================================
+// Lightweight in-memory rate limiter for the pay-momo endpoint — keyed by
+// phone number. Prevents a customer (or a script) from hammering MTN with
+// repeated Request-to-Pay prompts. Single-instance only; swap for a shared
+// store (Redis) if this API ever runs on more than one Render instance.
+// ============================================
+const payMomoAttempts = new Map<string, number[]>();
+const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
+const RATE_LIMIT_MAX_ATTEMPTS = 3;
+
+function isRateLimited(phone: string): boolean {
+  const now = Date.now();
+  const attempts = (payMomoAttempts.get(phone) || []).filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
+  payMomoAttempts.set(phone, attempts);
+  return attempts.length >= RATE_LIMIT_MAX_ATTEMPTS;
+}
+function recordAttempt(phone: string) {
+  const attempts = payMomoAttempts.get(phone) || [];
+  attempts.push(Date.now());
+  payMomoAttempts.set(phone, attempts);
+}
+
+// ============================================
+// POST /api/loans/:loanNumber/installments/:installmentId/pay-momo — PUBLIC.
+// Customer self-service: triggers an MTN MoMo Request-to-Pay prompt on
+// their phone. Phone-gated the same way as the status lookup (must match
+// the loan's customer record), rate-limited, and the actual payment is
+// only ever applied once MTN confirms it — this endpoint never marks
+// anything paid itself.
+// ============================================
+publicLoanRouter.post(
+  '/:loanNumber/installments/:installmentId/pay-momo',
+  validate(momoInstallmentPaymentSchema),
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { loanNumber, installmentId } = req.params;
+      const { amountRwf, phone } = req.body;
+
+      const [loan] = await db.select().from(loans).where(eq(loans.loanNumber, loanNumber));
+      if (!loan) {
+        res.status(404).json({ error: 'Loan not found' });
+        return;
+      }
+
+      const [customer] = await db.select().from(customers).where(eq(customers.id, loan.customerId));
+      if (!customer || customer.phone !== phone) {
+        res.status(403).json({ error: 'Phone number does not match this loan' });
+        return;
+      }
+
+      const [installment] = await db.select().from(installments).where(eq(installments.id, Number(installmentId)));
+      if (!installment || installment.loanId !== loan.id) {
+        res.status(404).json({ error: 'Installment not found on this loan' });
+        return;
+      }
+
+      if (isRateLimited(phone)) {
+        res.status(429).json({ error: 'Too many payment attempts — please wait a few minutes and try again.' });
+        return;
+      }
+      recordAttempt(phone);
+
+      const result = await LoanService.initiateMomoPayment(installment.id, amountRwf, phone);
+      res.json({
+        success: true,
+        message: 'Check your phone to approve the Mobile Money payment.',
+        status: result.status,
+      });
+    } catch (error: any) {
+      console.error('Public pay-momo error:', error);
+      res.status(400).json({ error: error.message || 'Failed to initiate payment' });
+    }
+  }
+);
 
 export default router;

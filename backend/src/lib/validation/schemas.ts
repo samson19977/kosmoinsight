@@ -162,6 +162,17 @@ export const installmentAdjustmentSchema = z.object({
   note: z.string().max(500).optional(),
 });
 
+// ============================================
+// MOMO INSTALLMENT PAYMENT SCHEMA (public, customer self-service)
+// ============================================
+export const momoInstallmentPaymentSchema = z.object({
+  amountRwf: z.number()
+    .int('Amount must be a whole number')
+    .min(100, 'Minimum payment amount is 100 RWF'),
+  phone: z.string()
+    .regex(/^(\+250|0)[78][0-9]{8}$/, 'Phone number must be a valid Rwandan number'),
+});
+
 // Types
 export type CustomerInput = z.infer<typeof customerSchema>;
 export type OrderInput = z.infer<typeof orderSchema>;
@@ -171,3 +182,4 @@ export type MomoPaymentInput = z.infer<typeof momoPaymentSchema>;
 export type LoanInput = z.infer<typeof loanSchema>;
 export type InstallmentPaymentInput = z.infer<typeof installmentPaymentSchema>;
 export type InstallmentAdjustmentInput = z.infer<typeof installmentAdjustmentSchema>;
+export type MomoInstallmentPaymentInput = z.infer<typeof momoInstallmentPaymentSchema>;
