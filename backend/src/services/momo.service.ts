@@ -91,7 +91,10 @@ export class MomoService {
       );
       return response.data.access_token;
     } catch (error: any) {
-      console.error('MoMo token error:', error?.response?.data || error.message);
+      console.error(
+        'MoMo token error:',
+        JSON.stringify({ httpStatus: error?.response?.status, data: error?.response?.data, message: error.message })
+      );
       return null;
     }
   }
@@ -172,7 +175,10 @@ export class MomoService {
         message: 'Payment request sent. Please approve on your phone.',
       };
     } catch (error: any) {
-      console.error('MoMo payment initiation error:', error?.response?.data || error.message);
+      console.error(
+        'MoMo payment initiation error:',
+        JSON.stringify({ httpStatus: error?.response?.status, data: error?.response?.data, message: error.message })
+      );
       // Fall back gracefully to manual payment instructions
       return {
         success: true,
@@ -216,7 +222,10 @@ export class MomoService {
         reason: response.data.reason,
       };
     } catch (error: any) {
-      console.error('MoMo status check error:', error?.response?.data || error.message);
+      console.error(
+        'MoMo status check error:',
+        JSON.stringify({ httpStatus: error?.response?.status, data: error?.response?.data, message: error.message })
+      );
       return { status: 'PENDING', reason: 'Status check failed, please verify manually' };
     }
   }
