@@ -258,6 +258,20 @@ publicLoanRouter.get('/:loanNumber/status', async (req: Request, res: Response):
     const paidRwf = schedule.reduce((s, i) => s + (i.amountPaidRwf || 0), 0);
     const dueRwf = schedule.reduce((s, i) => s + (i.amountDueRwf || 0), 0);
 
+    const sanitize = (i: (typeof schedule)[number]) => ({
+      id: i.id,
+      installmentNumber: i.installmentNumber,
+      dueDate: i.dueDate,
+      amountDueRwf: i.amountDueRwf,
+      amountPaidRwf: i.amountPaidRwf,
+      penaltyRwf: i.penaltyRwf,
+      status: i.status,
+      pendingPayment: i.pendingMomoReferenceId
+        ? { amountRwf: i.pendingMomoAmountRwf, initiatedAt: i.pendingMomoInitiatedAt }
+        : null,
+    });
+    const nextUnpaid = schedule.find((i) => i.status !== 'paid') || null;
+
     res.json({
       success: true,
       loanNumber: loan.loanNumber,
@@ -266,21 +280,8 @@ publicLoanRouter.get('/:loanNumber/status', async (req: Request, res: Response):
       paidRwf,
       remainingRwf: Math.max(0, dueRwf - paidRwf),
       repaymentRatePercent: dueRwf > 0 ? Math.round((paidRwf / dueRwf) * 1000) / 10 : 0,
-      nextInstallment: schedule.find((i) => i.status !== 'paid') || null,
-      schedule: schedule.map((i) => ({
-        id: i.id,
-        installmentNumber: i.installmentNumber,
-        dueDate: i.dueDate,
-        amountDueRwf: i.amountDueRwf,
-        amountPaidRwf: i.amountPaidRwf,
-        penaltyRwf: i.penaltyRwf,
-        status: i.status,
-        // Never leak the raw MTN reference id to the client — just enough
-        // for the UI to show "waiting for you to approve on your phone".
-        pendingPayment: i.pendingMomoReferenceId
-          ? { amountRwf: i.pendingMomoAmountRwf, initiatedAt: i.pendingMomoInitiatedAt }
-          : null,
-      })),
+      nextInstallment: nextUnpaid ? sanitize(nextUnpaid) : null,
+      schedule: schedule.map(sanitize),
     });
   } catch (error) {
     console.error('Public loan status error:', error);
