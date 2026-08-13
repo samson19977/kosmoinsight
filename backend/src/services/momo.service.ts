@@ -52,7 +52,20 @@ export class MomoService {
     return phone;
   }
 
-  // Generate USSD payment instructions for manual payment
+  // MTN's API accepts non-ASCII characters (e.g. an em-dash "—") in
+  // payerMessage/payeeNote with a 202 Accepted — but at least in sandbox,
+  // it then silently fails to persist the transaction, so every later
+  // GET .../requesttopay/{referenceId} 404s even though the POST looked
+  // successful. Strip to plain ASCII defensively so this can never recur.
+  private static toAscii(text: string): string {
+    return text
+      .replace(/[\u2013\u2014]/g, '-') // en-dash / em-dash -> hyphen
+      .replace(/[\u2018\u2019]/g, "'") // curly single quotes
+      .replace(/[\u201C\u201D]/g, '"') // curly double quotes
+      .replace(/[^\x00-\x7F]/g, ''); // drop anything else non-ASCII
+  }
+
+
   static generatePaymentInstructions(reference: string): PaymentInstructions {
     const merchantCode = this.merchantCode;
     const ussdCode = `*182*8*1*${merchantCode}#`;
@@ -154,8 +167,8 @@ export class MomoService {
             partyIdType: 'MSISDN',
             partyId: phone.replace('+', ''),
           },
-          payerMessage: request.description || 'KosmoPads payment',
-          payeeNote: `Order: ${request.reference}`,
+          payerMessage: this.toAscii(request.description || 'KosmoPads payment'),
+          payeeNote: this.toAscii(`Order: ${request.reference}`),
         },
         {
           headers: {

@@ -275,7 +275,7 @@ export class LoanService {
       phone,
       amount: amountRwf,
       reference,
-      description: `PayGo installment #${installment.installmentNumber} — ${loan.loanNumber}`,
+      description: `PayGo installment #${installment.installmentNumber} - ${loan.loanNumber}`,
     });
 
     if (!result.transactionId) {
