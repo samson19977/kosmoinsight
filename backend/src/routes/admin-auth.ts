@@ -250,3 +250,93 @@ router.get('/momo-roundtrip-check', requireAdmin, async (_req: AuthedRequest, re
 });
 
 export default router;
+
+// ============================================
+// TEMPORARY diagnostics for isolating the delayed-GET 404 issue.
+// Remove once resolved.
+// ============================================
+
+// POST /api/admin/momo-diag-initiate — same as MomoService.initiatePayment,
+// but returns the raw referenceId so we can test it again after a delay.
+router.post('/momo-diag-initiate', requireAdmin, async (req: AuthedRequest, res: Response): Promise<void> => {
+  const axios = (await import('axios')).default;
+  const { v4: uuidv4 } = await import('uuid');
+
+  const baseUrl = process.env.MOMO_BASE_URL || 'https://sandbox.momodeveloper.mtn.com';
+  const subscriptionKey = process.env.MOMO_SUBSCRIPTION_KEY || '';
+  const collectionUserId = process.env.MOMO_COLLECTION_USER_ID || '';
+  const apiKey = process.env.MOMO_API_KEY || '';
+  const environment = process.env.MOMO_ENVIRONMENT || 'sandbox';
+
+  try {
+    const credentials = Buffer.from(`${collectionUserId}:${apiKey}`).toString('base64');
+    const tokenResp = await axios.post(
+      `${baseUrl}/collection/token/`,
+      {},
+      { headers: { Authorization: `Basic ${credentials}`, 'Ocp-Apim-Subscription-Key': subscriptionKey, 'X-Target-Environment': environment } }
+    );
+    const accessToken = tokenResp.data.access_token;
+
+    const referenceId = uuidv4();
+    const postResp = await axios.post(
+      `${baseUrl}/collection/v1_0/requesttopay`,
+      {
+        amount: '500',
+        currency: 'EUR',
+        externalId: 'diag-delay-test',
+        payer: { partyIdType: 'MSISDN', partyId: '250784602833' },
+        payerMessage: 'diag',
+        payeeNote: 'diag',
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'X-Reference-Id': referenceId,
+          'X-Target-Environment': environment,
+          'Ocp-Apim-Subscription-Key': subscriptionKey,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+
+    res.json({ success: true, referenceId, postHttpStatus: postResp.status, initiatedAt: new Date().toISOString() });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error?.response?.data || error.message });
+  }
+});
+
+// GET /api/admin/momo-diag-status/:referenceId — fetches a FRESH token
+// (exactly like the real reconciliation poll does) and checks status for
+// a referenceId created earlier, however long ago. Use this on a reference
+// returned by momo-diag-initiate, after waiting a few minutes.
+router.get('/momo-diag-status/:referenceId', requireAdmin, async (req: AuthedRequest, res: Response): Promise<void> => {
+  const axios = (await import('axios')).default;
+
+  const baseUrl = process.env.MOMO_BASE_URL || 'https://sandbox.momodeveloper.mtn.com';
+  const subscriptionKey = process.env.MOMO_SUBSCRIPTION_KEY || '';
+  const collectionUserId = process.env.MOMO_COLLECTION_USER_ID || '';
+  const apiKey = process.env.MOMO_API_KEY || '';
+  const environment = process.env.MOMO_ENVIRONMENT || 'sandbox';
+
+  try {
+    const credentials = Buffer.from(`${collectionUserId}:${apiKey}`).toString('base64');
+    const tokenResp = await axios.post(
+      `${baseUrl}/collection/token/`,
+      {},
+      { headers: { Authorization: `Basic ${credentials}`, 'Ocp-Apim-Subscription-Key': subscriptionKey, 'X-Target-Environment': environment } }
+    );
+    const accessToken = tokenResp.data.access_token;
+
+    const getResp = await axios.get(`${baseUrl}/collection/v1_0/requesttopay/${req.params.referenceId}`, {
+      headers: { Authorization: `Bearer ${accessToken}`, 'X-Target-Environment': environment, 'Ocp-Apim-Subscription-Key': subscriptionKey },
+    });
+    res.json({ success: true, httpStatus: getResp.status, data: getResp.data, checkedAt: new Date().toISOString() });
+  } catch (error: any) {
+    res.status(200).json({
+      success: false,
+      httpStatus: error?.response?.status,
+      data: error?.response?.data,
+      checkedAt: new Date().toISOString(),
+    });
+  }
+});
