@@ -385,14 +385,18 @@ async function startServer() {
     // the installment paid even if the webhook never arrives.
     // ============================================
     setTimeout(() => {
-      LoanService.reconcilePendingMomoTransactions().catch((err) =>
-        console.error('Initial MoMo reconciliation failed (non-fatal):', err)
-      );
+      LoanService.reconcilePendingMomoTransactions()
+        .then((summary) => {
+          if (summary.checked > 0) console.log('💳 MoMo reconciliation:', JSON.stringify(summary));
+        })
+        .catch((err) => console.error('Initial MoMo reconciliation failed (non-fatal):', err));
     }, 30_000);
     setInterval(() => {
-      LoanService.reconcilePendingMomoTransactions().catch((err) =>
-        console.error('Scheduled MoMo reconciliation failed (non-fatal):', err)
-      );
+      LoanService.reconcilePendingMomoTransactions()
+        .then((summary) => {
+          if (summary.checked > 0) console.log('💳 MoMo reconciliation:', JSON.stringify(summary));
+        })
+        .catch((err) => console.error('Scheduled MoMo reconciliation failed (non-fatal):', err));
     }, 3 * 60 * 1000);
   } catch (error) {
     console.error('❌ Server startup failed:', error);

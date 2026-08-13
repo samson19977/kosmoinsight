@@ -384,6 +384,9 @@ export class LoanService {
         const result = await this.resolveMomoReference(inst.pendingMomoReferenceId, 'SUCCESSFUL');
         if (result.resolved) completed++;
       } else if (status.status === 'FAILED') {
+        console.log(
+          `[loan] MoMo request ${inst.pendingMomoReferenceId} (installment ${inst.id}) FAILED — MTN reason: ${status.reason || 'not provided'}`
+        );
         await this.resolveMomoReference(inst.pendingMomoReferenceId, 'FAILED');
         failedCount++;
       } else if (ageMinutes > MOMO_PENDING_TIMEOUT_MINUTES) {
