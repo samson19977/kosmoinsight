@@ -172,4 +172,81 @@ router.get('/momo-check', requireAdmin, async (_req: AuthedRequest, res: Respons
   res.status(result.ok ? 200 : 502).json(result);
 });
 
+// GET /api/admin/momo-roundtrip-check — TEMPORARY diagnostic. Runs a full
+// POST requesttopay + immediate GET status cycle from Render's own runtime
+// (same network path the real app uses), using raw axios calls independent
+// of MomoService, so we can compare this against the same test run from a
+// local machine and isolate whether a failure is IP/environment-specific
+// or a bug in our service code. Remove this route once MoMo status checks
+// are confirmed working end-to-end — it burns a real sandbox transaction
+// on every call.
+router.get('/momo-roundtrip-check', requireAdmin, async (_req: AuthedRequest, res: Response): Promise<void> => {
+  const axios = (await import('axios')).default;
+  const { v4: uuidv4 } = await import('uuid');
+
+  const baseUrl = process.env.MOMO_BASE_URL || 'https://sandbox.momodeveloper.mtn.com';
+  const subscriptionKey = process.env.MOMO_SUBSCRIPTION_KEY || '';
+  const collectionUserId = process.env.MOMO_COLLECTION_USER_ID || '';
+  const apiKey = process.env.MOMO_API_KEY || '';
+  const environment = process.env.MOMO_ENVIRONMENT || 'sandbox';
+
+  const steps: Record<string, any> = {};
+
+  try {
+    // Step 1: token
+    const credentials = Buffer.from(`${collectionUserId}:${apiKey}`).toString('base64');
+    const tokenResp = await axios.post(
+      `${baseUrl}/collection/token/`,
+      {},
+      { headers: { Authorization: `Basic ${credentials}`, 'Ocp-Apim-Subscription-Key': subscriptionKey, 'X-Target-Environment': environment } }
+    );
+    const accessToken = tokenResp.data.access_token;
+    steps.token = { ok: true, tokenLength: accessToken?.length || 0 };
+
+    // Step 2: POST requesttopay
+    const referenceId = uuidv4();
+    let postStatus: number | null = null;
+    try {
+      const postResp = await axios.post(
+        `${baseUrl}/collection/v1_0/requesttopay`,
+        {
+          amount: '500',
+          currency: 'EUR',
+          externalId: 'diag-roundtrip',
+          payer: { partyIdType: 'MSISDN', partyId: '250784602833' },
+          payerMessage: 'diag',
+          payeeNote: 'diag',
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'X-Reference-Id': referenceId,
+            'X-Target-Environment': environment,
+            'Ocp-Apim-Subscription-Key': subscriptionKey,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+      postStatus = postResp.status;
+      steps.post = { httpStatus: postStatus, referenceId };
+    } catch (postErr: any) {
+      steps.post = { httpStatus: postErr?.response?.status, data: postErr?.response?.data, referenceId };
+    }
+
+    // Step 3: immediate GET status, same token, same reference
+    try {
+      const getResp = await axios.get(`${baseUrl}/collection/v1_0/requesttopay/${referenceId}`, {
+        headers: { Authorization: `Bearer ${accessToken}`, 'X-Target-Environment': environment, 'Ocp-Apim-Subscription-Key': subscriptionKey },
+      });
+      steps.get = { httpStatus: getResp.status, data: getResp.data };
+    } catch (getErr: any) {
+      steps.get = { httpStatus: getErr?.response?.status, data: getErr?.response?.data };
+    }
+
+    res.json({ success: true, steps });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message, steps });
+  }
+});
+
 export default router;
