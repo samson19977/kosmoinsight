@@ -108,62 +108,35 @@ const HomePage: React.FC = () => {
         </div>
       </section>
 
-      {/* ── STATS ─────────────────────────────────────── */}
-      <section className="py-12 bg-white border-b border-gray-100">
+      {/* ── QUICK TRUST STRIP ─────────────────────────────────────── */}
+      <section className="py-10 bg-white border-b border-gray-100">
         <div className="container mx-auto px-4">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {[
-              { number: '800K+', label: 'Lives Impacted' },
-              { number: '100%', label: 'Customer Satisfaction' },
-              { number: '88%', label: 'Cost Savings vs Disposables' },
-              { number: '25+', label: 'Districts Served' },
-            ].map((s, i) => (
-              <motion.div key={i} {...fadeUp(i * 0.08)} className="text-center py-4">
-                <div className="text-4xl font-display font-extrabold text-primary-600">{s.number}</div>
-                <div className="text-sm text-gray-500 mt-1">{s.label}</div>
+              { icon: Package, label: 'Eco-friendly, reusable pads' },
+              { icon: Shield, label: 'Clinically tested & safe' },
+              { icon: CreditCard, label: 'MoMo, cash, or PayGo installments' },
+              { icon: MapPin, label: 'Delivery across Rwanda' },
+            ].map(({ icon: Icon, label }, i) => (
+              <motion.div key={i} {...fadeUp(i * 0.06)} className="flex items-center gap-2.5 text-sm text-gray-600 font-medium">
+                <span className="w-9 h-9 rounded-lg bg-primary-50 flex items-center justify-center flex-shrink-0">
+                  <Icon size={17} className="text-primary-600" />
+                </span>
+                {label}
               </motion.div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* ── WHY US ─────────────────────────────────────── */}
-      <section className="py-20 bg-gray-50">
+      {/* ── SHOP NOW — the main event ─────────────────────────────── */}
+      <section className="py-20 bg-white" id="shop">
         <div className="container mx-auto px-4">
-          <motion.div {...fadeUp()} className="text-center mb-14">
-            <span className="inline-block text-primary-600 font-semibold text-sm tracking-widest uppercase mb-3">Why KosmoPads</span>
-            <h2 className="text-3xl md:text-4xl font-display font-bold text-gray-900">
-              More than just a pad
-            </h2>
-            <p className="text-gray-500 mt-3 max-w-xl mx-auto">We're on a mission to make menstrual health accessible and sustainable for every woman in Rwanda.</p>
-          </motion.div>
-
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {[
-              { icon: Package, title: 'Quality Products', desc: 'Sustainable, eco-friendly pads made with care for Rwandan women.', color: 'from-primary-500 to-primary-600' },
-              { icon: Shield, title: 'Clinically Tested', desc: 'Approved for comfort, safety, and reliability — every single batch.', color: 'from-secondary-400 to-secondary-600' },
-              { icon: Users, title: 'Women First', desc: 'Supporting health and dignity across every district of Rwanda.', color: 'from-accent-400 to-accent-600' },
-              { icon: CreditCard, title: 'Easy Payments', desc: 'Pay via MTN MoMo or cash with our frictionless checkout.', color: 'from-primary-500 to-emerald-500' },
-            ].map(({ icon: Icon, title, desc, color }, i) => (
-              <motion.div key={i} {...fadeUp(i * 0.1)} className="bg-white p-6 rounded-2xl shadow-card hover:shadow-card-hover transition-all duration-300 group cursor-default">
-                <div className={`w-14 h-14 bg-gradient-to-br ${color} rounded-2xl flex items-center justify-center mb-5 shadow-lg group-hover:scale-110 transition-transform duration-300`}>
-                  <Icon className="text-white" size={26} />
-                </div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">{title}</h3>
-                <p className="text-gray-500 text-sm leading-relaxed">{desc}</p>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── PRODUCTS PREVIEW ─────────────────────────────── */}
-      <section className="py-20 bg-white">
-        <div className="container mx-auto px-4">
-          <div className="flex justify-between items-end mb-10">
+          <div className="flex justify-between items-end mb-4">
             <div>
-              <span className="text-primary-600 font-semibold text-sm tracking-widest uppercase">Our Range</span>
-              <h2 className="text-3xl md:text-4xl font-display font-bold text-gray-900 mt-1">Best-Selling Pads</h2>
+              <span className="text-primary-600 font-semibold text-sm tracking-widest uppercase">Shop Now</span>
+              <h2 className="text-3xl md:text-4xl font-display font-bold text-gray-900 mt-1">Pick your pads</h2>
+              <p className="text-gray-500 mt-2 max-w-xl">Add as many products as you like to your cart — mix packages, adjust quantities, and check out once.</p>
             </div>
             <Link to="/products" className="hidden md:flex items-center gap-1 text-primary-600 hover:text-primary-700 font-semibold text-sm">
               View All <ArrowRight size={16} />
@@ -173,7 +146,7 @@ const HomePage: React.FC = () => {
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
             {(products ?? [
               { id: 1, name: 'Large Package', priceRwf: 2000, packageType: 'large', description: '1 Large KosmoPad suitable for heavy flow' },
-              { id: 2, name: 'Medium Package', priceRwf: 6000, packageType: 'medium', description: '5 Medium KosmoPads dignity kit' },
+              { id: 2, name: 'Medium Package', priceRwf: 6000, packageType: 'medium', description: '5 Medium KosmoPads dignity kit', installmentEligible: true },
               { id: 5, name: 'Small Package', priceRwf: 5000, packageType: 'small', description: '5 Small KosmoPads dignity kit' },
               { id: 4, name: 'Mix of 2', priceRwf: 2500, packageType: 'mix', description: '1 Small + 1 Medium experience pack' },
             ]).slice(0, 8).map((product, i) => (
@@ -188,6 +161,11 @@ const HomePage: React.FC = () => {
                     className="w-full h-full"
                     emojiClassName="text-6xl group-hover:scale-110 transition-transform duration-300 drop-shadow"
                   />
+                  {product.installmentEligible && (
+                    <span className="absolute top-2 left-2 bg-accent-400 text-primary-900 text-[10px] font-bold px-2 py-1 rounded-full shadow-md">
+                      PayGo available
+                    </span>
+                  )}
                 </Link>
                 <div className="p-4">
                   <Link to={`/products/${product.id}`}>

@@ -8,6 +8,7 @@ export interface Product {
   packageType: string;
   imageUrl?: string;
   isActive?: boolean;
+  installmentEligible?: boolean;
 }
 
 export async function fetchProducts(): Promise<Product[]> {

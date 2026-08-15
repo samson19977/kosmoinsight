@@ -5,9 +5,11 @@ import { orderSchema } from '../lib/validation/schemas';
 import { EmailService } from '../services/email.service';
 import { MomoService } from '../services/momo.service';
 import { InventoryService } from '../services/inventory.service';
+import { LoanService } from '../services/loan.service';
+import { AgentService } from '../services/agent.service';
 import { requireAdmin } from '../middleware/auth';
 import { db } from '../config/database';
-import { orders, orderItems, customers, payments } from '../db/schema';
+import { orders, orderItems, customers, payments, products } from '../db/schema';
 
 const router = Router();
 
@@ -21,32 +23,106 @@ function generateOrderNumber(): string {
   return `KOS-${dateStr}-${rand}`;
 }
 
-// POST /api/orders
-router.post('/', validate(orderSchema), async (req: Request, res: Response): Promise<void> => {
-  try {
-    const { customer, items, paymentMethod, notes } = req.body;
+// ==========================================================
+// Shared order-creation core — used by the REST route below AND by the
+// USSD handler (routes/ussd.ts), so a purchase made with no smartphone
+// goes through exactly the same validation, agent attribution,
+// installment-eligibility checks, and PayGo loan creation as one made on
+// the website. One code path, two entry points.
+// ==========================================================
+export async function createOrderCore(input: {
+  customer?: any;
+  customerId?: number;
+  items: Array<{ name: string; quantity: number; price: number; productId?: number }>;
+  paymentMethod: string;
+  installmentPlan?: { downPaymentRwf: number; termMonths: number; interestRateBps?: number; guarantorName?: string; guarantorPhone?: string };
+  agentCode?: string;
+  // Set by the agent-authenticated route ONLY, from the verified JWT —
+  // never accepted from client-supplied JSON. Takes priority over
+  // agentCode so an agent's own sale is always attributed to themselves,
+  // with no way to spoof a different agent's code.
+  agentIdOverride?: number;
+  channel?: 'web' | 'ussd' | 'agent';
+  notes?: string;
+}) {
+  const { customer, customerId: existingCustomerIdInput, items, paymentMethod, installmentPlan, agentCode, agentIdOverride, channel = 'web', notes } = input;
 
-    let totalRwf = 0;
-    const itemsWithSubtotal = items.map((item: any) => {
-      const subtotal = item.price * item.quantity;
-      totalRwf += subtotal;
-      return item;
-    });
+  let totalRwf = 0;
+  const itemsWithSubtotal = items.map((item) => {
+    const subtotal = item.price * item.quantity;
+    totalRwf += subtotal;
+    return item;
+  });
 
-    if (totalRwf < 2000) {
-      res.status(400).json({ error: 'Minimum order amount is 2,000 FRW' });
-      return;
+  if (totalRwf < 2000) {
+    throw new Error('Minimum order amount is 2,000 FRW');
+  }
+
+  const isInstallment = paymentMethod === 'PayGo Installments';
+
+  // PayGo Installments is restricted to specific products (currently only
+  // Medium Package) — enforced here against the live products table, not
+  // just hidden in the UI, so the rule holds regardless of entry point
+  // (web, USSD, or an agent recording a sale).
+  if (isInstallment) {
+    if (!installmentPlan) throw new Error('Installment plan is required for PayGo Installments');
+    if (installmentPlan.downPaymentRwf >= totalRwf) {
+      throw new Error('Down payment must be less than the order total — otherwise there is nothing to finance');
     }
+    const productIds = items.map((i) => i.productId).filter((id): id is number => Boolean(id));
+    if (productIds.length !== items.length) {
+      throw new Error('PayGo Installments requires every item to reference a real product (missing productId)');
+    }
+    const eligibleProducts = await db.select().from(products);
+    for (const item of items) {
+      const product = eligibleProducts.find((p) => p.id === item.productId);
+      if (!product) throw new Error(`Product ${item.productId} not found`);
+      if (!product.installmentEligible) {
+        throw new Error(`"${product.name}" is not eligible for PayGo Installments — only Medium Package can be financed. Please pay the full amount via MoMo or cash, or remove it from this order.`);
+      }
+    }
+  }
 
-    // Find or create the customer record (matched by phone number)
-    const [existingCustomer] = await db
-      .select()
-      .from(customers)
-      .where(eq(customers.phone, customer.phone));
+  // Resolve the agent (if any) this sale should be attributed to.
+  // agentIdOverride (set only by the authenticated agent route, from the
+  // verified JWT) always wins over a client-supplied agentCode — an agent
+  // can never place a sale under someone else's identity.
+  let agentId: number | null = null;
+  if (agentIdOverride) {
+    agentId = agentIdOverride;
+  } else if (agentCode) {
+    const agent = await AgentService.getAgentByCode(agentCode);
+    if (agent && (agent.status === 'active' || agent.status === 'approved')) agentId = agent.id;
+  }
 
-    let customerId: number;
+  // Resolve the customer: either an existing one by ID (an agent picking a
+  // customer they already registered) or find-or-create by phone number
+  // (the normal web/USSD path). Location and National ID are captured
+  // whenever provided — not just for installment orders — so a customer's
+  // profile fills in over repeat purchases, and an update never blanks
+  // out a field given previously.
+  let customerId: number;
+  if (existingCustomerIdInput) {
+    const [found] = await db.select().from(customers).where(eq(customers.id, existingCustomerIdInput));
+    if (!found) throw new Error('Selected customer not found');
+    // An agent may only transact against their OWN customers, or an
+    // unclaimed one (agentId null) which then becomes theirs.
+    if (found.agentId && agentId && found.agentId !== agentId) {
+      throw new Error('This customer belongs to a different agent');
+    }
+    customerId = found.id;
+    if (agentId && !found.agentId) {
+      await db.update(customers).set({ agentId, updatedAt: new Date() }).where(eq(customers.id, customerId));
+    }
+  } else {
+    if (!customer) throw new Error('Customer details are required');
+    const [existingCustomer] = await db.select().from(customers).where(eq(customers.phone, customer.phone));
+
     if (existingCustomer) {
       customerId = existingCustomer.id;
+      if (existingCustomer.agentId && agentId && existingCustomer.agentId !== agentId) {
+        throw new Error('This customer already belongs to a different agent');
+      }
       await db
         .update(customers)
         .set({
@@ -54,7 +130,11 @@ router.post('/', validate(orderSchema), async (req: Request, res: Response): Pro
           lastName: customer.lastName,
           email: customer.email || existingCustomer.email,
           district: customer.district || existingCustomer.district,
+          sector: customer.sector || existingCustomer.sector,
+          cell: customer.cell || existingCustomer.cell,
           village: customer.village || existingCustomer.village,
+          nationalId: customer.nationalId || existingCustomer.nationalId,
+          agentId: agentId ?? existingCustomer.agentId, // first agent attribution wins; doesn't get reassigned by a later order
           updatedAt: new Date(),
         })
         .where(eq(customers.id, customerId));
@@ -67,41 +147,94 @@ router.post('/', validate(orderSchema), async (req: Request, res: Response): Pro
           phone: customer.phone,
           email: customer.email || null,
           district: customer.district || null,
+          sector: customer.sector || null,
+          cell: customer.cell || null,
           village: customer.village || null,
+          nationalId: customer.nationalId || null,
+          agentId,
+          source: channel,
         })
         .returning();
       customerId = createdCustomer.id;
     }
+  }
 
-    const orderNumber = generateOrderNumber();
-    const paymentInstructions = MomoService.generatePaymentInstructions(orderNumber);
+  const orderNumber = generateOrderNumber();
+  const paymentInstructions = MomoService.generatePaymentInstructions(orderNumber);
 
-    const [order] = await db
-      .insert(orders)
-      .values({
-        orderNumber,
-        customerId,
-        customerName: `${customer.firstName} ${customer.lastName}`,
-        customerEmail: customer.email || null,
-        customerPhone: customer.phone,
-        totalRwf,
-        paymentMethod,
-        orderStatus: 'pending',
-        paymentStatus: 'pending',
-        notes: notes || null,
-      })
-      .returning();
+  // Snapshot the customer's current name/phone/email onto the order row —
+  // works whether `customer` was passed inline or resolved by customerId.
+  const [resolvedCustomer] = await db.select().from(customers).where(eq(customers.id, customerId));
+  const customerSnapshot = {
+    firstName: customer?.firstName ?? resolvedCustomer.firstName,
+    lastName: customer?.lastName ?? resolvedCustomer.lastName,
+    email: customer?.email ?? resolvedCustomer.email,
+    phone: customer?.phone ?? resolvedCustomer.phone,
+  };
 
-    await db.insert(orderItems).values(
-      itemsWithSubtotal.map((item: any) => ({
-        orderId: order.id,
-        productId: item.productId || null,
-        productName: item.name,
-        quantity: item.quantity,
-        priceRwf: item.price,
-        subtotalRwf: item.price * item.quantity,
-      }))
-    );
+  const [order] = await db
+    .insert(orders)
+    .values({
+      orderNumber,
+      customerId,
+      customerName: `${customerSnapshot.firstName} ${customerSnapshot.lastName}`,
+      customerEmail: customerSnapshot.email || null,
+      customerPhone: customerSnapshot.phone,
+      totalRwf,
+      paymentMethod,
+      orderStatus: 'pending',
+      paymentStatus: 'pending',
+      agentId,
+      channel,
+      notes: notes || null,
+    })
+    .returning();
+
+  await db.insert(orderItems).values(
+    itemsWithSubtotal.map((item) => ({
+      orderId: order.id,
+      productId: item.productId || null,
+      productName: item.name,
+      quantity: item.quantity,
+      priceRwf: item.price,
+      subtotalRwf: item.price * item.quantity,
+    }))
+  );
+
+  // ----------------------------------------
+  // PayGo Installments: the connective tissue between the storefront (or
+  // USSD), the customer record, and the loan module. The order represents
+  // the sale; the loan represents financing what's left after the down
+  // payment. Both point back to the same order/customer, so nothing needs
+  // reconciling by hand afterward.
+  // ----------------------------------------
+  let loanResult: Awaited<ReturnType<typeof LoanService.createLoan>> | null = null;
+  if (isInstallment && installmentPlan) {
+    loanResult = await LoanService.createLoan({
+      orderId: order.id,
+      customerId,
+      principalRwf: totalRwf,
+      downPaymentRwf: installmentPlan.downPaymentRwf,
+      interestRateBps: installmentPlan.interestRateBps ?? 0,
+      termMonths: installmentPlan.termMonths,
+      guarantorType: installmentPlan.guarantorName ? 'individual' : 'none',
+      guarantorName: installmentPlan.guarantorName || undefined,
+      guarantorPhone: installmentPlan.guarantorPhone || undefined,
+      notes: `Opened from ${channel} checkout, order ${orderNumber}`,
+    });
+  }
+
+  return { order, orderNumber, totalRwf, itemsWithSubtotal, paymentInstructions, loan: loanResult, customerId };
+}
+
+// POST /api/orders
+router.post('/', validate(orderSchema), async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { customer, items, paymentMethod, notes, installmentPlan, agentCode, channel } = req.body;
+
+    const { order, orderNumber, totalRwf, itemsWithSubtotal, paymentInstructions, loan } = await createOrderCore({
+      customer, items, paymentMethod, installmentPlan, agentCode, channel: channel || 'web', notes,
+    });
 
     // Send email if customer provided an email address
     if (customer.email) {
@@ -134,13 +267,27 @@ router.post('/', validate(orderSchema), async (req: Request, res: Response): Pro
       orderNumber,
       total: totalRwf,
       paymentInstructions,
+      // Present when paymentMethod === 'PayGo Installments'. The frontend
+      // should push MoMo (or collect cash) for downPaymentRwf specifically —
+      // NOT the full order total, since the rest is financed.
+      loan: loan
+        ? {
+            loanNumber: loan.loanNumber,
+            principalRwf: loan.principalRwf,
+            downPaymentRwf: loan.downPaymentRwf,
+            totalPayableRwf: loan.totalPayableRwf,
+            termMonths: loan.termMonths,
+            expectedPayoffDate: loan.expectedPayoffDate,
+          }
+        : null,
       message: customer.email
         ? 'Order created! Check your email for payment instructions.'
         : 'Order created! Please pay using the instructions below.',
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Order creation error:', error);
-    res.status(500).json({ error: 'Failed to create order' });
+    const isClientError = /minimum order|installment|eligible|down payment/i.test(error.message || '');
+    res.status(isClientError ? 400 : 500).json({ error: error.message || 'Failed to create order' });
   }
 });
 
@@ -174,6 +321,7 @@ router.get('/:orderNumber/status', async (req: Request, res: Response): Promise<
             }
             await db.update(orders).set({ paymentStatus: 'paid', orderStatus: 'confirmed', updatedAt: now }).where(eq(orders.id, order.id));
             await InventoryService.deductStockForOrder(order.id);
+            await AgentService.recordCommissionForOrder(order.id).catch((err) => console.error('Agent commission error (non-fatal):', err));
             console.log(`✅ Order status poll reconciliation: order ${order.orderNumber} marked PAID`);
 
             if (order.customerEmail && payment) {
@@ -288,6 +436,7 @@ router.patch('/:orderNumber/confirm-payment', requireAdmin, async (req: Request,
       .where(eq(orders.id, order.id));
 
     await InventoryService.deductStockForOrder(order.id);
+    await AgentService.recordCommissionForOrder(order.id).catch((err) => console.error('Agent commission error (non-fatal):', err));
 
     // Keep the payments ledger in sync too, if a row already exists for this order
     // (e.g. a MoMo push was initiated). Cash orders may not have one — that's fine.

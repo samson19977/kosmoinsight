@@ -17,6 +17,10 @@ export const products = pgTable('products', {
   stock: integer('stock').default(9999),
   lowStockThreshold: integer('low_stock_threshold').default(10),
   isActive: boolean('is_active').default(true),
+  // Only products flagged true here can be bought on a PayGo installment
+  // plan (currently just Medium Package) — enforced server-side on every
+  // order/loan path, not just hidden in the UI.
+  installmentEligible: boolean('installment_eligible').default(false),
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),
 });
@@ -30,12 +34,25 @@ export const customers = pgTable('customers', {
   lastName: varchar('last_name', { length: 50 }).notNull(),
   phone: varchar('phone', { length: 20 }).notNull(),
   email: varchar('email', { length: 100 }),
+  // Full Rwanda administrative hierarchy: District > Sector > Cell > Village.
+  // Required together whenever a customer takes a PayGo installment plan,
+  // so a loan is always physically locatable for collections follow-up —
+  // this is also the exact shape a USSD registration flow populates.
   district: varchar('district', { length: 100 }),
+  sector: varchar('sector', { length: 100 }),
+  cell: varchar('cell', { length: 100 }),
   village: varchar('village', { length: 100 }),
   nationalId: varchar('national_id', { length: 20 }),
+  // Which reseller/agent this customer belongs to, if any. An agent's own
+  // customers earn that agent commission on every sale, regardless of
+  // whether the sale itself happens through the agent or the storefront.
+  agentId: integer('agent_id').references(() => agents.id),
   // Acquisition tracking — feeds CAC (cost) against LTV (sum of payments/installments).
   acquisitionChannel: varchar('acquisition_channel', { length: 50 }), // e.g. 'field-agent', 'school-partner', 'referral', 'walk-in'
   acquisitionCostRwf: integer('acquisition_cost_rwf'), // one-time cost to acquire this customer, entered manually by admin
+  // Set when a customer record originates from a bulk spreadsheet import
+  // rather than an order/USSD registration — lets admins tell the two apart.
+  source: varchar('source', { length: 30 }).default('order'), // order | ussd | import | admin
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),
 });
@@ -55,6 +72,12 @@ export const orders = pgTable('orders', {
   orderStatus: varchar('order_status', { length: 30 }).default('pending'),
   paymentStatus: varchar('payment_status', { length: 30 }).default('pending'),
   momoReference: varchar('momo_reference', { length: 100 }),
+  // Which reseller/agent facilitated this sale, if any — drives commission.
+  agentId: integer('agent_id').references(() => agents.id),
+  // Which sales channel created this order — web checkout vs. a USSD session
+  // (no smartphone/internet needed) vs. an agent recording a sale on the
+  // customer's behalf.
+  channel: varchar('channel', { length: 20 }).default('web'), // web | ussd | agent
   notes: text('notes'),
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),
@@ -196,4 +219,81 @@ export const stockMovements = pgTable('stock_movements', {
   adminId: integer('admin_id').references(() => admins.id),
   note: text('note'),
   createdAt: timestamp('created_at').defaultNow(),
+});
+
+// ============================================
+// AGENTS TABLE (resellers)
+// Kosmotive distributes stock to field resellers/agents, who sell it on
+// (cash or MoMo) and earn a commission on each sale. A customer picking up
+// from an agent is tracked under that agent, so both "who sold this" and
+// "who does this customer belong to" are always answerable.
+// ============================================
+export const agents = pgTable('agents', {
+  id: serial('id').primaryKey(),
+  name: varchar('name', { length: 100 }).notNull(),
+  // Reseller code as used in Kosmotive's existing spreadsheets (e.g.
+  // BEN-BWALC4AA6EI) — kept as the stable external identifier so a bulk
+  // import can upsert against it without creating duplicates. Agents who
+  // self-register instead get an auto-generated code (KOS001, KOS002...).
+  code: varchar('code', { length: 50 }).notNull().unique(),
+  phone: varchar('phone', { length: 20 }).notNull().unique(),
+  email: varchar('email', { length: 100 }).unique(),
+  passwordHash: varchar('password_hash', { length: 255 }), // null for spreadsheet-imported agents until they set one
+  nationalId: varchar('national_id', { length: 20 }),
+  district: varchar('district', { length: 100 }),
+  sector: varchar('sector', { length: 100 }),
+  cell: varchar('cell', { length: 100 }),
+  village: varchar('village', { length: 100 }),
+  region: varchar('region', { length: 50 }), // free-text province/region tag, e.g. "Eastern Province", "North", "Kigali"
+  // Commission rate for this specific agent, in basis points (1500 = 15%).
+  // Defaults to the platform-wide default (see `settings`) at creation time
+  // but can be overridden per agent without affecting anyone else's rate.
+  // Only an admin can change this — never the agent themselves.
+  commissionRateBps: integer('commission_rate_bps').notNull().default(1500),
+  // Lifecycle: pending (self-registered, awaiting review) -> approved ->
+  // active (both can sell/log in) -> suspended -> rejected. A bulk-imported
+  // or admin-created agent starts at 'active' directly, skipping review.
+  status: varchar('status', { length: 20 }).notNull().default('active'), // pending | approved | active | suspended | rejected
+  // Set when this agent record came from a bulk spreadsheet import rather
+  // than self-registering or being created by hand in the dashboard.
+  source: varchar('source', { length: 30 }).default('admin'), // admin | import | self
+  notes: text('notes'),
+  approvedAt: timestamp('approved_at'),
+  approvedByAdminId: integer('approved_by_admin_id').references(() => admins.id),
+  lastLoginAt: timestamp('last_login_at'),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+// ============================================
+// AGENT COMMISSIONS TABLE (append-only ledger)
+// Deliberately an audit trail rather than a mutable running wallet balance
+// (the same lesson learned from the PayGo loan design) — "how much is
+// owed to this agent" is always SUM(commission_rwf) WHERE status='pending',
+// computed on demand, never a single number that can drift out of sync.
+// ============================================
+export const agentCommissions = pgTable('agent_commissions', {
+  id: serial('id').primaryKey(),
+  agentId: integer('agent_id').references(() => agents.id).notNull(),
+  orderId: integer('order_id').references(() => orders.id),
+  loanId: integer('loan_id').references(() => loans.id),
+  saleAmountRwf: integer('sale_amount_rwf').notNull(), // the order/loan amount the commission was calculated against
+  commissionRateBps: integer('commission_rate_bps').notNull(), // rate actually applied, frozen at the time of sale
+  commissionRwf: integer('commission_rwf').notNull(),
+  status: varchar('status', { length: 20 }).notNull().default('pending'), // pending | paid | reversed
+  paidAt: timestamp('paid_at'),
+  note: text('note'),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// ============================================
+// SETTINGS TABLE (simple key/value store)
+// Platform-wide configuration an admin can change without a code deploy —
+// currently just the default agent commission rate, but deliberately
+// generic so more knobs can be added the same way later.
+// ============================================
+export const settings = pgTable('settings', {
+  key: varchar('key', { length: 100 }).primaryKey(),
+  value: text('value').notNull(),
+  updatedAt: timestamp('updated_at').defaultNow(),
 });

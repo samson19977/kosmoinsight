@@ -18,6 +18,10 @@ import adminDashboardRouter from './routes/admin-dashboard';
 import adminInventoryRouter from './routes/admin-inventory';
 import loansRouter, { publicLoanRouter } from './routes/loans';
 import { LoanService } from './services/loan.service';
+import agentsRouter from './routes/agents';
+import agentSelfRouter from './routes/agent-self';
+import ussdRouter from './routes/ussd';
+import { AgentService } from './services/agent.service';
 
 // Load environment variables first
 dotenv.config();
@@ -103,6 +107,9 @@ app.use('/api/admin/dashboard', adminDashboardRouter);
 app.use('/api/admin/inventory', adminInventoryRouter);
 app.use('/api/admin/loans', loansRouter);
 app.use('/api/loans', publicLoanRouter);
+app.use('/api/admin/agents', agentsRouter);
+app.use('/api/agents', agentSelfRouter);
+app.use('/api/ussd', ussdRouter);
 
 // ============================================
 // MoMo Webhook
@@ -205,6 +212,7 @@ app.post('/api/webhooks/momo', async (req, res) => {
         .where(eq(orders.id, order.id));
 
       await InventoryService.deductStockForOrder(order.id);
+      await AgentService.recordCommissionForOrder(order.id).catch((err) => console.error('Agent commission error (non-fatal):', err));
 
       console.log(`✅ Webhook: order ${order.orderNumber} marked PAID`);
 
@@ -356,6 +364,27 @@ async function startServer() {
     GET  /api/admin/loans/metrics/portfolio
     GET  /api/admin/loans/metrics/cac-ltv
     GET  /api/loans/:loanNumber/status     ← public, phone-gated customer lookup
+    POST /api/ussd                         ← USSD gateway (buy, track order, check PayGo loan)
+    GET  /api/admin/agents                 ← list resellers/agents + live commission totals
+    GET  /api/admin/agents/summary         ← counts by status (pending/active/suspended...)
+    POST /api/admin/agents                 ← create an agent directly (skips approval)
+    PATCH /api/admin/agents/:id            ← update agent / commission rate / status
+    GET  /api/admin/agents/:id             ← agent detail: customers + orders + loans + commissions
+    POST /api/admin/agents/:id/approve     ← pending -> active
+    POST /api/admin/agents/:id/reject
+    POST /api/admin/agents/:id/suspend
+    POST /api/admin/agents/:id/reactivate
+    POST /api/admin/agents/:id/reset-password
+    POST /api/admin/agents/import          ← bulk-upload a reseller spreadsheet (.xlsx/.csv)
+    GET  /api/admin/agents/export          ← download all agents + commissions as .xlsx
+    POST /api/admin/agents/:id/pay-commission
+    GET/PATCH /api/admin/agents/settings/default-commission
+    POST /api/agents/register              ← PUBLIC — agent self-registration (status: pending)
+    POST /api/agents/login                 ← PUBLIC — agent login (phone/email + password)
+    GET  /api/agents/me, /dashboard, /referral, /customers, /orders, /commissions, /payouts
+    POST /api/agents/customers             ← agent registers a customer
+    POST /api/agents/orders                ← agent creates a sale (cash/momo/PayGo)
+    POST /api/agents/loans/:loanNumber/installments/:id/pay ← agent-collected repayment
       `);
     });
 

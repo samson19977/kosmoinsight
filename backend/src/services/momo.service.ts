@@ -15,7 +15,7 @@ interface MomoPaymentResult {
   message: string;
 }
 
-interface PaymentInstructions {
+export interface PaymentInstructions {
   ussdCode: string;
   merchantCode: string;
   reference: string;
