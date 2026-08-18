@@ -1,4 +1,4 @@
-import { eq, sql, and, desc, gte } from 'drizzle-orm';
+import { eq, sql, and, desc, gte, inArray } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 import * as XLSX from 'xlsx';
 import { db } from '../config/database';
@@ -347,7 +347,7 @@ export class AgentService {
       const openInstallments = await db
         .select()
         .from(installments)
-        .where(sql`${installments.loanId} = ANY(${activeLoanIds})`);
+        .where(inArray(installments.loanId, activeLoanIds));
       outstandingRwf = openInstallments.reduce((s, i) => s + Math.max(0, i.amountDueRwf - (i.amountPaidRwf ?? 0)), 0);
     }
 
@@ -434,7 +434,7 @@ export class AgentService {
   static async markCommissionsPaid(agentId: number, commissionIds?: number[]) {
     const now = new Date();
     const condition = commissionIds && commissionIds.length > 0
-      ? and(eq(agentCommissions.agentId, agentId), eq(agentCommissions.status, 'pending'), sql`${agentCommissions.id} = ANY(${commissionIds})`)
+      ? and(eq(agentCommissions.agentId, agentId), eq(agentCommissions.status, 'pending'), inArray(agentCommissions.id, commissionIds))
       : and(eq(agentCommissions.agentId, agentId), eq(agentCommissions.status, 'pending'));
 
     const result = await db
