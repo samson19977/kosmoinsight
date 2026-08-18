@@ -191,6 +191,84 @@ const HomePage: React.FC = () => {
         </div>
       </section>
 
+      {/* ── PAYGO ─────────────────────────────────────── */}
+      <section className="py-20 bg-gradient-to-br from-emerald-600 to-primary-700 text-white overflow-hidden relative">
+        <div className="absolute top-0 right-0 w-96 h-96 bg-white/5 rounded-full -translate-y-1/3 translate-x-1/4 blur-3xl" />
+        <div className="container mx-auto px-4 relative z-10">
+          <div className="grid md:grid-cols-2 gap-12 items-center">
+            <motion.div {...fadeUp()}>
+              <span className="inline-flex items-center gap-2 bg-white/20 backdrop-blur-sm px-4 py-1.5 rounded-full text-sm font-semibold mb-5 border border-white/30">
+                <CreditCard size={15} /> Flexible Payments
+              </span>
+              <h2 className="text-3xl md:text-4xl font-display font-bold mb-4">Can't pay it all at once? Buy with PayGo.</h2>
+              <p className="text-primary-100 text-lg leading-relaxed mb-6 max-w-lg">
+                Pay a small deposit today and spread the rest over easy installments. PayGo is available on
+                select KosmoPads products through our team and agents — no hidden fees, clear terms upfront.
+              </p>
+              <div className="flex flex-wrap gap-3">
+                <Link to="/order-status" className="inline-flex items-center gap-2 bg-accent-400 hover:bg-accent-300 text-primary-900 px-7 py-3.5 rounded-xl font-bold transition-all hover:scale-105 shadow-xl shadow-accent-900/30">
+                  Check My PayGo Status <ArrowRight size={18} />
+                </Link>
+                <a href="mailto:digital@kosmotive.rw" className="inline-flex items-center gap-2 bg-white/15 hover:bg-white/25 text-white px-7 py-3.5 rounded-xl font-semibold transition-all border border-white/30">
+                  Ask About PayGo
+                </a>
+              </div>
+            </motion.div>
+            <motion.div {...fadeUp(0.15)} className="grid grid-cols-2 gap-4">
+              {[
+                { icon: Package, title: 'Pick a Product', desc: 'Choose an eligible package' },
+                { icon: CreditCard, title: 'Pay a Deposit', desc: 'A small down payment to start' },
+                { icon: CheckCircle, title: 'Get It Today', desc: 'Take your order home right away' },
+                { icon: Shield, title: 'Pay as You Go', desc: 'Clear schedule, easy installments' },
+              ].map(({ icon: Icon, title, desc }, i) => (
+                <div key={i} className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-5">
+                  <Icon className="text-accent-300 mb-3" size={24} />
+                  <h3 className="font-semibold mb-1">{title}</h3>
+                  <p className="text-primary-100 text-xs leading-relaxed">{desc}</p>
+                </div>
+              ))}
+            </motion.div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── BECOME AN AGENT ──────────────────────────── */}
+      <section className="py-20 bg-white">
+        <div className="container mx-auto px-4">
+          <div className="grid md:grid-cols-2 gap-12 items-center">
+            <motion.div {...fadeUp()} className="order-2 md:order-1 grid grid-cols-2 gap-4">
+              {[
+                { icon: Users, label: 'Sell to your community' },
+                { icon: CreditCard, label: 'Earn commission per sale' },
+                { icon: Package, label: 'Use the full product catalogue' },
+                { icon: CheckCircle, label: 'Track everything on your dashboard' },
+              ].map(({ icon: Icon, label }, i) => (
+                <div key={i} className="bg-primary-50 rounded-2xl p-5 text-center">
+                  <Icon className="text-primary-600 mx-auto mb-2" size={24} />
+                  <p className="text-sm font-medium text-gray-700">{label}</p>
+                </div>
+              ))}
+            </motion.div>
+            <motion.div {...fadeUp(0.1)} className="order-1 md:order-2">
+              <span className="text-primary-600 font-semibold text-sm tracking-widest uppercase mb-3 block">Join the Team</span>
+              <h2 className="text-3xl md:text-4xl font-display font-bold text-gray-900 mb-4">Become a KosmoPads Agent</h2>
+              <p className="text-gray-500 text-lg leading-relaxed mb-6">
+                Sell KosmoPads in your community, register customers, and earn commission on every sale —
+                including PayGo orders. Get your own referral link and dashboard once approved.
+              </p>
+              <div className="flex flex-wrap gap-3">
+                <Link to="/become-an-agent" className="inline-flex items-center gap-2 bg-primary-600 hover:bg-primary-700 text-white px-7 py-3.5 rounded-xl font-bold transition-all hover:scale-105 shadow-xl shadow-primary-200">
+                  Become an Agent <ArrowRight size={18} />
+                </Link>
+                <Link to="/agent/login" className="inline-flex items-center gap-2 bg-primary-50 hover:bg-primary-100 text-primary-700 px-7 py-3.5 rounded-xl font-semibold transition-all border border-primary-100">
+                  Agent Login
+                </Link>
+              </div>
+            </motion.div>
+          </div>
+        </div>
+      </section>
+
       {/* ── HOW IT WORKS ─────────────────────────────── */}
       <section className="py-20 bg-primary-50">
         <div className="container mx-auto px-4">

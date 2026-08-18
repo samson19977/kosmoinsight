@@ -4,6 +4,7 @@ import { validate } from '../middleware/validate';
 import { agentSchema, agentUpdateSchema } from '../lib/validation/schemas';
 import { requireAdmin, AuthedRequest } from '../middleware/auth';
 import { AgentService } from '../services/agent.service';
+import { AuditService } from '../services/audit.service';
 
 const router = Router();
 const upload = multer({
@@ -67,13 +68,14 @@ router.get('/settings/default-commission', async (_req: Request, res: Response):
   res.json({ success: true, commissionRateBps: bps, commissionPercent: bps / 100 });
 });
 
-router.patch('/settings/default-commission', async (req: Request, res: Response): Promise<void> => {
+router.patch('/settings/default-commission', async (req: AuthedRequest, res: Response): Promise<void> => {
   const { commissionRateBps } = req.body;
   if (!Number.isInteger(commissionRateBps) || commissionRateBps < 0 || commissionRateBps > 5000) {
     res.status(400).json({ error: 'commissionRateBps must be an integer between 0 and 5000 (0–50%)' });
     return;
   }
   await AgentService.setDefaultCommissionBps(commissionRateBps);
+  await AuditService.log({ adminId: req.admin!.id, action: 'agents.set_default_commission', targetType: 'settings', targetId: 0, details: { commissionRateBps } });
   res.json({ success: true, commissionRateBps });
 });
 
@@ -124,7 +126,8 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
       res.status(404).json({ error: 'Agent not found' });
       return;
     }
-    res.json({ success: true, ...detail });
+    const auditLog = await AuditService.getForTarget('agent', id);
+    res.json({ success: true, ...detail, auditLog });
   } catch (error) {
     console.error('Agent detail error:', error);
     res.status(500).json({ error: 'Failed to load agent' });
@@ -134,10 +137,11 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
 // ============================================
 // PATCH /api/admin/agents/:id — update details, commission rate, or status
 // ============================================
-router.patch('/:id', validate(agentUpdateSchema), async (req: Request, res: Response): Promise<void> => {
+router.patch('/:id', validate(agentUpdateSchema), async (req: AuthedRequest, res: Response): Promise<void> => {
   try {
     const id = Number(req.params.id);
     const updated = await AgentService.updateAgent(id, req.body);
+    await AuditService.log({ adminId: req.admin!.id, action: 'agent.update', targetType: 'agent', targetId: id, details: req.body });
     res.json({ success: true, agent: updated });
   } catch (error: any) {
     console.error('Update agent error:', error);
@@ -150,11 +154,12 @@ router.patch('/:id', validate(agentUpdateSchema), async (req: Request, res: Resp
 // as paid out. Body: { commissionIds?: number[] } — omit to pay everything
 // currently pending for this agent.
 // ============================================
-router.post('/:id/pay-commission', async (req: Request, res: Response): Promise<void> => {
+router.post('/:id/pay-commission', async (req: AuthedRequest, res: Response): Promise<void> => {
   try {
     const id = Number(req.params.id);
     const { commissionIds } = req.body || {};
     const result = await AgentService.markCommissionsPaid(id, commissionIds);
+    await AuditService.log({ adminId: req.admin!.id, action: 'agent.pay_commission', targetType: 'agent', targetId: id, details: { commissionIds, ...result } });
     res.json({ success: true, ...result });
   } catch (error) {
     console.error('Pay commission error:', error);
@@ -167,7 +172,9 @@ router.post('/:id/pay-commission', async (req: Request, res: Response): Promise<
 // ============================================
 router.post('/:id/approve', async (req: AuthedRequest, res: Response): Promise<void> => {
   try {
-    const agent = await AgentService.approveAgent(Number(req.params.id), req.admin!.id);
+    const id = Number(req.params.id);
+    const agent = await AgentService.approveAgent(id, req.admin!.id);
+    await AuditService.log({ adminId: req.admin!.id, action: 'agent.approve', targetType: 'agent', targetId: id });
     res.json({ success: true, agent });
   } catch (error: any) {
     res.status(error.message?.includes('not found') ? 404 : 400).json({ error: error.message || 'Failed to approve agent' });
@@ -179,7 +186,9 @@ router.post('/:id/approve', async (req: AuthedRequest, res: Response): Promise<v
 // ============================================
 router.post('/:id/reject', async (req: AuthedRequest, res: Response): Promise<void> => {
   try {
-    const agent = await AgentService.rejectAgent(Number(req.params.id), req.admin!.id, req.body?.reason);
+    const id = Number(req.params.id);
+    const agent = await AgentService.rejectAgent(id, req.admin!.id, req.body?.reason);
+    await AuditService.log({ adminId: req.admin!.id, action: 'agent.reject', targetType: 'agent', targetId: id, details: { reason: req.body?.reason } });
     res.json({ success: true, agent });
   } catch (error: any) {
     res.status(error.message?.includes('not found') ? 404 : 500).json({ error: error.message || 'Failed to reject agent' });
@@ -189,9 +198,11 @@ router.post('/:id/reject', async (req: AuthedRequest, res: Response): Promise<vo
 // ============================================
 // POST /api/admin/agents/:id/suspend — Body: { reason?: string }
 // ============================================
-router.post('/:id/suspend', async (req: Request, res: Response): Promise<void> => {
+router.post('/:id/suspend', async (req: AuthedRequest, res: Response): Promise<void> => {
   try {
-    const agent = await AgentService.suspendAgent(Number(req.params.id), req.body?.reason);
+    const id = Number(req.params.id);
+    const agent = await AgentService.suspendAgent(id, req.body?.reason);
+    await AuditService.log({ adminId: req.admin!.id, action: 'agent.suspend', targetType: 'agent', targetId: id, details: { reason: req.body?.reason } });
     res.json({ success: true, agent });
   } catch (error: any) {
     res.status(error.message?.includes('not found') ? 404 : 500).json({ error: error.message || 'Failed to suspend agent' });
@@ -201,9 +212,11 @@ router.post('/:id/suspend', async (req: Request, res: Response): Promise<void> =
 // ============================================
 // POST /api/admin/agents/:id/reactivate
 // ============================================
-router.post('/:id/reactivate', async (req: Request, res: Response): Promise<void> => {
+router.post('/:id/reactivate', async (req: AuthedRequest, res: Response): Promise<void> => {
   try {
-    const agent = await AgentService.reactivateAgent(Number(req.params.id));
+    const id = Number(req.params.id);
+    const agent = await AgentService.reactivateAgent(id);
+    await AuditService.log({ adminId: req.admin!.id, action: 'agent.reactivate', targetType: 'agent', targetId: id });
     res.json({ success: true, agent });
   } catch (error: any) {
     res.status(error.message?.includes('not found') ? 404 : 500).json({ error: error.message || 'Failed to reactivate agent' });
@@ -215,14 +228,16 @@ router.post('/:id/reactivate', async (req: Request, res: Response): Promise<void
 // Admin-triggered reset (e.g. agent locked out) — the agent should be
 // told to change it again on next login via their own future profile page.
 // ============================================
-router.post('/:id/reset-password', async (req: Request, res: Response): Promise<void> => {
+router.post('/:id/reset-password', async (req: AuthedRequest, res: Response): Promise<void> => {
   try {
+    const id = Number(req.params.id);
     const { newPassword } = req.body;
     if (!newPassword || newPassword.length < 8) {
       res.status(400).json({ error: 'newPassword must be at least 8 characters' });
       return;
     }
-    await AgentService.resetPassword(Number(req.params.id), newPassword);
+    await AgentService.resetPassword(id, newPassword);
+    await AuditService.log({ adminId: req.admin!.id, action: 'agent.reset_password', targetType: 'agent', targetId: id });
     res.json({ success: true, message: 'Password reset. Share the new password with the agent through a secure channel.' });
   } catch (error: any) {
     res.status(error.message?.includes('not found') ? 404 : 500).json({ error: error.message || 'Failed to reset password' });

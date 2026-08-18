@@ -84,6 +84,14 @@ export const orderInstallmentPlanSchema = z.object({
     .regex(/^(\+250|0)[78][0-9]{8}$/, 'Guarantor phone must be a valid Rwandan number')
     .optional()
     .or(z.literal('')),
+  // The customer must have explicitly reviewed and accepted the total,
+  // down payment, financed amount, term, and schedule before the loan is
+  // opened — this is what a checkbox on the frontend sets, but it's
+  // validated here so the backend, not just the UI, enforces consent.
+  agreementAccepted: z.boolean(),
+}).refine((data) => data.agreementAccepted === true, {
+  message: 'The customer must review and accept the PayGo terms before this loan can be created',
+  path: ['agreementAccepted'],
 });
 
 // ============================================

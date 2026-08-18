@@ -40,6 +40,7 @@ const Header: React.FC = () => {
           <NavLink to="/" end className={navClass}>Home</NavLink>
           <NavLink to="/products" className={navClass}>Products</NavLink>
           <NavLink to="/order-status" className={navClass}>Track Order</NavLink>
+          <NavLink to="/become-an-agent" className={navClass}>Become an Agent</NavLink>
           <a href="mailto:digital@kosmotive.rw" className="text-sm font-medium text-gray-700 hover:text-primary-600 transition-colors">Contact</a>
         </nav>
 
@@ -79,7 +80,7 @@ const Header: React.FC = () => {
             exit={{ opacity: 0, height: 0 }}
             className="md:hidden bg-white border-t border-gray-100 px-4 py-4 space-y-1"
           >
-            {[['/', 'Home'], ['/products', 'Products'], ['/order-status', 'Track Order']].map(([to, label]) => (
+            {[['/', 'Home'], ['/products', 'Products'], ['/order-status', 'Track Order'], ['/become-an-agent', 'Become an Agent']].map(([to, label]) => (
               <NavLink key={to} to={to} end={to === '/'} className={({ isActive }) =>
                 `block px-4 py-3 rounded-xl text-sm font-medium transition-colors ${isActive ? 'bg-primary-50 text-primary-700' : 'text-gray-700 hover:bg-gray-50'}`
               }>{label}</NavLink>

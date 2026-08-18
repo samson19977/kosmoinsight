@@ -35,8 +35,13 @@ export async function createOrderCore(input: {
   customerId?: number;
   items: Array<{ name: string; quantity: number; price: number; productId?: number }>;
   paymentMethod: string;
-  installmentPlan?: { downPaymentRwf: number; termMonths: number; interestRateBps?: number; guarantorName?: string; guarantorPhone?: string };
+  installmentPlan?: { downPaymentRwf: number; termMonths: number; interestRateBps?: number; guarantorName?: string; guarantorPhone?: string; agreementAccepted?: boolean };
   agentCode?: string;
+  // Captured from the HTTP request by the route handler (never
+  // client-supplied as JSON) so the loan agreement record reflects the
+  // real request that opened it.
+  ipAddress?: string;
+  userAgent?: string;
   // Set by the agent-authenticated route ONLY, from the verified JWT —
   // never accepted from client-supplied JSON. Takes priority over
   // agentCode so an agent's own sale is always attributed to themselves,
@@ -45,7 +50,7 @@ export async function createOrderCore(input: {
   channel?: 'web' | 'ussd' | 'agent';
   notes?: string;
 }) {
-  const { customer, customerId: existingCustomerIdInput, items, paymentMethod, installmentPlan, agentCode, agentIdOverride, channel = 'web', notes } = input;
+  const { customer, customerId: existingCustomerIdInput, items, paymentMethod, installmentPlan, agentCode, agentIdOverride, channel = 'web', notes, ipAddress, userAgent } = input;
 
   let totalRwf = 0;
   const itemsWithSubtotal = items.map((item) => {
@@ -68,6 +73,9 @@ export async function createOrderCore(input: {
     if (!installmentPlan) throw new Error('Installment plan is required for PayGo Installments');
     if (installmentPlan.downPaymentRwf >= totalRwf) {
       throw new Error('Down payment must be less than the order total — otherwise there is nothing to finance');
+    }
+    if (!installmentPlan.agreementAccepted) {
+      throw new Error('The customer must review and accept the PayGo terms before this loan can be created');
     }
     const productIds = items.map((i) => i.productId).filter((id): id is number => Boolean(id));
     if (productIds.length !== items.length) {
@@ -221,6 +229,7 @@ export async function createOrderCore(input: {
       guarantorName: installmentPlan.guarantorName || undefined,
       guarantorPhone: installmentPlan.guarantorPhone || undefined,
       notes: `Opened from ${channel} checkout, order ${orderNumber}`,
+      agreement: { agentId, ipAddress, userAgent },
     });
   }
 
@@ -234,6 +243,7 @@ router.post('/', validate(orderSchema), async (req: Request, res: Response): Pro
 
     const { order, orderNumber, totalRwf, itemsWithSubtotal, paymentInstructions, loan } = await createOrderCore({
       customer, items, paymentMethod, installmentPlan, agentCode, channel: channel || 'web', notes,
+      ipAddress: req.ip, userAgent: req.headers['user-agent'],
     });
 
     // Send email if customer provided an email address

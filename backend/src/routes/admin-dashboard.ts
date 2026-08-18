@@ -4,6 +4,7 @@ import { db } from '../config/database';
 import { orders, orderItems, customers } from '../db/schema';
 import { requireAdmin } from '../middleware/auth';
 import { LoanService } from '../services/loan.service';
+import { AgentService } from '../services/agent.service';
 
 const router = Router();
 router.use(requireAdmin);
@@ -130,6 +131,26 @@ router.get('/', async (_req: Request, res: Response): Promise<void> => {
     const loanPortfolio = await LoanService.getPortfolioMetrics();
     const cacLtv = await LoanService.getCacLtvMetrics();
 
+    // ---- Agent sales channel (spec: "agent stats on the main dashboard,
+    // without removing existing metrics") ----
+    const agentSummary = await AgentService.getPortfolioSummary();
+    const agentList = await AgentService.listAgents();
+    const agentOrders = allOrders.filter((o) => o.agentId);
+    const agentPaidOrders = paidOrders.filter((o) => o.agentId);
+    const agentGeneratedRevenueRwf = sumRevenue(agentPaidOrders);
+    const pendingCommissionRwf = agentList.reduce((s, a) => s + a.pendingCommissionRwf, 0);
+    const paidCommissionRwf = agentList.reduce((s, a) => s + a.paidCommissionRwf, 0);
+    const topAgents = [...agentList]
+      .sort((a, b) => b.paidCommissionRwf + b.pendingCommissionRwf - (a.paidCommissionRwf + a.pendingCommissionRwf))
+      .slice(0, 5)
+      .map((a) => ({
+        name: a.name,
+        code: a.code,
+        orderCount: a.orderCount,
+        pendingCommissionRwf: a.pendingCommissionRwf,
+        paidCommissionRwf: a.paidCommissionRwf,
+      }));
+
     res.json({
       success: true,
       revenue: {
@@ -151,6 +172,17 @@ router.get('/', async (_req: Request, res: Response): Promise<void> => {
       pendingConfirmation,
       loanPortfolio,
       cacLtv,
+      agentStats: {
+        totalAgents: agentSummary.total,
+        activeAgents: agentSummary.active,
+        pendingApprovals: agentSummary.pending,
+        suspendedAgents: agentSummary.suspended,
+        agentGeneratedOrders: agentOrders.length,
+        agentGeneratedRevenueRwf,
+        pendingCommissionRwf,
+        paidCommissionRwf,
+        topAgents,
+      },
     });
   } catch (error) {
     console.error('Dashboard fetch error:', error);

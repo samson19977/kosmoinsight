@@ -241,8 +241,13 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
               customer: { firstName, lastName, phone, district, sector, cell, village, nationalId },
               items: [{ name: product.name, quantity, price: product.priceRwf, productId: product.id }],
               paymentMethod: 'PayGo Installments',
-              installmentPlan: { downPaymentRwf, termMonths },
+              // Walking through the down-payment %, term, and payment-method
+              // steps above and confirming here IS the customer's explicit
+              // acceptance in the USSD flow — there's no separate checkbox
+              // screen to show, so accepting this final prompt is it.
+              installmentPlan: { downPaymentRwf, termMonths, agreementAccepted: true },
               channel: 'ussd',
+              userAgent: 'ussd-gateway',
             });
 
             if (downPaymentMethodChoice === '1') {

@@ -1,6 +1,6 @@
 import { eq, sql } from 'drizzle-orm';
 import { db } from '../config/database';
-import { loans, installments, loanTransactions, customers, payments } from '../db/schema';
+import { loans, installments, loanTransactions, customers, payments, loanAgreements } from '../db/schema';
 import { EmailService } from './email.service';
 import { MomoService } from './momo.service';
 
@@ -49,6 +49,17 @@ export class LoanService {
     guarantorPhone?: string;
     notes?: string;
     adminId?: number | null;
+    // Proof of the customer's explicit PayGo acceptance — required for
+    // loans opened through the storefront/USSD/agent checkout flow
+    // (validated upstream in orderSchema/agentOrderSchema); left undefined
+    // when a loan is opened directly by an admin via /api/admin/loans,
+    // where the admin dashboard itself is the record of who initiated it.
+    agreement?: {
+      agentId?: number | null;
+      termsVersion?: string;
+      ipAddress?: string;
+      userAgent?: string;
+    };
   }) {
     const financedRwf = input.principalRwf - input.downPaymentRwf;
     if (financedRwf <= 0) {
@@ -110,6 +121,19 @@ export class LoanService {
       adminId: input.adminId ?? null,
       note: `Loan disbursed. Down payment: ${input.downPaymentRwf} RWF. Term: ${input.termMonths} months.`,
     });
+
+    // ---- Record the customer's agreement acceptance, if provided ----
+    if (input.agreement) {
+      await db.insert(loanAgreements).values({
+        loanId: loan.id,
+        orderId: input.orderId ?? null,
+        customerId: input.customerId,
+        agentId: input.agreement.agentId ?? null,
+        termsVersion: input.agreement.termsVersion || 'v1',
+        ipAddress: input.agreement.ipAddress || null,
+        userAgent: input.agreement.userAgent || null,
+      });
+    }
 
     return loan;
   }

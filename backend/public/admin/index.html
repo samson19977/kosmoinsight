@@ -199,6 +199,7 @@
     <button data-page="inventoryPage">📦 Inventory</button>
     <button data-page="ordersPage">🛒 Orders</button>
     <button data-page="loansPage">💳 PayGo</button>
+    <button data-page="agentsPage">🧑‍💼 Agents</button>
   </nav>
 
   <!-- DASHBOARD PAGE -->
@@ -213,6 +214,12 @@
       <span class="section-title">PayGo Installment Portfolio</span>
     </div>
     <div class="kpis" id="loanKpis"></div>
+
+    <div style="display:flex;align-items:center;justify-content:space-between;margin:24px 0 14px;">
+      <span class="section-title">Agent Sales Channel</span>
+      <button class="btn btn-ghost btn-sm" onclick="document.querySelector('nav button[data-page=agentsPage]').click()">Manage agents →</button>
+    </div>
+    <div class="kpis" id="agentKpis"></div>
 
     <div class="grid2">
       <div>
@@ -309,6 +316,43 @@
           </tr>
         </thead>
         <tbody id="loansBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- AGENTS PAGE -->
+  <div class="page" id="agentsPage">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin:20px 0 14px;">
+      <span class="section-title">Agents</span>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <div style="display:flex;align-items:center;gap:6px;background:#fff;border:1px solid #e4e4e7;border-radius:10px;padding:6px 10px;">
+          <label style="font-size:12px;color:#8a8f9c;">Default commission</label>
+          <input id="defaultCommissionPct" type="number" min="0" max="50" step="0.5" style="width:56px;border:none;font-size:13px;outline:none;" />
+          <span style="font-size:12px;color:#8a8f9c;">%</span>
+          <button class="btn btn-ghost btn-sm" onclick="saveDefaultCommission()">Save</button>
+        </div>
+        <button class="btn btn-ghost" onclick="loadAgents()">⟳ Refresh</button>
+        <button class="btn btn-teal" onclick="openNewAgentModal()">+ Add agent</button>
+      </div>
+    </div>
+    <div class="kpis" id="agentsPageKpis"></div>
+    <div class="card">
+      <table>
+        <thead>
+          <tr>
+            <th>Agent</th>
+            <th>Code</th>
+            <th>Phone</th>
+            <th>Status</th>
+            <th>Customers</th>
+            <th>Orders</th>
+            <th>Active PayGo</th>
+            <th>Commission (pending / paid)</th>
+            <th>Joined</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="agentsBody"></tbody>
       </table>
     </div>
   </div>
@@ -409,6 +453,87 @@
   </div>
 </div>
 
+<!-- New Agent Modal (admin-created — skips the approval queue) -->
+<div class="modal-overlay" id="newAgentModal">
+  <div class="modal">
+    <h3>Add Agent</h3>
+    <label>Full name</label>
+    <input type="text" id="newAgentName" placeholder="e.g. Jean Bosco Habimana" />
+    <label>Reseller code</label>
+    <input type="text" id="newAgentCode" placeholder="e.g. KIG-JB01 — letters, numbers, hyphens only" />
+    <label>Phone</label>
+    <input type="text" id="newAgentPhone" placeholder="0788123456" />
+    <label>Email (optional)</label>
+    <input type="text" id="newAgentEmail" placeholder="agent@example.com" />
+    <label>District</label>
+    <input type="text" id="newAgentDistrict" placeholder="e.g. Gasabo" />
+    <label>Region (optional)</label>
+    <input type="text" id="newAgentRegion" placeholder="e.g. Kigali" />
+    <label>Commission rate (%)</label>
+    <input type="number" id="newAgentCommissionPct" min="0" max="50" step="0.5" value="15" />
+    <p style="font-size:12px;color:#8a8f9c;margin:2px 0 0;">This agent is created active with no password set — use "Reset Password" on their row afterwards to give them login credentials.</p>
+    <div class="modal-btns">
+      <button class="btn btn-ghost" onclick="closeNewAgentModal()">Cancel</button>
+      <button class="btn btn-teal" id="saveNewAgentBtn" onclick="saveNewAgent()">Create agent</button>
+    </div>
+  </div>
+</div>
+
+<!-- Agent Detail Modal -->
+<div class="modal-overlay" id="agentDetailModal">
+  <div class="modal" style="max-width:760px;max-height:85vh;overflow-y:auto;">
+    <h3 id="agentDetailTitle">Agent detail</h3>
+    <div id="agentDetailSummary" style="margin-bottom:14px;"></div>
+
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;" id="agentDetailActions"></div>
+
+    <h4 style="margin:14px 0 6px;font-size:13px;color:#8a8f9c;text-transform:uppercase;">Customers (<span id="agentDetailCustCount">0</span>)</h4>
+    <div id="agentDetailCustomers"></div>
+
+    <h4 style="margin:14px 0 6px;font-size:13px;color:#8a8f9c;text-transform:uppercase;">Orders (<span id="agentDetailOrderCount">0</span>)</h4>
+    <div id="agentDetailOrders"></div>
+
+    <h4 style="margin:14px 0 6px;font-size:13px;color:#8a8f9c;text-transform:uppercase;">PayGo Loans</h4>
+    <div id="agentDetailLoans"></div>
+
+    <h4 style="margin:14px 0 6px;font-size:13px;color:#8a8f9c;text-transform:uppercase;">Commissions</h4>
+    <div id="agentDetailCommissions"></div>
+
+    <h4 style="margin:14px 0 6px;font-size:13px;color:#8a8f9c;text-transform:uppercase;">Activity / Audit Trail</h4>
+    <div id="agentDetailAudit"></div>
+
+    <div class="modal-btns">
+      <button class="btn btn-ghost" onclick="closeAgentDetailModal()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Reason Modal (shared by Reject and Suspend) -->
+<div class="modal-overlay" id="reasonModal">
+  <div class="modal">
+    <h3 id="reasonModalTitle">Reason</h3>
+    <label>Reason (optional, shared with the agent)</label>
+    <input type="text" id="reasonInput" placeholder="e.g. Duplicate registration" />
+    <div class="modal-btns">
+      <button class="btn btn-ghost" onclick="closeReasonModal()">Cancel</button>
+      <button class="btn btn-teal" id="submitReasonBtn" onclick="submitReasonModal()">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- Reset Agent Password Modal -->
+<div class="modal-overlay" id="resetAgentPasswordModal">
+  <div class="modal">
+    <h3>Reset Agent Password</h3>
+    <label>New password</label>
+    <input type="text" id="resetAgentPasswordInput" placeholder="At least 8 characters" />
+    <div class="modal-btns">
+      <button class="btn btn-ghost" onclick="closeResetAgentPasswordModal()">Cancel</button>
+      <button class="btn btn-teal" id="saveResetAgentPasswordBtn" onclick="saveResetAgentPassword()">Reset password</button>
+    </div>
+  </div>
+</div>
+
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
@@ -442,6 +567,7 @@ const MAX_ATTEMPTS = 5;
       if (btn.dataset.page === 'inventoryPage') loadInventory();
       if (btn.dataset.page === 'ordersPage') loadOrders();
       if (btn.dataset.page === 'loansPage') loadLoans();
+      if (btn.dataset.page === 'agentsPage') loadAgents();
     });
   });
 
@@ -649,6 +775,17 @@ function renderDashboard(d) {
     <div class="kpi" title="LTV ÷ CAC — above 3 is generally considered healthy">
       <div class="label">LTV : CAC</div><div class="value pink">${cl.ltvToCacRatio != null ? cl.ltvToCacRatio + '×' : '—'}</div>
     </div>
+  `;
+
+  // Agent sales channel KPIs
+  const ags = d.agentStats || {};
+  document.getElementById('agentKpis').innerHTML = `
+    <div class="kpi"><div class="label">Active agents</div><div class="value">${ags.activeAgents ?? 0}</div></div>
+    <div class="kpi" title="Awaiting admin review"><div class="label">Pending approvals</div><div class="value amber">${ags.pendingApprovals ?? 0}</div></div>
+    <div class="kpi"><div class="label">Agent-generated orders</div><div class="value">${ags.agentGeneratedOrders ?? 0}</div></div>
+    <div class="kpi"><div class="label">Agent-generated revenue</div><div class="value pink">${money(ags.agentGeneratedRevenueRwf)}</div></div>
+    <div class="kpi"><div class="label">Pending commission payouts</div><div class="value amber">${money(ags.pendingCommissionRwf)}</div></div>
+    <div class="kpi"><div class="label">Paid commission</div><div class="value">${money(ags.paidCommissionRwf)}</div></div>
   `;
 
   // Trend chart
@@ -1128,6 +1265,291 @@ async function savePayInstallment() {
     showToast('⚠️ ' + e.message, true);
   } finally {
     btn.disabled = false;
+  }
+}
+
+// ============================================================
+// AGENTS
+// ============================================================
+let currentAgentId = null;
+let currentReasonAction = null; // 'reject' | 'suspend'
+
+function agentStatusBadge(status) {
+  const cls = (status === 'active' || status === 'approved') ? 'success'
+    : status === 'pending' ? 'pending'
+    : status === 'suspended' ? 'danger'
+    : 'inactive';
+  return `<span class="badge ${cls}">${status}</span>`;
+}
+
+function referralLink(code) { return `https://kosmopads.rw/?ref=${code}`; }
+
+async function loadAgents() {
+  try {
+    const [listRes, summaryRes, commRes] = await Promise.all([
+      fetch(`${API_BASE}/admin/agents`, { headers: { Authorization: `Bearer ${token}` } }),
+      fetch(`${API_BASE}/admin/agents/summary`, { headers: { Authorization: `Bearer ${token}` } }),
+      fetch(`${API_BASE}/admin/agents/settings/default-commission`, { headers: { Authorization: `Bearer ${token}` } }),
+    ]);
+    if (listRes.status === 401) { logout(); return; }
+    const listData = await listRes.json();
+    const summaryData = await summaryRes.json();
+    const commData = await commRes.json();
+    if (!listRes.ok) throw new Error(listData.error || 'Failed to load agents');
+    renderAgentsPageKpis(summaryData, listData.agents);
+    renderAgents(listData.agents);
+    if (commData.commissionPercent != null) document.getElementById('defaultCommissionPct').value = commData.commissionPercent;
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
+  }
+}
+
+function renderAgentsPageKpis(summary, list) {
+  const pendingCommissionRwf = list.reduce((s, a) => s + a.pendingCommissionRwf, 0);
+  const paidCommissionRwf = list.reduce((s, a) => s + a.paidCommissionRwf, 0);
+  document.getElementById('agentsPageKpis').innerHTML = `
+    <div class="kpi"><div class="label">Total agents</div><div class="value">${summary.total ?? 0}</div></div>
+    <div class="kpi"><div class="label">Pending approval</div><div class="value amber">${summary.pending ?? 0}</div></div>
+    <div class="kpi"><div class="label">Active agents</div><div class="value">${summary.active ?? 0}</div></div>
+    <div class="kpi"><div class="label">Suspended</div><div class="value">${summary.suspended ?? 0}</div></div>
+    <div class="kpi"><div class="label">Pending payouts</div><div class="value amber">${fmt(pendingCommissionRwf)}</div></div>
+    <div class="kpi"><div class="label">Paid payouts</div><div class="value">${fmt(paidCommissionRwf)}</div></div>
+  `;
+}
+
+function renderAgents(list) {
+  const body = document.getElementById('agentsBody');
+  if (!list.length) { body.innerHTML = '<tr><td colspan="10" class="empty">No agents yet.</td></tr>'; return; }
+  body.innerHTML = list.map(a => `
+    <tr>
+      <td><strong>${a.name}</strong></td>
+      <td>${a.code}</td>
+      <td>${a.phone}</td>
+      <td>${agentStatusBadge(a.status)}</td>
+      <td>${a.customerCount}</td>
+      <td>${a.orderCount}</td>
+      <td>${a.activePayGoLoans}</td>
+      <td>${fmt(a.pendingCommissionRwf)} / ${fmt(a.paidCommissionRwf)}</td>
+      <td>${new Date(a.createdAt).toLocaleDateString()}</td>
+      <td style="white-space:nowrap;">
+        <button class="btn btn-ghost btn-sm" onclick="openAgentDetail(${a.id})">View</button>
+        ${a.status === 'pending' ? `<button class="btn btn-teal btn-sm" onclick="approveAgent(${a.id})">Approve</button>` : ''}
+      </td>
+    </tr>
+  `).join('');
+}
+
+// ---- Lifecycle actions ----
+async function approveAgent(id) {
+  try {
+    const res = await fetch(`${API_BASE}/admin/agents/${id}/approve`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to approve agent');
+    showToast('✓ Agent approved');
+    loadAgents();
+    if (document.getElementById('agentDetailModal').classList.contains('show')) openAgentDetail(id);
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
+  }
+}
+
+function openReasonModal(action, id) {
+  currentReasonAction = action;
+  currentAgentId = id;
+  document.getElementById('reasonModalTitle').textContent = action === 'reject' ? 'Reject Agent' : 'Suspend Agent';
+  document.getElementById('reasonInput').value = '';
+  document.getElementById('reasonModal').classList.add('show');
+}
+function closeReasonModal() { document.getElementById('reasonModal').classList.remove('show'); }
+
+async function submitReasonModal() {
+  const btn = document.getElementById('submitReasonBtn');
+  const reason = document.getElementById('reasonInput').value || undefined;
+  const endpoint = currentReasonAction === 'reject' ? 'reject' : 'suspend';
+  btn.disabled = true;
+  try {
+    const res = await fetch(`${API_BASE}/admin/agents/${currentAgentId}/${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ reason }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `Failed to ${endpoint} agent`);
+    showToast(`✓ Agent ${endpoint === 'reject' ? 'rejected' : 'suspended'}`);
+    closeReasonModal();
+    loadAgents();
+    if (document.getElementById('agentDetailModal').classList.contains('show')) openAgentDetail(currentAgentId);
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function reactivateAgent(id) {
+  try {
+    const res = await fetch(`${API_BASE}/admin/agents/${id}/reactivate`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to reactivate agent');
+    showToast('✓ Agent reactivated');
+    loadAgents();
+    if (document.getElementById('agentDetailModal').classList.contains('show')) openAgentDetail(id);
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
+  }
+}
+
+function openResetAgentPasswordModal(id) {
+  currentAgentId = id;
+  document.getElementById('resetAgentPasswordInput').value = '';
+  document.getElementById('resetAgentPasswordModal').classList.add('show');
+}
+function closeResetAgentPasswordModal() { document.getElementById('resetAgentPasswordModal').classList.remove('show'); }
+
+async function saveResetAgentPassword() {
+  const btn = document.getElementById('saveResetAgentPasswordBtn');
+  const newPassword = document.getElementById('resetAgentPasswordInput').value;
+  if (!newPassword || newPassword.length < 8) { showToast('⚠️ Password must be at least 8 characters', true); return; }
+  btn.disabled = true;
+  try {
+    const res = await fetch(`${API_BASE}/admin/agents/${currentAgentId}/reset-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ newPassword }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to reset password');
+    showToast('✓ Password reset — share it with the agent through a secure channel');
+    closeResetAgentPasswordModal();
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function payAgentCommission(agentId) {
+  try {
+    const res = await fetch(`${API_BASE}/admin/agents/${agentId}/pay-commission`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to mark commissions paid');
+    showToast('✓ Pending commissions marked as paid');
+    loadAgents();
+    openAgentDetail(agentId);
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
+  }
+}
+
+// ---- New agent modal ----
+function openNewAgentModal() {
+  ['newAgentName', 'newAgentCode', 'newAgentPhone', 'newAgentEmail', 'newAgentDistrict', 'newAgentRegion'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('newAgentCommissionPct').value = 15;
+  document.getElementById('newAgentModal').classList.add('show');
+}
+function closeNewAgentModal() { document.getElementById('newAgentModal').classList.remove('show'); }
+
+async function saveNewAgent() {
+  const btn = document.getElementById('saveNewAgentBtn');
+  const name = document.getElementById('newAgentName').value;
+  const code = document.getElementById('newAgentCode').value;
+  const phone = document.getElementById('newAgentPhone').value;
+  if (!name || !code || !phone) { showToast('⚠️ Name, code, and phone are required', true); return; }
+
+  const payload = {
+    name, code, phone,
+    email: document.getElementById('newAgentEmail').value || undefined,
+    district: document.getElementById('newAgentDistrict').value || undefined,
+    region: document.getElementById('newAgentRegion').value || undefined,
+    commissionRateBps: Math.round(Number(document.getElementById('newAgentCommissionPct').value) * 100),
+  };
+
+  btn.disabled = true;
+  try {
+    const res = await fetch(`${API_BASE}/admin/agents`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || (data.details ? data.details.map(d => d.message).join(', ') : 'Failed to create agent'));
+    showToast(`✓ Agent ${data.agent.code} created — use "Reset Password" to set their login`);
+    closeNewAgentModal();
+    loadAgents();
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ---- Agent detail modal ----
+async function openAgentDetail(id) {
+  currentAgentId = id;
+  try {
+    const res = await fetch(`${API_BASE}/admin/agents/${id}`, { headers: { Authorization: `Bearer ${token}` } });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to load agent');
+    renderAgentDetail(data);
+    document.getElementById('agentDetailModal').classList.add('show');
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
+  }
+}
+function closeAgentDetailModal() { document.getElementById('agentDetailModal').classList.remove('show'); currentAgentId = null; }
+
+function renderAgentDetail(data) {
+  const { agent, customers: custs, orders: ords, loans: lns, commissions, pendingRwf, paidRwf, auditLog } = data;
+  document.getElementById('agentDetailTitle').textContent = `${agent.name} — ${agent.code}`;
+  document.getElementById('agentDetailSummary').innerHTML = `
+    <div>${agentStatusBadge(agent.status)} · ${agent.phone} ${agent.email ? '· ' + agent.email : ''}</div>
+    <div style="margin-top:4px;">${agent.district || ''} ${agent.region ? '· ' + agent.region : ''} · Commission rate: ${(agent.commissionRateBps / 100).toFixed(1)}%</div>
+    <div style="margin-top:4px;">Referral link: <a href="${referralLink(agent.code)}" target="_blank" rel="noopener">${referralLink(agent.code)}</a></div>
+    <div style="margin-top:4px;">Pending commission: <strong>${fmt(pendingRwf)}</strong> · Paid out: ${fmt(paidRwf)}</div>
+  `;
+
+  const actions = [];
+  if (agent.status === 'pending') actions.push(`<button class="btn btn-teal btn-sm" onclick="approveAgent(${agent.id})">Approve</button>`);
+  if (agent.status === 'pending') actions.push(`<button class="btn btn-ghost btn-sm" onclick="openReasonModal('reject', ${agent.id})">Reject</button>`);
+  if (agent.status === 'active' || agent.status === 'approved') actions.push(`<button class="btn btn-ghost btn-sm" onclick="openReasonModal('suspend', ${agent.id})">Suspend</button>`);
+  if (agent.status === 'suspended') actions.push(`<button class="btn btn-teal btn-sm" onclick="reactivateAgent(${agent.id})">Reactivate</button>`);
+  actions.push(`<button class="btn btn-ghost btn-sm" onclick="openResetAgentPasswordModal(${agent.id})">Reset password</button>`);
+  if (pendingRwf > 0) actions.push(`<button class="btn btn-teal btn-sm" onclick="payAgentCommission(${agent.id})">Pay pending commission (${fmt(pendingRwf)})</button>`);
+  document.getElementById('agentDetailActions').innerHTML = actions.join('');
+
+  document.getElementById('agentDetailCustCount').textContent = custs.length;
+  document.getElementById('agentDetailCustomers').innerHTML = !custs.length ? '<p class="empty">No customers yet.</p>' : `<table><thead><tr><th>Name</th><th>Phone</th><th>Location</th></tr></thead><tbody>` +
+    custs.map(c => `<tr><td>${c.firstName} ${c.lastName}</td><td>${c.phone}</td><td>${[c.district, c.sector].filter(Boolean).join(', ')}</td></tr>`).join('') + `</tbody></table>`;
+
+  document.getElementById('agentDetailOrderCount').textContent = ords.length;
+  document.getElementById('agentDetailOrders').innerHTML = !ords.length ? '<p class="empty">No orders yet.</p>' : `<table><thead><tr><th>Order #</th><th>Total</th><th>Method</th><th>Payment</th><th>Date</th></tr></thead><tbody>` +
+    ords.map(o => `<tr><td><strong>${o.orderNumber}</strong></td><td>${fmt(o.totalRwf)}</td><td>${o.paymentMethod}</td><td><span class="badge ${o.paymentStatus}">${o.paymentStatus}</span></td><td>${new Date(o.createdAt).toLocaleDateString()}</td></tr>`).join('') + `</tbody></table>`;
+
+  document.getElementById('agentDetailLoans').innerHTML = !lns.length ? '<p class="empty">No PayGo loans yet.</p>' : `<table><thead><tr><th>Loan #</th><th>Total payable</th><th>Status</th></tr></thead><tbody>` +
+    lns.map(l => `<tr><td><strong>${l.loanNumber}</strong></td><td>${fmt(l.totalPayableRwf)}</td><td>${loanStatusBadge(l.status)}</td></tr>`).join('') + `</tbody></table>`;
+
+  document.getElementById('agentDetailCommissions').innerHTML = !commissions.length ? '<p class="empty">No commissions yet.</p>' : `<table><thead><tr><th>Order</th><th>Sale amount</th><th>Commission</th><th>Status</th><th>Date</th></tr></thead><tbody>` +
+    commissions.map(c => `<tr><td>#${c.orderId}</td><td>${fmt(c.saleAmountRwf)}</td><td>${fmt(c.commissionRwf)}</td><td><span class="badge ${c.status === 'paid' ? 'success' : 'pending'}">${c.status}</span></td><td>${new Date(c.createdAt).toLocaleDateString()}</td></tr>`).join('') + `</tbody></table>`;
+
+  document.getElementById('agentDetailAudit').innerHTML = !auditLog || !auditLog.length ? '<p class="empty">No admin actions logged yet.</p>' : `<table><thead><tr><th>Action</th><th>By</th><th>Date</th></tr></thead><tbody>` +
+    auditLog.map(l => `<tr><td>${l.action}</td><td>${l.adminName || '—'}</td><td>${new Date(l.createdAt).toLocaleString()}</td></tr>`).join('') + `</tbody></table>`;
+}
+
+// ---- Default commission rate ----
+async function saveDefaultCommission() {
+  const pct = Number(document.getElementById('defaultCommissionPct').value);
+  if (!(pct >= 0 && pct <= 50)) { showToast('⚠️ Enter a rate between 0 and 50', true); return; }
+  try {
+    const res = await fetch(`${API_BASE}/admin/agents/settings/default-commission`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ commissionRateBps: Math.round(pct * 100) }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to save default commission rate');
+    showToast(`✓ Default commission rate set to ${pct}%`);
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
   }
 }
 

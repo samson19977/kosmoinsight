@@ -1,6 +1,16 @@
 import { Resend } from 'resend';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Resend throws synchronously in its constructor if no API key is passed,
+// which used to crash the whole server on startup whenever RESEND_API_KEY
+// wasn't set (e.g. local dev without a .env value). Only construct the
+// client when a key is actually present, and treat a missing client as
+// "email sending is disabled" rather than a fatal error.
+const resendApiKey = process.env.RESEND_API_KEY;
+const resend = resendApiKey ? new Resend(resendApiKey) : null;
+
+if (!resend) {
+  console.warn('⚠️  RESEND_API_KEY not set — email sending is disabled (emails will be skipped, not sent).');
+}
 
 interface EmailData {
   to: string;
@@ -44,6 +54,10 @@ export class EmailService {
   private static adminEmail = process.env.ADMIN_EMAIL || 'admin@kosmopads.rw';
 
   static async sendEmail(data: EmailData): Promise<boolean> {
+    if (!resend) {
+      console.warn(`⚠️  Skipped email to ${data.to} ("${data.subject}") — RESEND_API_KEY not configured.`);
+      return false;
+    }
     try {
       const { data: info, error } = await resend.emails.send({
         from: `KosmoPads <${this.fromEmail}>`,

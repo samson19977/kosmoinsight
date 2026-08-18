@@ -12,6 +12,7 @@ export interface OrderPayload {
   items: Array<{ name: string; quantity: number; price: number; productId?: number }>;
   paymentMethod: string;
   notes?: string;
+  agentCode?: string;
 }
 
 export async function createOrder(payload: OrderPayload) {

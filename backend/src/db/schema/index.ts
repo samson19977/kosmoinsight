@@ -287,6 +287,45 @@ export const agentCommissions = pgTable('agent_commissions', {
 });
 
 // ============================================
+// LOAN AGREEMENTS TABLE
+// One row per PayGo loan, recording that the customer explicitly reviewed
+// and accepted the financing terms (total, down payment, financed amount,
+// term, schedule) before the loan was opened. The frontend checkbox is
+// just UI — this table is what actually makes the acceptance provable
+// after the fact, per-loan, with who facilitated the sale and when.
+// ============================================
+export const loanAgreements = pgTable('loan_agreements', {
+  id: serial('id').primaryKey(),
+  loanId: integer('loan_id').references(() => loans.id).notNull().unique(),
+  orderId: integer('order_id').references(() => orders.id),
+  customerId: integer('customer_id').references(() => customers.id).notNull(),
+  agentId: integer('agent_id').references(() => agents.id), // null when opened directly by admin, not through an agent sale
+  termsVersion: varchar('terms_version', { length: 20 }).notNull().default('v1'),
+  acceptedAt: timestamp('accepted_at').defaultNow().notNull(),
+  ipAddress: varchar('ip_address', { length: 64 }),
+  userAgent: text('user_agent'),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// ============================================
+// ADMIN AUDIT LOG TABLE
+// Generic append-only trail of sensitive admin actions (agent approval/
+// suspension/rejection/password reset/commission-rate changes, etc.) —
+// "who did what to which record, and when" for anything that isn't
+// already covered by a domain-specific ledger (loan_transactions,
+// stock_movements).
+// ============================================
+export const adminAuditLog = pgTable('admin_audit_log', {
+  id: serial('id').primaryKey(),
+  adminId: integer('admin_id').references(() => admins.id),
+  action: varchar('action', { length: 60 }).notNull(), // e.g. 'agent.approve', 'agent.suspend', 'agent.reset_password'
+  targetType: varchar('target_type', { length: 30 }).notNull(), // 'agent' | 'commission' | ...
+  targetId: integer('target_id').notNull(),
+  details: text('details'), // free-text/JSON-stringified context, e.g. { reason }
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// ============================================
 // SETTINGS TABLE (simple key/value store)
 // Platform-wide configuration an admin can change without a code deploy —
 // currently just the default agent commission rate, but deliberately

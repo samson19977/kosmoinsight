@@ -9,7 +9,7 @@ import {
 } from '../lib/validation/schemas';
 import { requireAdmin, AuthedRequest } from '../middleware/auth';
 import { db } from '../config/database';
-import { loans, installments, loanTransactions, customers } from '../db/schema';
+import { loans, installments, loanTransactions, customers, loanAgreements } from '../db/schema';
 import { LoanService } from '../services/loan.service';
 
 const router = Router();
@@ -84,8 +84,9 @@ router.get('/:loanNumber', requireAdmin, async (req: Request, res: Response): Pr
       .from(loanTransactions)
       .where(eq(loanTransactions.loanId, loan.id))
       .orderBy(desc(loanTransactions.createdAt));
+    const [agreement] = await db.select().from(loanAgreements).where(eq(loanAgreements.loanId, loan.id));
 
-    res.json({ success: true, loan, customer, schedule, transactions });
+    res.json({ success: true, loan, customer, schedule, transactions, agreement: agreement || null });
   } catch (error) {
     console.error('Loan detail error:', error);
     res.status(500).json({ error: 'Failed to load loan' });

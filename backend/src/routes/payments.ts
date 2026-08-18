@@ -7,6 +7,7 @@ import { db } from '../config/database';
 import { orders, payments, orderItems } from '../db/schema';
 import { EmailService } from '../services/email.service';
 import { InventoryService } from '../services/inventory.service';
+import { AgentService } from '../services/agent.service';
 
 const router = Router();
 
@@ -119,6 +120,7 @@ router.get('/momo/status/:referenceId', async (req: Request, res: Response): Pro
             .where(eq(orders.id, order.id));
 
           await InventoryService.deductStockForOrder(order.id);
+          await AgentService.recordCommissionForOrder(order.id).catch((err) => console.error('Agent commission error (non-fatal):', err));
 
           console.log(`✅ Status-poll reconciliation: order ${order.orderNumber} marked PAID`);
 

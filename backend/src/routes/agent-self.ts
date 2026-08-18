@@ -8,8 +8,25 @@ import { LoanService } from '../services/loan.service';
 import { db } from '../config/database';
 import { customers, installments, loans, agents } from '../db/schema';
 import { createOrderCore } from './orders';
+import { createRateLimiter } from '../lib/rateLimit';
 
 const router = Router();
+
+// Same shape as the admin-login limiter: 5 attempts / 15 min per IP, then a
+// 15-minute lockout. Registration is looser (spam prevention, not a
+// brute-force target) — 5 attempts per hour per IP.
+const agentLoginLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  keyPrefix: 'agent-login',
+  message: 'Too many failed login attempts. Please try again in 15 minutes.',
+});
+const agentRegisterLimiter = createRateLimiter({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  keyPrefix: 'agent-register',
+  message: 'Too many registration attempts from this connection. Please try again in an hour, or contact Kosmotive support.',
+});
 
 function sanitizeAgent(agent: any) {
   const { passwordHash, ...safe } = agent;
@@ -20,7 +37,7 @@ function sanitizeAgent(agent: any) {
 // POST /api/agents/register — PUBLIC. Starts life as 'pending'; cannot
 // log in successfully (requireAgent rejects it) until an admin approves.
 // ============================================
-router.post('/register', validate(agentRegisterSchema), async (req: Request, res: Response): Promise<void> => {
+router.post('/register', agentRegisterLimiter, validate(agentRegisterSchema), async (req: Request, res: Response): Promise<void> => {
   try {
     const agent = await AgentService.registerAgent(req.body);
     res.status(201).json({
@@ -37,7 +54,7 @@ router.post('/register', validate(agentRegisterSchema), async (req: Request, res
 // ============================================
 // POST /api/agents/login — PUBLIC. Login by phone or email + password.
 // ============================================
-router.post('/login', validate(agentLoginSchema), async (req: Request, res: Response): Promise<void> => {
+router.post('/login', agentLoginLimiter, validate(agentLoginSchema), async (req: Request, res: Response): Promise<void> => {
   try {
     const { identifier, password } = req.body;
     const agent = await AgentService.verifyLogin(identifier, password);
@@ -206,6 +223,8 @@ router.post('/orders', validate(agentOrderSchema), async (req: AgentAuthedReques
       agentIdOverride: req.agent!.id,
       channel: 'agent',
       notes,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
     });
 
     res.status(201).json({

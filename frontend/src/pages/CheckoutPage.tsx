@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { useCart } from '../context/CartContext';
 import { createOrder } from '../services/orders.service';
 import { initiateMomoPayment } from '../services/payment.service';
+import { getStoredReferralCode } from '../utils/referral';
 import toast from 'react-hot-toast';
 import { Phone, CreditCard, ArrowLeft, CheckCircle, Loader2, ShieldCheck } from 'lucide-react';
 
@@ -63,6 +64,10 @@ const CheckoutPage: React.FC = () => {
         items: items.map((i) => ({ name: i.name, quantity: i.quantity, price: i.price, productId: i.id })),
         paymentMethod: paymentMethod === 'momo' ? 'Mobile Money (MTN / Airtel)' : 'Cash on Delivery',
         notes: form.notes || undefined,
+        // First-touch agent referral code, captured from ?ref=KOS001 on an
+        // earlier visit (see utils/referral.ts). Undefined if this visit
+        // never carried a referral link — a normal direct-website order.
+        agentCode: getStoredReferralCode(),
       };
 
       const result = await createOrder(payload as any);
