@@ -72,6 +72,20 @@
   .card-actions{display:flex;gap:8px;align-items:center;}
   canvas{max-height:220px;}
 
+  /* ── Toolbar (search + filters + CSV export) ── */
+  .toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px;}
+  .toolbar-search{flex:1;min-width:220px;padding:9px 12px;border:1px solid var(--line);border-radius:10px;font-size:13px;outline:none;}
+  .toolbar-search:focus{border-color:var(--teal-dark);}
+  .toolbar select{padding:9px 10px;border:1px solid var(--line);border-radius:10px;font-size:13px;background:#fff;outline:none;}
+
+  /* ── Pager ── */
+  .pager{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:14px;padding-top:12px;border-top:1px solid var(--line);flex-wrap:wrap;}
+  .pager .pager-info{font-size:12px;color:var(--muted);}
+  .pager .pager-controls{display:flex;gap:6px;align-items:center;}
+  .pager button{border:1px solid var(--line);background:#fff;border-radius:8px;padding:6px 11px;font-size:12px;cursor:pointer;}
+  .pager button:disabled{opacity:.4;cursor:not-allowed;}
+  .pager button.active{background:var(--teal-dark);border-color:var(--teal-dark);color:#fff;}
+
   /* ── Tables ── */
   table{width:100%;border-collapse:collapse;font-size:13px;}
   th{text-align:left;color:var(--muted);font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line);}
@@ -200,6 +214,7 @@
     <button data-page="ordersPage">🛒 Orders</button>
     <button data-page="loansPage">💳 PayGo</button>
     <button data-page="agentsPage">🧑‍💼 Agents</button>
+    <button data-page="customersPage">👥 Customers</button>
   </nav>
 
   <!-- DASHBOARD PAGE -->
@@ -226,10 +241,6 @@
         <div class="card">
           <h3>Revenue Trend (14 days)</h3>
           <canvas id="trendChart"></canvas>
-        </div>
-        <div class="card">
-          <h3>Recent Orders</h3>
-          <div id="recentOrders"></div>
         </div>
       </div>
       <div>
@@ -275,6 +286,30 @@
       <span class="section-title">All Orders</span>
       <button class="btn btn-ghost" onclick="loadOrders()">⟳ Refresh</button>
     </div>
+    <div class="toolbar">
+      <input type="text" class="toolbar-search" id="ordersSearch" placeholder="Search order #, customer, phone…" />
+      <select id="ordersStatusFilter">
+        <option value="">All order statuses</option>
+        <option value="pending">Pending</option>
+        <option value="confirmed">Confirmed</option>
+        <option value="shipped">Shipped</option>
+        <option value="delivered">Delivered</option>
+        <option value="cancelled">Cancelled</option>
+      </select>
+      <select id="ordersPaymentFilter">
+        <option value="">All payment statuses</option>
+        <option value="pending">Pending</option>
+        <option value="paid">Paid</option>
+        <option value="failed">Failed</option>
+      </select>
+      <select id="ordersChannelFilter">
+        <option value="">All channels</option>
+        <option value="web">Web</option>
+        <option value="ussd">USSD</option>
+        <option value="agent">Agent</option>
+      </select>
+      <button class="btn btn-ghost btn-sm" onclick="exportCsv('orders')">⬇ Export CSV</button>
+    </div>
     <div class="card">
       <table>
         <thead>
@@ -291,6 +326,7 @@
         </thead>
         <tbody id="ordersBody"></tbody>
       </table>
+      <div class="pager" id="ordersPager"></div>
     </div>
   </div>
   <!-- PAYGO PAGE -->
@@ -301,6 +337,17 @@
         <button class="btn btn-ghost" onclick="runLoanAutomation()">⚙ Run automation now</button>
         <button class="btn btn-teal" onclick="openNewLoanModal()">+ New loan</button>
       </div>
+    </div>
+    <div class="toolbar">
+      <input type="text" class="toolbar-search" id="loansSearch" placeholder="Search loan #, customer, phone…" />
+      <select id="loansStatusFilter">
+        <option value="">All statuses</option>
+        <option value="active">Active</option>
+        <option value="completed">Completed</option>
+        <option value="defaulted">Defaulted</option>
+        <option value="cancelled">Cancelled</option>
+      </select>
+      <button class="btn btn-ghost btn-sm" onclick="exportCsv('loans')">⬇ Export CSV</button>
     </div>
     <div class="card">
       <table>
@@ -317,6 +364,7 @@
         </thead>
         <tbody id="loansBody"></tbody>
       </table>
+      <div class="pager" id="loansPager"></div>
     </div>
   </div>
 
@@ -336,6 +384,18 @@
       </div>
     </div>
     <div class="kpis" id="agentsPageKpis"></div>
+    <div class="toolbar">
+      <input type="text" class="toolbar-search" id="agentsSearch" placeholder="Search name, code, phone, email…" />
+      <select id="agentsStatusFilter">
+        <option value="">All statuses</option>
+        <option value="pending">Pending</option>
+        <option value="approved">Approved</option>
+        <option value="active">Active</option>
+        <option value="suspended">Suspended</option>
+        <option value="rejected">Rejected</option>
+      </select>
+      <button class="btn btn-ghost btn-sm" onclick="exportCsv('agents')">⬇ Export CSV</button>
+    </div>
     <div class="card">
       <table>
         <thead>
@@ -354,6 +414,49 @@
         </thead>
         <tbody id="agentsBody"></tbody>
       </table>
+      <div class="pager" id="agentsPager"></div>
+    </div>
+  </div>
+
+  <!-- CUSTOMERS PAGE -->
+  <div class="page" id="customersPage">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin:20px 0 14px;">
+      <span class="section-title">Customers</span>
+      <button class="btn btn-ghost" onclick="loadCustomers()">⟳ Refresh</button>
+    </div>
+    <div class="toolbar">
+      <input type="text" class="toolbar-search" id="customersSearch" placeholder="Search name, phone, email, national ID…" />
+      <button class="btn btn-ghost btn-sm" onclick="exportCsv('customers')">⬇ Export CSV</button>
+    </div>
+    <div class="card">
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Phone</th>
+            <th>Email</th>
+            <th>Location</th>
+            <th>Agent</th>
+            <th>Source</th>
+            <th>Joined</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="customersBody"></tbody>
+      </table>
+      <div class="pager" id="customersPager"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Delete Customer Confirm Modal -->
+<div class="modal-overlay" id="deleteCustomerModal">
+  <div class="modal">
+    <h3>Delete customer?</h3>
+    <p id="deleteCustomerText" style="color:#5b5f6b;font-size:14px;margin:8px 0 18px;"></p>
+    <div style="display:flex;justify-content:flex-end;gap:8px;">
+      <button class="btn btn-ghost" onclick="closeModal('deleteCustomerModal')">Cancel</button>
+      <button class="btn" style="background:#c8394f;color:#fff;" id="confirmDeleteCustomerBtn">Delete</button>
     </div>
   </div>
 </div>
@@ -568,8 +671,15 @@ const MAX_ATTEMPTS = 5;
       if (btn.dataset.page === 'ordersPage') loadOrders();
       if (btn.dataset.page === 'loansPage') loadLoans();
       if (btn.dataset.page === 'agentsPage') loadAgents();
+      if (btn.dataset.page === 'customersPage') loadCustomers();
     });
   });
+
+  // Toolbar search/filter listeners — debounced search, instant filter change
+  bindListToolbar('orders', ['ordersStatusFilter', 'ordersPaymentFilter', 'ordersChannelFilter'], loadOrders);
+  bindListToolbar('loans', ['loansStatusFilter'], loadLoans);
+  bindListToolbar('agents', ['agentsStatusFilter'], loadAgents);
+  bindListToolbar('customers', [], loadCustomers);
 
   // Login button
   document.getElementById('loginBtn').addEventListener('click', doLogin);
@@ -820,23 +930,6 @@ function renderDashboard(d) {
     }
   });
 
-  // Recent orders table
-  const ro = document.getElementById('recentOrders');
-  if (!d.recentOrders.length) { ro.innerHTML = '<p class="empty">No orders yet.</p>'; }
-  else {
-    ro.innerHTML = `<table>
-      <thead><tr><th>Order #</th><th>Customer</th><th>Total</th><th>Method</th><th>Payment</th><th>Date</th></tr></thead>
-      <tbody>` +
-      d.recentOrders.map(o => `<tr>
-        <td><strong>${o.orderNumber}</strong></td>
-        <td>${o.customerName}</td>
-        <td>${fmt(o.totalRwf)}</td>
-        <td>${methodChip(o.paymentMethod)}</td>
-        <td><span class="badge ${o.paymentStatus}">${o.paymentStatus}</span></td>
-        <td>${new Date(o.createdAt).toLocaleDateString()}</td>
-      </tr>`).join('') + `</tbody></table>`;
-  }
-
   // Pending confirmation
   const pc = document.getElementById('pendingOrders');
   const cnt = document.getElementById('pendingCount');
@@ -994,6 +1087,10 @@ const FULFILMENT_STATUSES = ['pending', 'confirmed', 'processing', 'shipped', 'd
 
 function isCashMethod(method) { return /^cash/i.test(method || ''); }
 
+// Generic close helper for simple confirm-style modals (like the delete
+// customer one) that don't need any extra per-modal teardown logic.
+function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+
 function methodChip(method) {
   const cash = isCashMethod(method);
   const label = cash ? 'Cash' : (method && /momo|mobile/i.test(method) ? 'MoMo' : (method || '—'));
@@ -1007,32 +1104,148 @@ function statusSelect(o) {
   return `<select class="status-select" onchange="updateOrderStatus('${o.orderNumber}', this)">${opts}</select>`;
 }
 
+// ============================================================
+// SHARED: pagination/search/filter/CSV-export helpers used by the
+// Orders, PayGo, Agents, and Customers tabs.
+// ============================================================
+const listState = {
+  orders: { page: 1, pageSize: 20 },
+  loans: { page: 1, pageSize: 20 },
+  agents: { page: 1, pageSize: 20 },
+  customers: { page: 1, pageSize: 20 },
+};
+
+let searchDebounceTimers = {};
+
+// Wires the search box (debounced) and any filter <select>s for a tab so
+// they reset to page 1 and reload whenever changed.
+function bindListToolbar(key, filterSelectIds, loadFn) {
+  const searchEl = document.getElementById(`${key}Search`);
+  if (searchEl) {
+    searchEl.addEventListener('input', () => {
+      clearTimeout(searchDebounceTimers[key]);
+      searchDebounceTimers[key] = setTimeout(() => {
+        listState[key].page = 1;
+        loadFn();
+      }, 350);
+    });
+  }
+  filterSelectIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', () => { listState[key].page = 1; loadFn(); });
+  });
+}
+
+// Renders a compact pager (prev/next + numbered pages) into the given
+// container, wired to call loadFn again with the new page.
+function renderPager(containerId, key, pagination, loadFn) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  const { page, totalPages, total, pageSize } = pagination;
+  if (total === 0) { el.innerHTML = ''; return; }
+
+  const from = (page - 1) * pageSize + 1;
+  const to = Math.min(page * pageSize, total);
+
+  const maxButtons = 5;
+  let start = Math.max(1, page - Math.floor(maxButtons / 2));
+  let end = Math.min(totalPages, start + maxButtons - 1);
+  start = Math.max(1, end - maxButtons + 1);
+  let pageButtons = '';
+  for (let p = start; p <= end; p++) {
+    pageButtons += `<button class="${p === page ? 'active' : ''}" onclick="goToPage('${key}', ${p})">${p}</button>`;
+  }
+
+  el.innerHTML = `
+    <div class="pager-info">Showing ${from}–${to} of ${total}</div>
+    <div class="pager-controls">
+      <button ${page <= 1 ? 'disabled' : ''} onclick="goToPage('${key}', ${page - 1})">‹ Prev</button>
+      ${pageButtons}
+      <button ${page >= totalPages ? 'disabled' : ''} onclick="goToPage('${key}', ${page + 1})">Next ›</button>
+    </div>
+  `;
+  window[`__load_${key}`] = loadFn;
+}
+
+function goToPage(key, page) {
+  listState[key].page = page;
+  const loadFn = window[`__load_${key}`];
+  if (loadFn) loadFn();
+}
+
+// Builds the query string shared between a tab's paginated list fetch and
+// its CSV export, so the export always matches whatever's currently
+// searched/filtered on screen.
+function buildListQuery(key, extra) {
+  const state = listState[key];
+  const params = new URLSearchParams();
+  if (state) { params.set('page', state.page); params.set('pageSize', state.pageSize); }
+  const searchEl = document.getElementById(`${key}Search`);
+  if (searchEl && searchEl.value.trim()) params.set('search', searchEl.value.trim());
+  Object.entries(extra || {}).forEach(([k, v]) => { if (v) params.set(k, v); });
+  return params.toString();
+}
+
+const csvExportConfig = {
+  orders: { url: `${API_BASE}/orders/export/csv`, extra: () => ({ orderStatus: val('ordersStatusFilter'), paymentStatus: val('ordersPaymentFilter'), channel: val('ordersChannelFilter') }) },
+  loans: { url: `${API_BASE}/admin/loans/export/csv`, extra: () => ({ status: val('loansStatusFilter') }) },
+  agents: { url: `${API_BASE}/admin/agents/export/csv`, extra: () => ({ status: val('agentsStatusFilter') }) },
+  customers: { url: `${API_BASE}/admin/customers/export/csv`, extra: () => ({}) },
+};
+
+function val(id) { const el = document.getElementById(id); return el ? el.value : ''; }
+
+async function exportCsv(key) {
+  const cfg = csvExportConfig[key];
+  if (!cfg) return;
+  try {
+    const qs = buildListQuery(key, cfg.extra());
+    const res = await fetch(`${cfg.url}?${qs}`, { headers: { Authorization: `Bearer ${token}` } });
+    if (res.status === 401) { logout(); return; }
+    if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || 'Export failed'); }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${key}-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
+  }
+}
+
 async function loadOrders() {
   try {
-    const res = await fetch(`${API_BASE}/orders`, { headers: { Authorization: `Bearer ${token}` } });
+    const qs = buildListQuery('orders', { orderStatus: val('ordersStatusFilter'), paymentStatus: val('ordersPaymentFilter'), channel: val('ordersChannelFilter') });
+    const res = await fetch(`${API_BASE}/orders?${qs}`, { headers: { Authorization: `Bearer ${token}` } });
     if (res.status === 401) { logout(); return; }
     const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to load orders');
     const tbody = document.getElementById('ordersBody');
-    const list = Array.isArray(data) ? data : data.orders || [];
+    const list = data.data || [];
     if (!list.length) {
       tbody.innerHTML = '<tr><td colspan="8" class="empty">No orders found.</td></tr>';
-      return;
+    } else {
+      tbody.innerHTML = list.map(o => `<tr>
+        <td><strong>${o.orderNumber}</strong></td>
+        <td>${o.customerName}<div style="font-size:11px;color:var(--muted);">${o.customerPhone || ''}</div></td>
+        <td>${(o.totalRwf || 0).toLocaleString()} FRW</td>
+        <td>${methodChip(o.paymentMethod)}</td>
+        <td><span class="badge ${o.paymentStatus}">${o.paymentStatus || 'pending'}</span></td>
+        <td><span class="badge ${o.orderStatus}">${o.orderStatus || 'pending'}</span></td>
+        <td>${o.createdAt ? new Date(o.createdAt).toLocaleDateString() : '-'}</td>
+        <td><div class="order-actions">
+          ${o.paymentStatus === 'paid'
+            ? '<span class="paid-check">✓ Paid</span>'
+            : `<button class="btn btn-teal btn-sm" onclick="confirmPayment('${o.orderNumber}', this)">✓ Confirm paid</button>`}
+          ${statusSelect(o)}
+        </div></td>
+      </tr>`).join('');
     }
-    tbody.innerHTML = list.map(o => `<tr>
-      <td><strong>${o.orderNumber}</strong></td>
-      <td>${o.customerName}<div style="font-size:11px;color:var(--muted);">${o.customerPhone || ''}</div></td>
-      <td>${(o.totalRwf || 0).toLocaleString()} FRW</td>
-      <td>${methodChip(o.paymentMethod)}</td>
-      <td><span class="badge ${o.paymentStatus}">${o.paymentStatus || 'pending'}</span></td>
-      <td><span class="badge ${o.orderStatus}">${o.orderStatus || 'pending'}</span></td>
-      <td>${o.createdAt ? new Date(o.createdAt).toLocaleDateString() : '-'}</td>
-      <td><div class="order-actions">
-        ${o.paymentStatus === 'paid'
-          ? '<span class="paid-check">✓ Paid</span>'
-          : `<button class="btn btn-teal btn-sm" onclick="confirmPayment('${o.orderNumber}', this)">✓ Confirm paid</button>`}
-        ${statusSelect(o)}
-      </div></td>
-    </tr>`).join('');
+    renderPager('ordersPager', 'orders', data.pagination, loadOrders);
   } catch (e) {
     showToast('⚠️ ' + e.message, true);
   }
@@ -1092,11 +1305,13 @@ let currentLoanNumber = null;
 
 async function loadLoans() {
   try {
-    const res = await fetch(`${API_BASE}/admin/loans`, { headers: { Authorization: `Bearer ${token}` } });
+    const qs = buildListQuery('loans', { status: val('loansStatusFilter') });
+    const res = await fetch(`${API_BASE}/admin/loans?${qs}`, { headers: { Authorization: `Bearer ${token}` } });
     if (res.status === 401) { logout(); return; }
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Failed to load loans');
-    renderLoans(data.loans);
+    renderLoans(data.data || []);
+    renderPager('loansPager', 'loans', data.pagination, loadLoans);
   } catch (e) {
     showToast('⚠️ ' + e.message, true);
   }
@@ -1286,8 +1501,9 @@ function referralLink(code) { return `https://kosmopads.rw/?ref=${code}`; }
 
 async function loadAgents() {
   try {
+    const qs = buildListQuery('agents', { status: val('agentsStatusFilter') });
     const [listRes, summaryRes, commRes] = await Promise.all([
-      fetch(`${API_BASE}/admin/agents`, { headers: { Authorization: `Bearer ${token}` } }),
+      fetch(`${API_BASE}/admin/agents?${qs}`, { headers: { Authorization: `Bearer ${token}` } }),
       fetch(`${API_BASE}/admin/agents/summary`, { headers: { Authorization: `Bearer ${token}` } }),
       fetch(`${API_BASE}/admin/agents/settings/default-commission`, { headers: { Authorization: `Bearer ${token}` } }),
     ]);
@@ -1296,24 +1512,23 @@ async function loadAgents() {
     const summaryData = await summaryRes.json();
     const commData = await commRes.json();
     if (!listRes.ok) throw new Error(listData.error || 'Failed to load agents');
-    renderAgentsPageKpis(summaryData, listData.agents);
-    renderAgents(listData.agents);
+    renderAgentsPageKpis(summaryData);
+    renderAgents(listData.data || []);
+    renderPager('agentsPager', 'agents', listData.pagination, loadAgents);
     if (commData.commissionPercent != null) document.getElementById('defaultCommissionPct').value = commData.commissionPercent;
   } catch (e) {
     showToast('⚠️ ' + e.message, true);
   }
 }
 
-function renderAgentsPageKpis(summary, list) {
-  const pendingCommissionRwf = list.reduce((s, a) => s + a.pendingCommissionRwf, 0);
-  const paidCommissionRwf = list.reduce((s, a) => s + a.paidCommissionRwf, 0);
+function renderAgentsPageKpis(summary) {
   document.getElementById('agentsPageKpis').innerHTML = `
     <div class="kpi"><div class="label">Total agents</div><div class="value">${summary.total ?? 0}</div></div>
     <div class="kpi"><div class="label">Pending approval</div><div class="value amber">${summary.pending ?? 0}</div></div>
     <div class="kpi"><div class="label">Active agents</div><div class="value">${summary.active ?? 0}</div></div>
     <div class="kpi"><div class="label">Suspended</div><div class="value">${summary.suspended ?? 0}</div></div>
-    <div class="kpi"><div class="label">Pending payouts</div><div class="value amber">${fmt(pendingCommissionRwf)}</div></div>
-    <div class="kpi"><div class="label">Paid payouts</div><div class="value">${fmt(paidCommissionRwf)}</div></div>
+    <div class="kpi"><div class="label">Pending payouts</div><div class="value amber">${fmt(summary.pendingCommissionRwf)}</div></div>
+    <div class="kpi"><div class="label">Paid payouts</div><div class="value">${fmt(summary.paidCommissionRwf)}</div></div>
   `;
 }
 
@@ -1339,7 +1554,95 @@ function renderAgents(list) {
   `).join('');
 }
 
-// ---- Lifecycle actions ----
+// ============================================================
+// CUSTOMERS
+// ============================================================
+let customerPendingDeleteId = null;
+
+async function loadCustomers() {
+  try {
+    const qs = buildListQuery('customers', {});
+    const res = await fetch(`${API_BASE}/admin/customers?${qs}`, { headers: { Authorization: `Bearer ${token}` } });
+    if (res.status === 401) { logout(); return; }
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to load customers');
+    renderCustomers(data.data || []);
+    renderPager('customersPager', 'customers', data.pagination, loadCustomers);
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
+  }
+}
+
+function renderCustomers(list) {
+  const body = document.getElementById('customersBody');
+  if (!list.length) { body.innerHTML = '<tr><td colspan="8" class="empty">No customers found.</td></tr>'; return; }
+  body.innerHTML = list.map(c => {
+    const location = [c.district, c.sector].filter(Boolean).join(', ') || '—';
+    // Agents can view every customer's detail to help track them, but only
+    // an admin can delete one — this button never renders in the Agent
+    // Portal at all, since that app has no delete action to begin with.
+    return `<tr>
+      <td><strong>${c.firstName} ${c.lastName}</strong>${c.nationalId ? `<div style="font-size:11px;color:var(--muted);">ID: ${c.nationalId}</div>` : ''}</td>
+      <td>${c.phone}</td>
+      <td>${c.email || '—'}</td>
+      <td>${location}</td>
+      <td>${c.agentName || '—'}</td>
+      <td><span class="badge">${c.source || 'order'}</span></td>
+      <td>${c.createdAt ? new Date(c.createdAt).toLocaleDateString() : '-'}</td>
+      <td style="white-space:nowrap;">
+        <button class="btn btn-ghost btn-sm" onclick="viewCustomer(${c.id})">View</button>
+        <button class="btn btn-sm" style="background:#c8394f;color:#fff;" onclick="promptDeleteCustomer(${c.id}, '${(c.firstName + ' ' + c.lastName).replace(/'/g, "\\'")}')">Delete</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function viewCustomer(id) {
+  try {
+    const res = await fetch(`${API_BASE}/admin/customers/${id}`, { headers: { Authorization: `Bearer ${token}` } });
+    if (res.status === 401) { logout(); return; }
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to load customer');
+    const c = data.customer;
+    const orderCount = data.orders.length;
+    const loanCount = data.loans.length;
+    alert(`${c.firstName} ${c.lastName}\nPhone: ${c.phone}\nEmail: ${c.email || '—'}\nOrders on file: ${orderCount}\nLoans on file: ${loanCount}`);
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
+  }
+}
+
+// Delete is admin-only (the /api/admin/customers route requires an admin
+// token) and is refused server-side for any customer with order/loan
+// history, so this confirm step is just UX — the backend is the real guard.
+function promptDeleteCustomer(id, name) {
+  customerPendingDeleteId = id;
+  document.getElementById('deleteCustomerText').textContent = `Delete ${name}? This can't be undone. Customers with any order or PayGo history can't be deleted.`;
+  document.getElementById('deleteCustomerModal').classList.add('show');
+}
+
+document.getElementById('confirmDeleteCustomerBtn')?.addEventListener('click', async () => {
+  if (!customerPendingDeleteId) return;
+  const btn = document.getElementById('confirmDeleteCustomerBtn');
+  btn.disabled = true;
+  try {
+    const res = await fetch(`${API_BASE}/admin/customers/${customerPendingDeleteId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to delete customer');
+    showToast('✓ Customer deleted');
+    closeModal('deleteCustomerModal');
+    loadCustomers();
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+
 async function approveAgent(id) {
   try {
     const res = await fetch(`${API_BASE}/admin/agents/${id}/approve`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });

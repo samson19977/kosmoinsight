@@ -66,6 +66,22 @@ export class LoanService {
       throw new Error('Down payment must be less than the principal — nothing left to finance.');
     }
 
+    // ---- Installment sequencing rule ----
+    // A customer may not open a new PayGo loan while an earlier one is still
+    // active or defaulted. Enforced centrally here so it applies no matter
+    // which channel opens the loan (storefront, agent sale, USSD, or an
+    // admin creating one manually) — one place, no way to bypass it.
+    const openLoans = await db
+      .select({ id: loans.id, loanNumber: loans.loanNumber, status: loans.status })
+      .from(loans)
+      .where(eq(loans.customerId, input.customerId));
+    const blockingLoan = openLoans.find((l) => l.status === 'active' || l.status === 'defaulted');
+    if (blockingLoan) {
+      throw new Error(
+        `This customer already has an installment plan (${blockingLoan.loanNumber}) that hasn't been fully paid off yet. They need to finish paying it before starting a new one.`
+      );
+    }
+
     const interestRwf = Math.round((financedRwf * input.interestRateBps) / 10000);
     const totalPayableRwf = financedRwf + interestRwf;
 

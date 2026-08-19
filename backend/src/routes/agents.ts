@@ -5,6 +5,7 @@ import { agentSchema, agentUpdateSchema } from '../lib/validation/schemas';
 import { requireAdmin, AuthedRequest } from '../middleware/auth';
 import { AgentService } from '../services/agent.service';
 import { AuditService } from '../services/audit.service';
+import { parsePageParams, paginatedResponse, sendCsv } from '../lib/listQuery';
 
 const router = Router();
 const upload = multer({
@@ -14,17 +15,61 @@ const upload = multer({
 
 router.use(requireAdmin);
 
+// Agent count is small and bounded (a reseller roster, not a transaction
+// table), so search/pagination stay a simple in-memory filter over
+// AgentService.listAgents() rather than a full SQL rewrite — the same
+// scope call made for the aggregate queries inside that service method.
+function filterAgents(list: any[], query: any) {
+  let rows = list;
+  const search = typeof query.search === 'string' ? query.search.trim().toLowerCase() : '';
+  if (search) {
+    rows = rows.filter(
+      (a) =>
+        a.name?.toLowerCase().includes(search) ||
+        a.code?.toLowerCase().includes(search) ||
+        a.phone?.toLowerCase().includes(search) ||
+        a.email?.toLowerCase().includes(search)
+    );
+  }
+  if (query.status && typeof query.status === 'string') {
+    rows = rows.filter((a) => a.status === query.status);
+  }
+  return rows;
+}
+
 // ============================================
-// GET /api/admin/agents — list every agent with live commission totals
+// GET /api/admin/agents — paginated, searchable (name/code/phone/email),
+// filterable (status) list of agents with live commission totals.
 // ============================================
-router.get('/', async (_req: Request, res: Response): Promise<void> => {
+router.get('/', async (req: Request, res: Response): Promise<void> => {
   try {
+    const params = parsePageParams(req.query);
     const list = await AgentService.listAgents();
+    const filtered = filterAgents(list, req.query);
+    const page = filtered.slice(params.offset, params.offset + params.pageSize);
     const defaultCommissionBps = await AgentService.getDefaultCommissionBps();
-    res.json({ success: true, agents: list, defaultCommissionBps });
+    res.json({ ...paginatedResponse(page, filtered.length, params), defaultCommissionBps });
   } catch (error) {
     console.error('List agents error:', error);
     res.status(500).json({ error: 'Failed to list agents' });
+  }
+});
+
+// GET /api/admin/agents/export/csv — same search/status filter, all matching rows.
+router.get('/export/csv', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const params = parsePageParams(req.query);
+    const list = await AgentService.listAgents();
+    const filtered = filterAgents(list, req.query);
+    sendCsv(
+      res,
+      `agents-${new Date().toISOString().slice(0, 10)}.csv`,
+      ['code', 'name', 'phone', 'email', 'status', 'saleCount', 'pendingCommissionRwf', 'paidCommissionRwf', 'createdAt'],
+      filtered.map((a: any) => ({ ...a, createdAt: a.createdAt?.toISOString?.() || a.createdAt }))
+    );
+  } catch (error) {
+    console.error('Export agents CSV error:', error);
+    res.status(500).json({ error: 'Failed to export agents' });
   }
 });
 

@@ -1,8 +1,9 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
-import { Loader2, Search, UserPlus, X, Phone, MapPin } from 'lucide-react';
-import { fetchMyCustomers, createMyCustomer, type NewCustomerInput } from '../../services/agent.service';
+import { Loader2, Search, UserPlus, X, Phone, MapPin, Download } from 'lucide-react';
+import { fetchMyCustomers, createMyCustomer, downloadMyCustomersCsv, type NewCustomerInput } from '../../services/agent.service';
+import Pagination from '../../components/agent/Pagination';
 
 const inputCls = 'w-full px-3.5 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent bg-white transition-all';
 
@@ -76,20 +77,42 @@ const NewCustomerModal: React.FC<{ onClose: () => void; onCreated: () => void }>
   );
 };
 
+const PAGE_SIZE = 20;
+
 const AgentCustomersPage: React.FC = () => {
   const queryClient = useQueryClient();
-  const { data: customers, isLoading } = useQuery({ queryKey: ['agent-customers'], queryFn: fetchMyCustomers, staleTime: 30 * 1000 });
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [page, setPage] = useState(1);
   const [modalOpen, setModalOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
-  const filtered = useMemo(() => {
-    if (!customers) return [];
-    const q = search.trim().toLowerCase();
-    if (!q) return customers;
-    return customers.filter((c) =>
-      `${c.firstName} ${c.lastName}`.toLowerCase().includes(q) || c.phone.includes(q)
-    );
-  }, [customers, search]);
+  // Debounce the search box so every keystroke doesn't trigger a fetch —
+  // resets back to page 1 whenever the search term actually changes.
+  useEffect(() => {
+    const t = setTimeout(() => { setDebouncedSearch(search); setPage(1); }, 350);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const { data, isLoading, isFetching } = useQuery({
+    queryKey: ['agent-customers', page, debouncedSearch],
+    queryFn: () => fetchMyCustomers({ page, pageSize: PAGE_SIZE, search: debouncedSearch || undefined }),
+    staleTime: 30 * 1000,
+    placeholderData: (prev) => prev,
+  });
+
+  const customers = data?.data ?? [];
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      await downloadMyCustomersCsv(debouncedSearch || undefined);
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to export customers');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   return (
     <div>
@@ -103,28 +126,38 @@ const AgentCustomersPage: React.FC = () => {
         </button>
       </div>
 
-      <div className="relative mb-5 max-w-sm">
-        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-        <input
-          className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-400 bg-white"
-          placeholder="Search by name or phone"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-5">
+        <div className="relative flex-1 max-w-sm">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+          <input
+            className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-400 bg-white"
+            placeholder="Search by name, phone, or email"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        <button
+          onClick={handleExport}
+          disabled={exporting || customers.length === 0}
+          className="inline-flex items-center justify-center gap-2 border border-gray-200 hover:bg-gray-50 disabled:opacity-50 text-gray-700 font-medium px-4 py-2.5 rounded-xl text-sm transition-colors"
+        >
+          {exporting ? <Loader2 className="animate-spin" size={15} /> : <Download size={15} />}
+          Export CSV
+        </button>
       </div>
 
       {isLoading && (
         <div className="flex items-center justify-center py-24"><Loader2 className="animate-spin text-primary-600" size={28} /></div>
       )}
 
-      {!isLoading && filtered.length === 0 && (
+      {!isLoading && customers.length === 0 && (
         <div className="bg-white rounded-2xl shadow-card p-10 text-center text-sm text-gray-500">
-          {search ? 'No customers match your search.' : "You haven't registered any customers yet."}
+          {debouncedSearch ? 'No customers match your search.' : "You haven't registered any customers yet."}
         </div>
       )}
 
-      {filtered.length > 0 && (
-        <div className="bg-white rounded-2xl shadow-card overflow-hidden">
+      {customers.length > 0 && (
+        <div className={`bg-white rounded-2xl shadow-card overflow-hidden transition-opacity ${isFetching ? 'opacity-60' : ''}`}>
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wide">
               <tr>
@@ -134,7 +167,7 @@ const AgentCustomersPage: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {filtered.map((c) => (
+              {customers.map((c) => (
                 <tr key={c.id} className="hover:bg-gray-50">
                   <td className="px-5 py-3.5 font-medium text-gray-800">{c.firstName} {c.lastName}</td>
                   <td className="px-5 py-3.5 text-gray-500"><span className="inline-flex items-center gap-1.5"><Phone size={13} />{c.phone}</span></td>
@@ -145,6 +178,7 @@ const AgentCustomersPage: React.FC = () => {
               ))}
             </tbody>
           </table>
+          {data?.pagination && <Pagination pagination={data.pagination} onPageChange={setPage} />}
         </div>
       )}
 

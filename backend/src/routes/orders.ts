@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
-import { eq, desc } from 'drizzle-orm';
+import { eq, desc, and, or, ilike, sql } from 'drizzle-orm';
+import { parsePageParams, paginatedResponse, sendCsv } from '../lib/listQuery';
 import { validate } from '../middleware/validate';
 import { orderSchema } from '../lib/validation/schemas';
 import { EmailService } from '../services/email.service';
@@ -383,27 +384,80 @@ router.get('/:orderNumber/status', async (req: Request, res: Response): Promise<
   }
 });
 
-// GET /api/orders (admin — list all orders, most recent first)
-router.get('/', requireAdmin, async (_req: Request, res: Response): Promise<void> => {
+// Builds the WHERE clause shared by the paginated list and the CSV export,
+// so the two can never drift out of sync (e.g. export ignoring a filter
+// the list applies).
+function buildOrdersFilter(query: any, search: string) {
+  const clauses = [];
+  if (search) {
+    const like = `%${search}%`;
+    clauses.push(or(ilike(orders.orderNumber, like), ilike(orders.customerName, like), ilike(orders.customerPhone, like)));
+  }
+  if (query.orderStatus) clauses.push(eq(orders.orderStatus, String(query.orderStatus)));
+  if (query.paymentStatus) clauses.push(eq(orders.paymentStatus, String(query.paymentStatus)));
+  if (query.channel) clauses.push(eq(orders.channel, String(query.channel)));
+  return clauses.length ? and(...clauses) : undefined;
+}
+
+// GET /api/orders (admin — paginated, searchable, filterable list)
+// Search matches order #, customer name, or phone. Filters: orderStatus,
+// paymentStatus, channel. Real SQL-level LIMIT/OFFSET so this stays fast
+// as the orders table grows, instead of fetching every row and slicing in JS.
+router.get('/', requireAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
-    const all = await db.select().from(orders).orderBy(desc(orders.createdAt));
-    res.json({
-      success: true,
-      total: all.length,
-      orders: all.map((o) => ({
-        orderNumber: o.orderNumber,
-        customerName: o.customerName,
-        customerPhone: o.customerPhone,
-        totalRwf: o.totalRwf,
-        orderStatus: o.orderStatus,
-        paymentStatus: o.paymentStatus,
-        paymentMethod: o.paymentMethod,
-        createdAt: o.createdAt,
-      })),
-    });
+    const params = parsePageParams(req.query);
+    const where = buildOrdersFilter(req.query, params.search);
+
+    const [rows, [{ count }]] = await Promise.all([
+      db
+        .select()
+        .from(orders)
+        .where(where)
+        .orderBy(desc(orders.createdAt))
+        .limit(params.pageSize)
+        .offset(params.offset),
+      db.select({ count: sql<number>`count(*)::int` }).from(orders).where(where),
+    ]);
+
+    res.json(
+      paginatedResponse(
+        rows.map((o) => ({
+          orderNumber: o.orderNumber,
+          customerName: o.customerName,
+          customerPhone: o.customerPhone,
+          totalRwf: o.totalRwf,
+          orderStatus: o.orderStatus,
+          paymentStatus: o.paymentStatus,
+          paymentMethod: o.paymentMethod,
+          channel: o.channel,
+          createdAt: o.createdAt,
+        })),
+        count,
+        params
+      )
+    );
   } catch (error) {
     console.error('List orders error:', error);
     res.status(500).json({ error: 'Failed to list orders' });
+  }
+});
+
+// GET /api/orders/export/csv (admin) — same search/filters as the list
+// above, but returns every matching row (no pagination) as a CSV download.
+router.get('/export/csv', requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const params = parsePageParams(req.query);
+    const where = buildOrdersFilter(req.query, params.search);
+    const rows = await db.select().from(orders).where(where).orderBy(desc(orders.createdAt));
+    sendCsv(
+      res,
+      `orders-${new Date().toISOString().slice(0, 10)}.csv`,
+      ['orderNumber', 'customerName', 'customerPhone', 'totalRwf', 'orderStatus', 'paymentStatus', 'paymentMethod', 'channel', 'createdAt'],
+      rows.map((o) => ({ ...o, createdAt: o.createdAt?.toISOString() }))
+    );
+  } catch (error) {
+    console.error('Export orders CSV error:', error);
+    res.status(500).json({ error: 'Failed to export orders' });
   }
 });
 

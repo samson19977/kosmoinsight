@@ -9,6 +9,7 @@ import { db } from '../config/database';
 import { customers, installments, loans, agents } from '../db/schema';
 import { createOrderCore } from './orders';
 import { createRateLimiter } from '../lib/rateLimit';
+import { parsePageParams, paginatedResponse, sendCsv } from '../lib/listQuery';
 
 const router = Router();
 
@@ -107,14 +108,36 @@ router.get('/referral', async (req: AgentAuthedRequest, res: Response): Promise<
   });
 });
 
-// GET /api/agents/customers — only this agent's own customers
+// GET /api/agents/customers — only this agent's own customers.
+// Paginated + searchable (name/phone/email) so the list stays quick to
+// load even once an agent has built up a large customer book.
 router.get('/customers', async (req: AgentAuthedRequest, res: Response): Promise<void> => {
   try {
-    const list = await AgentService.getMyCustomers(req.agent!.id);
-    res.json({ success: true, customers: list });
+    const params = parsePageParams(req.query);
+    const { rows, total } = await AgentService.getMyCustomers(req.agent!.id, { page: params.page, pageSize: params.pageSize, search: params.search });
+    res.json(paginatedResponse(rows, total, params));
   } catch (error) {
     console.error('Agent customers error:', error);
     res.status(500).json({ error: 'Failed to load customers' });
+  }
+});
+
+// GET /api/agents/customers/export/csv — same search, every matching row.
+// Note: this route must stay above GET /customers/:id below it — Express
+// matches in order, and "export" would otherwise be parsed as an :id.
+router.get('/customers/export/csv', async (req: AgentAuthedRequest, res: Response): Promise<void> => {
+  try {
+    const params = parsePageParams(req.query);
+    const { rows } = await AgentService.getMyCustomers(req.agent!.id, { search: params.search });
+    sendCsv(
+      res,
+      `my-customers-${new Date().toISOString().slice(0, 10)}.csv`,
+      ['firstName', 'lastName', 'phone', 'email', 'district', 'sector', 'cell', 'village', 'createdAt'],
+      rows.map((c: any) => ({ ...c, createdAt: c.createdAt?.toISOString() }))
+    );
+  } catch (error) {
+    console.error('Agent customers CSV export error:', error);
+    res.status(500).json({ error: 'Failed to export customers' });
   }
 });
 
@@ -189,14 +212,33 @@ router.post('/customers', validate(agentCustomerSchema), async (req: AgentAuthed
   }
 });
 
-// GET /api/agents/orders — only this agent's own orders
+// GET /api/agents/orders — only this agent's own orders. Paginated +
+// searchable (order #, customer name/phone).
 router.get('/orders', async (req: AgentAuthedRequest, res: Response): Promise<void> => {
   try {
-    const list = await AgentService.getMyOrders(req.agent!.id);
-    res.json({ success: true, orders: list });
+    const params = parsePageParams(req.query);
+    const { rows, total } = await AgentService.getMyOrders(req.agent!.id, { page: params.page, pageSize: params.pageSize, search: params.search });
+    res.json(paginatedResponse(rows, total, params));
   } catch (error) {
     console.error('Agent orders error:', error);
     res.status(500).json({ error: 'Failed to load orders' });
+  }
+});
+
+// GET /api/agents/orders/export/csv — same search, every matching row.
+router.get('/orders/export/csv', async (req: AgentAuthedRequest, res: Response): Promise<void> => {
+  try {
+    const params = parsePageParams(req.query);
+    const { rows } = await AgentService.getMyOrders(req.agent!.id, { search: params.search });
+    sendCsv(
+      res,
+      `my-orders-${new Date().toISOString().slice(0, 10)}.csv`,
+      ['orderNumber', 'customerName', 'customerPhone', 'totalRwf', 'orderStatus', 'paymentStatus', 'paymentMethod', 'createdAt'],
+      rows.map((o: any) => ({ ...o, createdAt: o.createdAt?.toISOString() }))
+    );
+  } catch (error) {
+    console.error('Agent orders CSV export error:', error);
+    res.status(500).json({ error: 'Failed to export orders' });
   }
 });
 

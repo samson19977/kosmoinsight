@@ -184,9 +184,35 @@ export async function fetchMyReferral() {
   return data as { success: boolean; agentCode: string; referralUrl: string };
 }
 
-export async function fetchMyCustomers() {
-  const { data } = await agentApi.get('/agents/customers');
-  return data.customers as AgentCustomer[];
+export interface PaginationInfo {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+}
+
+export interface PaginatedResult<T> {
+  data: T[];
+  pagination: PaginationInfo;
+}
+
+export async function fetchMyCustomers(params: { page?: number; pageSize?: number; search?: string } = {}) {
+  const { data } = await agentApi.get('/agents/customers', { params });
+  return data as PaginatedResult<AgentCustomer> & { success: boolean };
+}
+
+export function myCustomersCsvUrl(search?: string) {
+  const qs = new URLSearchParams();
+  if (search) qs.set('search', search);
+  return `${API_URL}/agents/customers/export/csv?${qs.toString()}`;
+}
+
+// CSV export is an authenticated route, so it can't just be a plain <a
+// href> link — fetched via agentApi (which attaches the bearer token)
+// and turned into a client-side blob download instead.
+export async function downloadMyCustomersCsv(search?: string) {
+  const { data } = await agentApi.get('/agents/customers/export/csv', { params: search ? { search } : {}, responseType: 'blob' });
+  triggerCsvDownload(data, `my-customers-${new Date().toISOString().slice(0, 10)}.csv`);
 }
 
 export async function fetchMyCustomerDetail(id: number) {
@@ -199,9 +225,31 @@ export async function createMyCustomer(input: NewCustomerInput) {
   return data as { success: boolean; customer: AgentCustomer; reused: boolean };
 }
 
-export async function fetchMyOrders() {
-  const { data } = await agentApi.get('/agents/orders');
-  return data.orders as AgentOrder[];
+export async function fetchMyOrders(params: { page?: number; pageSize?: number; search?: string } = {}) {
+  const { data } = await agentApi.get('/agents/orders', { params });
+  return data as PaginatedResult<AgentOrder> & { success: boolean };
+}
+
+export function myOrdersCsvUrl(search?: string) {
+  const qs = new URLSearchParams();
+  if (search) qs.set('search', search);
+  return `${API_URL}/agents/orders/export/csv?${qs.toString()}`;
+}
+
+export async function downloadMyOrdersCsv(search?: string) {
+  const { data } = await agentApi.get('/agents/orders/export/csv', { params: search ? { search } : {}, responseType: 'blob' });
+  triggerCsvDownload(data, `my-orders-${new Date().toISOString().slice(0, 10)}.csv`);
+}
+
+function triggerCsvDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 export async function createMyOrder(input: CreateAgentOrderInput) {

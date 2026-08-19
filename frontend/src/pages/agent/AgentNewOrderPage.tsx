@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
@@ -22,18 +22,26 @@ const AgentNewOrderPage: React.FC = () => {
   const navigate = useNavigate();
 
   // ---- customer selection ----
-  const { data: customers, isLoading: loadingCustomers } = useQuery({ queryKey: ['agent-customers'], queryFn: fetchMyCustomers });
   const [customerMode, setCustomerMode] = useState<'existing' | 'new'>('existing');
   const [customerSearch, setCustomerSearch] = useState('');
+  const [debouncedCustomerSearch, setDebouncedCustomerSearch] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState<AgentCustomer | null>(null);
   const [newCustomer, setNewCustomer] = useState<NewCustomerInput>(emptyNewCustomer);
 
-  const filteredCustomers = useMemo(() => {
-    if (!customers) return [];
-    const q = customerSearch.trim().toLowerCase();
-    if (!q) return customers.slice(0, 8);
-    return customers.filter((c) => `${c.firstName} ${c.lastName}`.toLowerCase().includes(q) || c.phone.includes(q)).slice(0, 8);
-  }, [customers, customerSearch]);
+  // Debounced server-side search — matches the same pagination/search the
+  // Customers page now uses, instead of pulling every customer into memory
+  // just to filter a typeahead list.
+  React.useEffect(() => {
+    const t = setTimeout(() => setDebouncedCustomerSearch(customerSearch.trim()), 300);
+    return () => clearTimeout(t);
+  }, [customerSearch]);
+
+  const { data: customersResult, isLoading: loadingCustomers } = useQuery({
+    queryKey: ['agent-customers-typeahead', debouncedCustomerSearch],
+    queryFn: () => fetchMyCustomers({ page: 1, pageSize: 8, search: debouncedCustomerSearch || undefined }),
+  });
+
+  const filteredCustomers = customersResult?.data ?? [];
 
   // ---- product cart ----
   const { data: products, isLoading: loadingProducts } = useQuery({ queryKey: ['products'], queryFn: fetchProducts });

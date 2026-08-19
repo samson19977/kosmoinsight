@@ -1,4 +1,4 @@
-import { eq, sql, and, desc, gte, inArray } from 'drizzle-orm';
+import { eq, sql, and, or, ilike, desc, gte, inArray } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 import * as XLSX from 'xlsx';
 import { db } from '../config/database';
@@ -257,12 +257,20 @@ export class AgentService {
 
   static async getPortfolioSummary() {
     const all = await db.select().from(agents);
+    const commissionTotals = await db
+      .select({
+        pendingRwf: sql<number>`COALESCE(SUM(${agentCommissions.commissionRwf}) FILTER (WHERE ${agentCommissions.status} = 'pending'), 0)`,
+        paidRwf: sql<number>`COALESCE(SUM(${agentCommissions.commissionRwf}) FILTER (WHERE ${agentCommissions.status} = 'paid'), 0)`,
+      })
+      .from(agentCommissions);
     return {
       total: all.length,
       pending: all.filter((a) => a.status === 'pending').length,
       active: all.filter((a) => a.status === 'active' || a.status === 'approved').length,
       suspended: all.filter((a) => a.status === 'suspended').length,
       rejected: all.filter((a) => a.status === 'rejected').length,
+      pendingCommissionRwf: Number(commissionTotals[0]?.pendingRwf ?? 0),
+      paidCommissionRwf: Number(commissionTotals[0]?.paidRwf ?? 0),
     };
   }
 
@@ -365,8 +373,28 @@ export class AgentService {
     };
   }
 
-  static async getMyCustomers(agentId: number) {
-    return db.select().from(customers).where(eq(customers.agentId, agentId)).orderBy(desc(customers.createdAt));
+  // SQL-level pagination + search (name/phone/email) so this stays fast for
+  // an agent with a large book of customers, instead of fetching every row
+  // and filtering in JS. Pass no `page`/`pageSize` to get every row back
+  // (used by the CSV export, which needs the full matching set, unpaged).
+  static async getMyCustomers(agentId: number, opts: { page?: number; pageSize?: number; search?: string } = {}) {
+    const search = (opts.search || '').trim();
+    const clauses = [eq(customers.agentId, agentId)];
+    if (search) {
+      const like = `%${search}%`;
+      clauses.push(or(ilike(customers.firstName, like), ilike(customers.lastName, like), ilike(customers.phone, like), ilike(customers.email, like))!);
+    }
+    const where = and(...clauses);
+
+    let query = db.select().from(customers).where(where).orderBy(desc(customers.createdAt)).$dynamic();
+    if (opts.page && opts.pageSize) {
+      query = query.limit(opts.pageSize).offset((opts.page - 1) * opts.pageSize);
+    }
+    const [rows, [{ count }]] = await Promise.all([
+      query,
+      db.select({ count: sql<number>`count(*)::int` }).from(customers).where(where),
+    ]);
+    return { rows, total: count };
   }
 
   static async getMyCustomerDetail(agentId: number, customerId: number) {
@@ -379,8 +407,26 @@ export class AgentService {
     return { customer, orders: customerOrders, loans: customerLoans };
   }
 
-  static async getMyOrders(agentId: number) {
-    return db.select().from(orders).where(eq(orders.agentId, agentId)).orderBy(desc(orders.createdAt));
+  // Same pagination/search treatment as getMyCustomers — search matches
+  // order #, customer name, or phone.
+  static async getMyOrders(agentId: number, opts: { page?: number; pageSize?: number; search?: string } = {}) {
+    const search = (opts.search || '').trim();
+    const clauses = [eq(orders.agentId, agentId)];
+    if (search) {
+      const like = `%${search}%`;
+      clauses.push(or(ilike(orders.orderNumber, like), ilike(orders.customerName, like), ilike(orders.customerPhone, like))!);
+    }
+    const where = and(...clauses);
+
+    let query = db.select().from(orders).where(where).orderBy(desc(orders.createdAt)).$dynamic();
+    if (opts.page && opts.pageSize) {
+      query = query.limit(opts.pageSize).offset((opts.page - 1) * opts.pageSize);
+    }
+    const [rows, [{ count }]] = await Promise.all([
+      query,
+      db.select({ count: sql<number>`count(*)::int` }).from(orders).where(where),
+    ]);
+    return { rows, total: count };
   }
 
   static async getMyCommissions(agentId: number) {

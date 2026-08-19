@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
-import { eq, desc } from 'drizzle-orm';
+import { eq, desc, and, or, ilike, inArray, sql } from 'drizzle-orm';
+import { parsePageParams, paginatedResponse, sendCsv } from '../lib/listQuery';
 import { validate } from '../middleware/validate';
 import {
   loanSchema,
@@ -28,40 +29,129 @@ router.post('/', requireAdmin, validate(loanSchema), async (req: AuthedRequest, 
   }
 });
 
+// Builds the shared WHERE clause for the paginated list and the CSV export.
+// Search matches loan #, customer first/last name, or phone (via a join —
+// no more pulling the entire customers table into memory to filter in JS).
+function buildLoansFilter(query: any, search: string) {
+  const clauses = [];
+  if (search) {
+    const like = `%${search}%`;
+    clauses.push(or(ilike(loans.loanNumber, like), ilike(customers.firstName, like), ilike(customers.lastName, like), ilike(customers.phone, like)));
+  }
+  if (query.status && typeof query.status === 'string') clauses.push(eq(loans.status, query.status));
+  return clauses.length ? and(...clauses) : undefined;
+}
+
+async function enrichLoansWithProgress(loanRows: (typeof loans.$inferSelect & { customerName: string | null; customerPhone: string | null })[]) {
+  if (loanRows.length === 0) return [];
+  const loanIds = loanRows.map((l) => l.id);
+  // Only pull installments belonging to THIS page of loans, not the whole table.
+  const rows = await db.select().from(installments).where(inArray(installments.loanId, loanIds));
+  return loanRows.map((loan) => {
+    const own = rows.filter((i) => i.loanId === loan.id);
+    const paidRwf = own.reduce((s, i) => s + (i.amountPaidRwf || 0), 0);
+    const dueRwf = own.reduce((s, i) => s + (i.amountDueRwf || 0), 0);
+    const overdueCount = own.filter((i) => i.status === 'overdue').length;
+    return {
+      ...loan,
+      repaymentRatePercent: dueRwf > 0 ? Math.round((paidRwf / dueRwf) * 1000) / 10 : 0,
+      overdueInstallments: overdueCount,
+    };
+  });
+}
+
 // ============================================
-// GET /api/admin/loans — list all loans (most recent first), lightly filterable
+// GET /api/admin/loans — paginated, searchable (loan #, customer name/phone),
+// filterable (status) list of loans, most recent first.
 // ============================================
 router.get('/', requireAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
-    const { status } = req.query;
-    let allLoans = await db.select().from(loans).orderBy(desc(loans.createdAt));
-    if (status && typeof status === 'string') {
-      allLoans = allLoans.filter((l) => l.status === status);
-    }
+    const params = parsePageParams(req.query);
+    const where = buildLoansFilter(req.query, params.search);
 
-    // Attach customer name + repayment progress per loan for the list view
-    const allInstallments = await db.select().from(installments);
-    const allCustomers = await db.select().from(customers);
+    const baseQuery = db
+      .select({
+        id: loans.id,
+        loanNumber: loans.loanNumber,
+        orderId: loans.orderId,
+        customerId: loans.customerId,
+        principalRwf: loans.principalRwf,
+        downPaymentRwf: loans.downPaymentRwf,
+        interestRateBps: loans.interestRateBps,
+        termMonths: loans.termMonths,
+        totalPayableRwf: loans.totalPayableRwf,
+        status: loans.status,
+        guarantorType: loans.guarantorType,
+        guarantorName: loans.guarantorName,
+        guarantorPhone: loans.guarantorPhone,
+        disbursedAt: loans.disbursedAt,
+        expectedPayoffDate: loans.expectedPayoffDate,
+        completedAt: loans.completedAt,
+        notes: loans.notes,
+        createdAt: loans.createdAt,
+        updatedAt: loans.updatedAt,
+        customerName: sql<string>`${customers.firstName} || ' ' || ${customers.lastName}`,
+        customerPhone: customers.phone,
+      })
+      .from(loans)
+      .leftJoin(customers, eq(loans.customerId, customers.id));
 
-    const enriched = allLoans.map((loan) => {
-      const rows = allInstallments.filter((i) => i.loanId === loan.id);
-      const paidRwf = rows.reduce((s, i) => s + (i.amountPaidRwf || 0), 0);
-      const dueRwf = rows.reduce((s, i) => s + (i.amountDueRwf || 0), 0);
-      const overdueCount = rows.filter((i) => i.status === 'overdue').length;
-      const customer = allCustomers.find((c) => c.id === loan.customerId);
-      return {
-        ...loan,
-        customerName: customer ? `${customer.firstName} ${customer.lastName}` : null,
-        customerPhone: customer?.phone || null,
-        repaymentRatePercent: dueRwf > 0 ? Math.round((paidRwf / dueRwf) * 1000) / 10 : 0,
-        overdueInstallments: overdueCount,
-      };
-    });
+    const [rows, [{ count }]] = await Promise.all([
+      baseQuery.where(where).orderBy(desc(loans.createdAt)).limit(params.pageSize).offset(params.offset),
+      db.select({ count: sql<number>`count(*)::int` }).from(loans).leftJoin(customers, eq(loans.customerId, customers.id)).where(where),
+    ]);
 
-    res.json({ success: true, loans: enriched });
+    const enriched = await enrichLoansWithProgress(rows as any);
+    res.json(paginatedResponse(enriched, count, params));
   } catch (error) {
     console.error('List loans error:', error);
     res.status(500).json({ error: 'Failed to load loans' });
+  }
+});
+
+// GET /api/admin/loans/export/csv — same search/status filter, all matching rows.
+router.get('/export/csv', requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const params = parsePageParams(req.query);
+    const where = buildLoansFilter(req.query, params.search);
+    const rows = await db
+      .select({
+        id: loans.id,
+        loanNumber: loans.loanNumber,
+        orderId: loans.orderId,
+        customerId: loans.customerId,
+        principalRwf: loans.principalRwf,
+        downPaymentRwf: loans.downPaymentRwf,
+        interestRateBps: loans.interestRateBps,
+        termMonths: loans.termMonths,
+        totalPayableRwf: loans.totalPayableRwf,
+        status: loans.status,
+        guarantorType: loans.guarantorType,
+        guarantorName: loans.guarantorName,
+        guarantorPhone: loans.guarantorPhone,
+        disbursedAt: loans.disbursedAt,
+        expectedPayoffDate: loans.expectedPayoffDate,
+        completedAt: loans.completedAt,
+        notes: loans.notes,
+        createdAt: loans.createdAt,
+        updatedAt: loans.updatedAt,
+        customerName: sql<string>`${customers.firstName} || ' ' || ${customers.lastName}`,
+        customerPhone: customers.phone,
+      })
+      .from(loans)
+      .leftJoin(customers, eq(loans.customerId, customers.id))
+      .where(where)
+      .orderBy(desc(loans.createdAt));
+    const enriched = await enrichLoansWithProgress(rows as any);
+    sendCsv(
+      res,
+      `loans-${new Date().toISOString().slice(0, 10)}.csv`,
+      ['loanNumber', 'customerName', 'customerPhone', 'principalRwf', 'totalPayableRwf', 'termMonths', 'status', 'repaymentRatePercent', 'overdueInstallments', 'disbursedAt'],
+      enriched.map((l: any) => ({ ...l, disbursedAt: l.disbursedAt?.toISOString?.() || l.disbursedAt }))
+    );
+  } catch (error) {
+    console.error('Export loans CSV error:', error);
+    res.status(500).json({ error: 'Failed to export loans' });
   }
 });
 
