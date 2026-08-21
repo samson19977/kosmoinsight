@@ -195,6 +195,24 @@ router.patch('/:id', validate(agentUpdateSchema), async (req: AuthedRequest, res
 });
 
 // ============================================
+// POST /api/admin/agents/:id/recalculate-commission — after changing this
+// agent's commission rate, recompute their still-PENDING commissions to
+// the new rate (paid ones are left alone — see the service method for why).
+// Call this right after a PATCH that changes commissionRateBps.
+// ============================================
+router.post('/:id/recalculate-commission', async (req: AuthedRequest, res: Response): Promise<void> => {
+  try {
+    const id = Number(req.params.id);
+    const result = await AgentService.recalculatePendingCommissions(id);
+    await AuditService.log({ adminId: req.admin!.id, action: 'agent.recalculate_commission', targetType: 'agent', targetId: id, details: result });
+    res.json({ success: true, ...result });
+  } catch (error: any) {
+    console.error('Recalculate commission error:', error);
+    res.status(error.message?.includes('not found') ? 404 : 500).json({ error: error.message || 'Failed to recalculate commission' });
+  }
+});
+
+// ============================================
 // POST /api/admin/agents/:id/pay-commission — mark pending commission(s)
 // as paid out. Body: { commissionIds?: number[] } — omit to pay everything
 // currently pending for this agent.

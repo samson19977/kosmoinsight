@@ -113,7 +113,12 @@ const AgentRegisterPage: React.FC = () => {
             <p className="text-gray-500 mt-2 text-sm">Your application will be reviewed before you can log in and start selling.</p>
           </div>
 
-          <form onSubmit={handleSubmit} className="bg-white rounded-2xl shadow-card p-6 space-y-5">
+          {/* autoComplete="off" plus per-field overrides below: this form is
+              often used on a shared/office device by multiple different
+              agents registering one after another, so we don't want the
+              browser offering to autofill a *previous* agent's saved email
+              or password into a new registration. */}
+          <form onSubmit={handleSubmit} autoComplete="off" className="bg-white rounded-2xl shadow-card p-6 space-y-5">
             <div className="grid grid-cols-2 gap-4">
               <Field label="First Name" required error={errors.firstName}>
                 <input className={inputCls} value={form.firstName} onChange={set('firstName')} placeholder="Jean" />
@@ -127,7 +132,7 @@ const AgentRegisterPage: React.FC = () => {
                 <input className={inputCls} value={form.phone} onChange={set('phone')} placeholder="0788123456" />
               </Field>
               <Field label="Email" required error={errors.email}>
-                <input className={inputCls} type="email" value={form.email} onChange={set('email')} placeholder="you@example.com" />
+                <input className={inputCls} type="email" autoComplete="off" value={form.email} onChange={set('email')} placeholder="you@example.com" />
               </Field>
             </div>
             <Field label="National ID" required error={errors.nationalId}>
@@ -156,10 +161,10 @@ const AgentRegisterPage: React.FC = () => {
 
             <div className="grid grid-cols-2 gap-4">
               <Field label="Password" required error={errors.password}>
-                <input className={inputCls} type="password" value={form.password} onChange={set('password')} placeholder="At least 8 characters" />
+                <input className={inputCls} type="password" autoComplete="new-password" value={form.password} onChange={set('password')} placeholder="At least 8 characters" />
               </Field>
               <Field label="Confirm Password" required error={errors.confirmPassword}>
-                <input className={inputCls} type="password" value={form.confirmPassword} onChange={set('confirmPassword')} />
+                <input className={inputCls} type="password" autoComplete="new-password" value={form.confirmPassword} onChange={set('confirmPassword')} />
               </Field>
             </div>
 

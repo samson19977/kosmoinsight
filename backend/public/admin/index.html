@@ -560,18 +560,22 @@
 <div class="modal-overlay" id="newAgentModal">
   <div class="modal">
     <h3>Add Agent</h3>
+    <!-- autocomplete="off" throughout: this modal is used on a shared admin
+         device to register different agents one after another, so we don't
+         want the browser suggesting a previously-typed agent's name/phone/
+         email here. -->
     <label>Full name</label>
-    <input type="text" id="newAgentName" placeholder="e.g. Jean Bosco Habimana" />
+    <input type="text" id="newAgentName" autocomplete="off" placeholder="e.g. Jean Bosco Habimana" />
     <label>Reseller code</label>
-    <input type="text" id="newAgentCode" placeholder="e.g. KIG-JB01 — letters, numbers, hyphens only" />
+    <input type="text" id="newAgentCode" autocomplete="off" placeholder="e.g. KIG-JB01 — letters, numbers, hyphens only" />
     <label>Phone</label>
-    <input type="text" id="newAgentPhone" placeholder="0788123456" />
+    <input type="text" id="newAgentPhone" autocomplete="off" placeholder="0788123456" />
     <label>Email (optional)</label>
-    <input type="text" id="newAgentEmail" placeholder="agent@example.com" />
+    <input type="text" id="newAgentEmail" autocomplete="off" placeholder="agent@example.com" />
     <label>District</label>
-    <input type="text" id="newAgentDistrict" placeholder="e.g. Gasabo" />
+    <input type="text" id="newAgentDistrict" autocomplete="off" placeholder="e.g. Gasabo" />
     <label>Region (optional)</label>
-    <input type="text" id="newAgentRegion" placeholder="e.g. Kigali" />
+    <input type="text" id="newAgentRegion" autocomplete="off" placeholder="e.g. Kigali" />
     <label>Commission rate (%)</label>
     <input type="number" id="newAgentCommissionPct" min="0" max="50" step="0.5" value="15" />
     <p style="font-size:12px;color:#8a8f9c;margin:2px 0 0;">This agent is created active with no password set — use "Reset Password" on their row afterwards to give them login credentials.</p>
@@ -1801,14 +1805,55 @@ async function openAgentDetail(id) {
 }
 function closeAgentDetailModal() { document.getElementById('agentDetailModal').classList.remove('show'); currentAgentId = null; }
 
+// Saving a new commission rate for this agent has two steps: PATCH the
+// agent's own rate (used for all their FUTURE orders), then immediately
+// recalculate their still-PENDING commissions to that new rate, so
+// "Pending commission" updates right away instead of only affecting
+// orders placed after today.
+async function saveAgentCommissionRate(id) {
+  const input = document.getElementById('agentCommissionRateInput');
+  const pct = parseFloat(input.value);
+  if (isNaN(pct) || pct < 0 || pct > 50) { showToast('⚠️ Enter a commission rate between 0 and 50%', true); return; }
+  const commissionRateBps = Math.round(pct * 100);
+  try {
+    const patchRes = await fetch(`${API_BASE}/admin/agents/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ commissionRateBps }),
+    });
+    const patchData = await patchRes.json();
+    if (!patchRes.ok) throw new Error(patchData.error || 'Failed to update commission rate');
+
+    const recalcRes = await fetch(`${API_BASE}/admin/agents/${id}/recalculate-commission`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const recalcData = await recalcRes.json();
+    if (!recalcRes.ok) throw new Error(recalcData.error || 'Rate saved, but failed to recalculate pending commission');
+
+    document.getElementById('agentDetailPendingRwf').textContent = fmt(recalcData.totalRwf);
+    showToast(`✓ Commission rate updated to ${pct}% — ${recalcData.count} pending commission(s) recalculated`);
+    loadAgents(); // refresh the list/KPIs behind the modal too
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
+  }
+}
+
 function renderAgentDetail(data) {
   const { agent, customers: custs, orders: ords, loans: lns, commissions, pendingRwf, paidRwf, auditLog } = data;
   document.getElementById('agentDetailTitle').textContent = `${agent.name} — ${agent.code}`;
   document.getElementById('agentDetailSummary').innerHTML = `
     <div>${agentStatusBadge(agent.status)} · ${agent.phone} ${agent.email ? '· ' + agent.email : ''}</div>
-    <div style="margin-top:4px;">${agent.district || ''} ${agent.region ? '· ' + agent.region : ''} · Commission rate: ${(agent.commissionRateBps / 100).toFixed(1)}%</div>
+    <div style="margin-top:4px;">${agent.district || ''} ${agent.region ? '· ' + agent.region : ''}</div>
+    <div style="margin-top:8px;display:flex;align-items:center;gap:8px;">
+      <label style="font-size:12px;color:#8a8f9c;">Commission rate</label>
+      <input id="agentCommissionRateInput" type="number" min="0" max="50" step="0.5" value="${(agent.commissionRateBps / 100).toFixed(1)}"
+        style="width:64px;border:1px solid #e4e4e7;border-radius:8px;padding:4px 8px;font-size:13px;" />
+      <span style="font-size:12px;color:#8a8f9c;">%</span>
+      <button class="btn btn-teal btn-sm" onclick="saveAgentCommissionRate(${agent.id})">Save</button>
+    </div>
     <div style="margin-top:4px;">Referral link: <a href="${referralLink(agent.code)}" target="_blank" rel="noopener">${referralLink(agent.code)}</a></div>
-    <div style="margin-top:4px;">Pending commission: <strong>${fmt(pendingRwf)}</strong> · Paid out: ${fmt(paidRwf)}</div>
+    <div style="margin-top:4px;">Pending commission: <strong id="agentDetailPendingRwf">${fmt(pendingRwf)}</strong> · Paid out: ${fmt(paidRwf)}</div>
   `;
 
   const actions = [];

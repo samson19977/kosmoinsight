@@ -493,6 +493,39 @@ export class AgentService {
   }
 
   // ==========================================================
+  // Recalculates every still-PENDING commission row for this agent using
+  // their CURRENT commissionRateBps (call this right after changing the
+  // agent's rate). Recomputes commissionRwf from the frozen saleAmountRwf
+  // on each row, so "pending payouts" reflects the new rate immediately.
+  //
+  // PAID rows are never touched — once paid, a commission is a historical
+  // fact and stays frozen at whatever rate actually applied when it was
+  // paid out, same as saleAmountRwf/commissionRateBps being "frozen at
+  // time of sale" already protects against silently rewriting history.
+  // ==========================================================
+  static async recalculatePendingCommissions(agentId: number) {
+    const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
+    if (!agent) throw new Error(`Agent ${agentId} not found`);
+
+    const pending = await db
+      .select()
+      .from(agentCommissions)
+      .where(and(eq(agentCommissions.agentId, agentId), eq(agentCommissions.status, 'pending')));
+
+    let totalRwf = 0;
+    for (const row of pending) {
+      const newCommissionRwf = Math.round((row.saleAmountRwf * agent.commissionRateBps) / 10000);
+      totalRwf += newCommissionRwf;
+      await db
+        .update(agentCommissions)
+        .set({ commissionRwf: newCommissionRwf, commissionRateBps: agent.commissionRateBps })
+        .where(eq(agentCommissions.id, row.id));
+    }
+
+    return { count: pending.length, totalRwf, newRateBps: agent.commissionRateBps };
+  }
+
+  // ==========================================================
   // Bulk import — reads the exact kind of spreadsheet Kosmotive's team
   // already uses (Name, Code, Phone, Email, [Region]), upserting by the
   // reseller `code` so re-uploading a partially-updated file never
