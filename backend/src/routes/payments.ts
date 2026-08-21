@@ -4,10 +4,8 @@ import { MomoService } from '../services/momo.service';
 import { validate } from '../middleware/validate';
 import { momoPaymentSchema } from '../lib/validation/schemas';
 import { db } from '../config/database';
-import { orders, payments, orderItems } from '../db/schema';
-import { EmailService } from '../services/email.service';
-import { InventoryService } from '../services/inventory.service';
-import { AgentService } from '../services/agent.service';
+import { orders, payments } from '../db/schema';
+import { PaymentReconciliationService } from '../services/paymentReconciliation.service';
 
 const router = Router();
 
@@ -104,56 +102,14 @@ router.get('/momo/status/:referenceId', async (req: Request, res: Response): Pro
       const rawStatus = (status.status || '').toUpperCase();
 
       if (rawStatus === 'SUCCESSFUL') {
-        const now = new Date();
-
-        await db
-          .update(payments)
-          .set({ status: 'paid', paidAt: now, notes: 'Confirmed via status poll reconciliation', updatedAt: now })
-          .where(eq(payments.id, payment.id));
-
-        const [order] = await db.select().from(orders).where(eq(orders.id, payment.orderId));
-
-        if (order) {
-          await db
-            .update(orders)
-            .set({ paymentStatus: 'paid', orderStatus: 'confirmed', updatedAt: now })
-            .where(eq(orders.id, order.id));
-
-          await InventoryService.deductStockForOrder(order.id);
-          await AgentService.recordCommissionForOrder(order.id).catch((err) => console.error('Agent commission error (non-fatal):', err));
-
-          console.log(`✅ Status-poll reconciliation: order ${order.orderNumber} marked PAID`);
-
-          if (order.customerEmail) {
-            const items = await db.select().from(orderItems).where(eq(orderItems.orderId, order.id));
-            await EmailService.sendPaymentReceipt({
-              orderNumber: order.orderNumber,
-              customerName: order.customerName,
-              customerEmail: order.customerEmail,
-              amountRwf: payment.amountRwf,
-              paidAt: now,
-              items: items.map((i) => ({ name: i.productName, quantity: i.quantity, priceRwf: i.priceRwf, subtotalRwf: i.subtotalRwf })),
-            }).catch((err) => console.error('Receipt email error (non-fatal):', err));
-          }
-
-          await EmailService.sendAdminPaymentAlert({
-            orderNumber: order.orderNumber,
-            customerName: order.customerName,
-            customerPhone: order.customerPhone,
-            amountRwf: payment.amountRwf,
-            status: 'paid',
-          }).catch((err) => console.error('Admin alert email error (non-fatal):', err));
+        const result = await PaymentReconciliationService.markOrderPaid(payment.orderId, {
+          note: 'Confirmed via status poll reconciliation',
+        });
+        if (!result.alreadyPaid) {
+          console.log(`✅ Status-poll reconciliation: order ${result.order!.orderNumber} marked PAID`);
         }
       } else if (rawStatus === 'FAILED') {
-        await db
-          .update(payments)
-          .set({ status: 'failed', notes: `Failed via status poll. Reason: ${status.reason || 'unspecified'}`, updatedAt: new Date() })
-          .where(eq(payments.id, payment.id));
-
-        await db
-          .update(orders)
-          .set({ paymentStatus: 'failed', updatedAt: new Date() })
-          .where(eq(orders.id, payment.orderId));
+        await PaymentReconciliationService.markOrderFailed(payment.orderId, status.reason || 'unspecified');
       }
     }
 

@@ -7,8 +7,8 @@ import { eq } from 'drizzle-orm';
 
 import { testDatabaseConnection, db } from './config/database';
 import { EmailService } from './services/email.service';
-import { InventoryService } from './services/inventory.service';
-import { orders, payments, orderItems } from './db/schema';
+import { PaymentReconciliationService } from './services/paymentReconciliation.service';
+import { payments } from './db/schema';
 
 import productsRouter from './routes/products';
 import ordersRouter from './routes/orders';
@@ -22,7 +22,6 @@ import { LoanService } from './services/loan.service';
 import agentsRouter from './routes/agents';
 import agentSelfRouter from './routes/agent-self';
 import ussdRouter from './routes/ussd';
-import { AgentService } from './services/agent.service';
 
 // Load environment variables first
 dotenv.config();
@@ -172,19 +171,14 @@ app.post('/api/webhooks/momo', async (req, res) => {
       return;
     }
 
-    // Idempotency guard — skip if already finalized
+    // Idempotency guard — skip if already finalized. (This check is now
+    // belt-and-suspenders: the atomic UPDATE inside
+    // PaymentReconciliationService is what actually closes the race
+    // against the order-status poll, MoMo-status poll, and admin manual
+    // confirm — all four entry points that can independently observe a
+    // payment outcome now go through that single atomic transition.)
     if (payment.status === 'paid' || payment.status === 'failed') {
       console.log(`Webhook: payment ${payment.id} already in terminal state "${payment.status}" — skipping`);
-      return;
-    }
-
-    const [order] = await db
-      .select()
-      .from(orders)
-      .where(eq(orders.id, payment.orderId));
-
-    if (!order) {
-      console.error(`Webhook: order ${payment.orderId} not found for payment ${payment.id}`);
       return;
     }
 
@@ -192,88 +186,20 @@ app.post('/api/webhooks/momo', async (req, res) => {
     // SUCCESSFUL payment
     // ----------------------------------------
     if (rawStatus === 'SUCCESSFUL') {
-      const now = new Date();
-
-      await db
-        .update(payments)
-        .set({
-          status: 'paid',
-          paidAt: now,
-          notes: `Confirmed via MoMo webhook. financialTransactionId: ${payload.financialTransactionId || 'n/a'}`,
-          updatedAt: now,
-        })
-        .where(eq(payments.id, payment.id));
-
-      await db
-        .update(orders)
-        .set({
-          paymentStatus: 'paid',
-          orderStatus: 'confirmed',
-          updatedAt: now,
-        })
-        .where(eq(orders.id, order.id));
-
-      await InventoryService.deductStockForOrder(order.id);
-      await AgentService.recordCommissionForOrder(order.id).catch((err) => console.error('Agent commission error (non-fatal):', err));
-
-      console.log(`✅ Webhook: order ${order.orderNumber} marked PAID`);
-
-      // Send payment receipt to customer (if they have an email)
-      if (order.customerEmail) {
-        const items = await db
-          .select()
-          .from(orderItems)
-          .where(eq(orderItems.orderId, order.id));
-
-        await EmailService.sendPaymentReceipt({
-          orderNumber: order.orderNumber,
-          customerName: order.customerName,
-          customerEmail: order.customerEmail,
-          amountRwf: payment.amountRwf,
-          paidAt: now,
-          items: items.map((i) => ({
-            name: i.productName,
-            quantity: i.quantity,
-            priceRwf: i.priceRwf,
-            subtotalRwf: i.subtotalRwf,
-          })),
-        }).catch((err) => console.error('Receipt email error (non-fatal):', err));
+      const result = await PaymentReconciliationService.markOrderPaid(payment.orderId, {
+        note: `Confirmed via MoMo webhook. financialTransactionId: ${payload.financialTransactionId || 'n/a'}`,
+      });
+      if (!result.alreadyPaid) {
+        console.log(`✅ Webhook: order ${result.order!.orderNumber} marked PAID`);
       }
-
-      // Notify the admin
-      await EmailService.sendAdminPaymentAlert({
-        orderNumber: order.orderNumber,
-        customerName: order.customerName,
-        customerPhone: order.customerPhone,
-        amountRwf: payment.amountRwf,
-        status: 'paid',
-      }).catch((err) => console.error('Admin alert email error (non-fatal):', err));
     }
 
     // ----------------------------------------
     // FAILED payment
     // ----------------------------------------
     else if (rawStatus === 'FAILED') {
-      const now = new Date();
-
-      await db
-        .update(payments)
-        .set({
-          status: 'failed',
-          notes: `Failed via MoMo webhook. Reason: ${payload.reason || 'unspecified'}`,
-          updatedAt: now,
-        })
-        .where(eq(payments.id, payment.id));
-
-      await db
-        .update(orders)
-        .set({
-          paymentStatus: 'failed',
-          updatedAt: now,
-        })
-        .where(eq(orders.id, order.id));
-
-      console.log(`❌ Webhook: payment for order ${order.orderNumber} FAILED — reason: ${payload.reason || 'unspecified'}`);
+      await PaymentReconciliationService.markOrderFailed(payment.orderId, payload.reason || 'unspecified');
+      console.log(`❌ Webhook: payment for order ${payment.orderId} FAILED — reason: ${payload.reason || 'unspecified'}`);
     } else {
       console.log(`Webhook: unhandled status "${rawStatus}" for payment ${payment.id} — no action taken`);
     }

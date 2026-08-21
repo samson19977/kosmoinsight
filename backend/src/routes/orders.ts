@@ -5,12 +5,12 @@ import { validate } from '../middleware/validate';
 import { orderSchema } from '../lib/validation/schemas';
 import { EmailService } from '../services/email.service';
 import { MomoService } from '../services/momo.service';
-import { InventoryService } from '../services/inventory.service';
 import { LoanService } from '../services/loan.service';
 import { AgentService } from '../services/agent.service';
+import { PaymentReconciliationService } from '../services/paymentReconciliation.service';
 import { requireAdmin } from '../middleware/auth';
 import { db } from '../config/database';
-import { orders, orderItems, customers, payments, products } from '../db/schema';
+import { orders, orderItems, customers, products } from '../db/schema';
 
 const router = Router();
 
@@ -322,47 +322,14 @@ router.get('/:orderNumber/status', async (req: Request, res: Response): Promise<
         const momoStatus = await MomoService.checkPaymentStatus(order.momoReference);
         const rawStatus = (momoStatus.status || '').toUpperCase();
 
-        if (rawStatus === 'SUCCESSFUL' || rawStatus === 'FAILED') {
-          const now = new Date();
-          const [payment] = await db.select().from(payments).where(eq(payments.orderId, order.id));
-
-          if (rawStatus === 'SUCCESSFUL') {
-            if (payment) {
-              await db.update(payments).set({ status: 'paid', paidAt: now, notes: 'Confirmed via order status poll reconciliation', updatedAt: now }).where(eq(payments.id, payment.id));
-            }
-            await db.update(orders).set({ paymentStatus: 'paid', orderStatus: 'confirmed', updatedAt: now }).where(eq(orders.id, order.id));
-            await InventoryService.deductStockForOrder(order.id);
-            await AgentService.recordCommissionForOrder(order.id).catch((err) => console.error('Agent commission error (non-fatal):', err));
-            console.log(`✅ Order status poll reconciliation: order ${order.orderNumber} marked PAID`);
-
-            if (order.customerEmail && payment) {
-              const items = await db.select().from(orderItems).where(eq(orderItems.orderId, order.id));
-              await EmailService.sendPaymentReceipt({
-                orderNumber: order.orderNumber,
-                customerName: order.customerName,
-                customerEmail: order.customerEmail,
-                amountRwf: payment.amountRwf,
-                paidAt: now,
-                items: items.map((i) => ({ name: i.productName, quantity: i.quantity, priceRwf: i.priceRwf, subtotalRwf: i.subtotalRwf })),
-              }).catch((err) => console.error('Receipt email error (non-fatal):', err));
-            }
-            await EmailService.sendAdminPaymentAlert({
-              orderNumber: order.orderNumber,
-              customerName: order.customerName,
-              customerPhone: order.customerPhone,
-              amountRwf: payment?.amountRwf ?? order.totalRwf,
-              status: 'paid',
-            }).catch((err) => console.error('Admin alert email error (non-fatal):', err));
-          } else {
-            if (payment) {
-              await db.update(payments).set({ status: 'failed', notes: `Failed via order status poll. Reason: ${momoStatus.reason || 'unspecified'}`, updatedAt: now }).where(eq(payments.id, payment.id));
-            }
-            await db.update(orders).set({ paymentStatus: 'failed', updatedAt: now }).where(eq(orders.id, order.id));
-          }
-
-          // Re-fetch so the response reflects the just-reconciled state
-          [order] = await db.select().from(orders).where(eq(orders.id, order.id));
+        if (rawStatus === 'SUCCESSFUL') {
+          await PaymentReconciliationService.markOrderPaid(order.id, { note: 'Confirmed via order status poll reconciliation' });
+        } else if (rawStatus === 'FAILED') {
+          await PaymentReconciliationService.markOrderFailed(order.id, momoStatus.reason || 'unspecified');
         }
+
+        // Re-fetch so the response reflects the just-reconciled state
+        [order] = await db.select().from(orders).where(eq(orders.id, order.id));
       } catch (reconcileErr) {
         // Non-fatal — MTN might be briefly unreachable; just report current DB state
         console.error('MoMo reconciliation during status poll failed (non-fatal):', reconcileErr);
@@ -483,50 +450,14 @@ router.patch('/:orderNumber/confirm-payment', requireAdmin, async (req: Request,
       return;
     }
 
-    if (order.paymentStatus === 'paid') {
+    const result = await PaymentReconciliationService.markOrderPaid(order.id, {
+      momoReference: momoReference || order.momoReference || null,
+      note: 'Confirmed manually by admin',
+    });
+
+    if (result.alreadyPaid) {
       res.json({ success: true, alreadyConfirmed: true, message: 'This order was already marked as paid.' });
       return;
-    }
-
-    const now = new Date();
-    await db
-      .update(orders)
-      .set({
-        paymentStatus: 'paid',
-        orderStatus: 'confirmed',
-        momoReference: momoReference || order.momoReference || null,
-        updatedAt: now,
-      })
-      .where(eq(orders.id, order.id));
-
-    await InventoryService.deductStockForOrder(order.id);
-    await AgentService.recordCommissionForOrder(order.id).catch((err) => console.error('Agent commission error (non-fatal):', err));
-
-    // Keep the payments ledger in sync too, if a row already exists for this order
-    // (e.g. a MoMo push was initiated). Cash orders may not have one — that's fine.
-    const [payment] = await db.select().from(payments).where(eq(payments.orderId, order.id));
-    if (payment && payment.status !== 'paid') {
-      await db
-        .update(payments)
-        .set({ status: 'paid', paidAt: now, notes: 'Confirmed manually by admin', updatedAt: now })
-        .where(eq(payments.id, payment.id));
-    }
-
-    if (order.customerEmail) {
-      const items = await db.select().from(orderItems).where(eq(orderItems.orderId, order.id));
-      await EmailService.sendPaymentReceipt({
-        customerName: order.customerName,
-        customerEmail: order.customerEmail,
-        orderNumber: order.orderNumber,
-        amountRwf: order.totalRwf,
-        paidAt: now,
-        items: items.map((i) => ({
-          name: i.productName,
-          quantity: i.quantity,
-          priceRwf: i.priceRwf,
-          subtotalRwf: i.subtotalRwf,
-        })),
-      }).catch((err) => console.error('Receipt email error (non-fatal):', err));
     }
 
     res.json({
