@@ -4,6 +4,7 @@ import { orders, payments, orderItems } from '../db/schema';
 import { InventoryService } from './inventory.service';
 import { AgentService } from './agent.service';
 import { EmailService } from './email.service';
+import { LedgerService } from './ledger.service';
 
 // ============================================
 // PaymentReconciliationService
@@ -83,6 +84,23 @@ export class PaymentReconciliationService {
       // never end up with "paid" but no stock movement / no commission.
       await InventoryService.deductStockForOrder(orderId, tx);
       await AgentService.recordCommissionForOrder(orderId, tx);
+
+      // Ledger entry — the customer's payment landing in Kosmotive's own
+      // account. This, plus the commission-accrual entry inside
+      // recordCommissionForOrder, plus the loan-repayment entries recorded
+      // in LoanService, together form a single queryable financial history
+      // across every money-moving action on the platform.
+      await LedgerService.record(
+        {
+          accountType: 'business',
+          amountRwf: payment?.amountRwf ?? updatedOrder.totalRwf,
+          category: 'order_payment',
+          referenceType: 'order',
+          referenceId: orderId,
+          description: `Payment received for order ${updatedOrder.orderNumber}`,
+        },
+        tx
+      );
 
       return { alreadyPaid: false as const, order: updatedOrder, payment };
     });

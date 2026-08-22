@@ -3,6 +3,7 @@ import { db } from '../config/database';
 import { loans, installments, loanTransactions, customers, payments, loanAgreements } from '../db/schema';
 import { EmailService } from './email.service';
 import { MomoService } from './momo.service';
+import { LedgerService } from './ledger.service';
 
 // ============================================
 // Business rules — tunable via env vars so ops can adjust policy without
@@ -176,85 +177,113 @@ export class LoanService {
   // payments, overpayment spillover into the next unpaid installment,
   // and marks the loan completed once every installment is fully paid.
   // ============================================
+  // Wrapped in one transaction: the installment update, the loan_transactions
+  // audit row, the ledger entry, and (if this payment completes the loan)
+  // the loan's status flip to 'completed' all land together or not at all.
+  // The completion email is sent AFTER commit — best-effort notification,
+  // not something that should roll back a real payment if it fails to send.
   static async recordPayment(
     installmentId: number,
     input: { amountRwf: number; method: string; phone?: string; note?: string; adminId?: number | null }
   ) {
-    const [installment] = await db.select().from(installments).where(eq(installments.id, installmentId));
-    if (!installment) throw new Error('Installment not found');
+    const { loanId, allPaid, loanNumber, customerId } = await db.transaction(async (tx) => {
+      const [installment] = await tx.select().from(installments).where(eq(installments.id, installmentId));
+      if (!installment) throw new Error('Installment not found');
 
-    const [loan] = await db.select().from(loans).where(eq(loans.id, installment.loanId));
-    if (!loan) throw new Error('Loan not found');
+      const [loan] = await tx.select().from(loans).where(eq(loans.id, installment.loanId));
+      if (!loan) throw new Error('Loan not found');
 
-    let remaining = input.amountRwf;
-    let cursor = installment;
+      let remaining = input.amountRwf;
+      let cursor = installment;
 
-    while (remaining > 0 && cursor) {
-      const owed = cursor.amountDueRwf + (cursor.penaltyRwf || 0) - (cursor.amountPaidRwf || 0);
-      const applied = Math.min(remaining, Math.max(owed, 0));
+      while (remaining > 0 && cursor) {
+        const owed = cursor.amountDueRwf + (cursor.penaltyRwf || 0) - (cursor.amountPaidRwf || 0);
+        const applied = Math.min(remaining, Math.max(owed, 0));
 
-      if (applied > 0) {
-        const newPaid = (cursor.amountPaidRwf || 0) + applied;
-        const fullyPaid = newPaid >= cursor.amountDueRwf + (cursor.penaltyRwf || 0);
+        if (applied > 0) {
+          const newPaid = (cursor.amountPaidRwf || 0) + applied;
+          const fullyPaid = newPaid >= cursor.amountDueRwf + (cursor.penaltyRwf || 0);
 
-        await db
-          .update(installments)
-          .set({
-            amountPaidRwf: newPaid,
-            status: fullyPaid ? 'paid' : 'partial',
-            paidAt: fullyPaid ? new Date() : cursor.paidAt,
-            updatedAt: new Date(),
-          })
-          .where(eq(installments.id, cursor.id));
+          await tx
+            .update(installments)
+            .set({
+              amountPaidRwf: newPaid,
+              status: fullyPaid ? 'paid' : 'partial',
+              paidAt: fullyPaid ? new Date() : cursor.paidAt,
+              updatedAt: new Date(),
+            })
+            .where(eq(installments.id, cursor.id));
 
-        await db.insert(loanTransactions).values({
-          loanId: loan.id,
-          installmentId: cursor.id,
-          type: 'payment',
-          amountRwf: applied,
-          method: input.method,
-          phone: input.phone || null,
-          adminId: input.adminId ?? null,
-          note: input.note || null,
-        });
+          await tx.insert(loanTransactions).values({
+            loanId: loan.id,
+            installmentId: cursor.id,
+            type: 'payment',
+            amountRwf: applied,
+            method: input.method,
+            phone: input.phone || null,
+            adminId: input.adminId ?? null,
+            note: input.note || null,
+          });
+
+          // Ledger entry: cash actually received by Kosmotive for this
+          // installment payment — part of the same unified financial
+          // history as order payments and commission accruals/payouts.
+          await LedgerService.record(
+            {
+              accountType: 'business',
+              amountRwf: applied,
+              category: 'loan_repayment',
+              referenceType: 'installment',
+              referenceId: cursor.id,
+              description: `PayGo installment #${cursor.installmentNumber} payment on loan ${loan.loanNumber}`,
+              createdByAdminId: input.adminId ?? null,
+            },
+            tx
+          );
+        }
+
+        remaining -= applied;
+
+        if (remaining <= 0) break;
+
+        // Overpayment spills into the next unpaid installment on the same loan
+        const siblings = await tx.select().from(installments).where(eq(installments.loanId, loan.id));
+        const nextUnpaid = siblings
+          .filter((i) => i.status !== 'paid' && i.id !== cursor.id)
+          .sort((a, b) => a.installmentNumber - b.installmentNumber)[0];
+
+        if (!nextUnpaid) break; // nothing left to apply the overpayment to
+        cursor = nextUnpaid;
       }
 
-      remaining -= applied;
+      // ---- Check if loan is fully paid off ----
+      const allInstallments = await tx.select().from(installments).where(eq(installments.loanId, loan.id));
+      const allPaid = allInstallments.every((i) => i.status === 'paid');
+      if (allPaid) {
+        await tx
+          .update(loans)
+          .set({ status: 'completed', completedAt: new Date(), updatedAt: new Date() })
+          .where(eq(loans.id, loan.id));
+      }
 
-      if (remaining <= 0) break;
+      return { loanId: loan.id, allPaid, loanNumber: loan.loanNumber, customerId: loan.customerId };
+    });
 
-      // Overpayment spills into the next unpaid installment on the same loan
-      const siblings = await db.select().from(installments).where(eq(installments.loanId, loan.id));
-      const nextUnpaid = siblings
-        .filter((i) => i.status !== 'paid' && i.id !== cursor.id)
-        .sort((a, b) => a.installmentNumber - b.installmentNumber)[0];
-
-      if (!nextUnpaid) break; // nothing left to apply the overpayment to
-      cursor = nextUnpaid;
-    }
-
-    // ---- Check if loan is fully paid off ----
-    const allInstallments = await db.select().from(installments).where(eq(installments.loanId, loan.id));
-    const allPaid = allInstallments.every((i) => i.status === 'paid');
     if (allPaid) {
-      await db
-        .update(loans)
-        .set({ status: 'completed', completedAt: new Date(), updatedAt: new Date() })
-        .where(eq(loans.id, loan.id));
-
-      const [customer] = await db.select().from(customers).where(eq(customers.id, loan.customerId));
+      const [customer] = await db.select().from(customers).where(eq(customers.id, customerId));
       if (customer?.email) {
+        const allInstallments = await db.select().from(installments).where(eq(installments.loanId, loanId));
         const totalPaidRwf = allInstallments.reduce((s, i) => s + (i.amountPaidRwf || 0), 0);
         EmailService.sendLoanCompletedNotice({
           customerName: `${customer.firstName} ${customer.lastName}`,
           customerEmail: customer.email,
-          loanNumber: loan.loanNumber,
+          loanNumber,
           totalPaidRwf,
         }).catch((err) => console.error('Loan completion email error (non-fatal):', err));
       }
     }
 
-    return { loanId: loan.id, allPaid };
+    return { loanId, allPaid };
   }
 
   // ============================================

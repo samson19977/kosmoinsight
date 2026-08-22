@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import * as XLSX from 'xlsx';
 import { db, DbClient } from '../config/database';
 import { agents, agentCommissions, customers, settings, orders, orderItems, loans, installments } from '../db/schema';
+import { LedgerService } from './ledger.service';
 import type { AgentInput, AgentUpdateInput, AgentRegisterInput } from '../lib/validation/schemas';
 
 const DEFAULT_COMMISSION_BPS = 1500; // 15% — used only if the `settings` row is somehow missing
@@ -465,15 +466,36 @@ export class AgentService {
     const commissionRwf = Math.round((order.totalRwf * agent.commissionRateBps) / 10000);
 
     try {
-      await client.insert(agentCommissions).values({
-        agentId: agent.id,
-        orderId: order.id,
-        saleAmountRwf: order.totalRwf,
-        commissionRateBps: agent.commissionRateBps,
-        commissionRwf,
-        status: 'pending',
-        note: `Auto-credited on order ${order.orderNumber} payment confirmation`,
-      });
+      const [inserted] = await client
+        .insert(agentCommissions)
+        .values({
+          agentId: agent.id,
+          orderId: order.id,
+          saleAmountRwf: order.totalRwf,
+          commissionRateBps: agent.commissionRateBps,
+          commissionRwf,
+          status: 'pending',
+          note: `Auto-credited on order ${order.orderNumber} payment confirmation`,
+        })
+        .returning();
+
+      // Ledger entry: this increases what Kosmotive owes the agent (a
+      // credit to their account) — the matching debit-out-of-business-cash
+      // entry is recorded later in markCommissionsPaid, at the moment the
+      // agent is actually paid, not now (accrued ≠ paid).
+      await LedgerService.record(
+        {
+          accountType: 'agent',
+          accountId: agent.id,
+          amountRwf: commissionRwf,
+          category: 'commission_accrued',
+          referenceType: 'agent_commission',
+          referenceId: inserted.id,
+          description: `Commission accrued on order ${order.orderNumber}`,
+        },
+        client
+      );
+
       return { recorded: true, commissionRwf };
     } catch {
       // Unique index caught a race between two confirmation paths firing
@@ -482,19 +504,56 @@ export class AgentService {
     }
   }
 
+  // Marking commissions as paid means real money is about to leave (or has
+  // just left) Kosmotive's account into the agent's hands — this is a cash
+  // event, not just a status flip, so it's wrapped in a transaction and
+  // records the matching pair of ledger entries: money OUT of the business
+  // account, and the agent's payable balance going back down by the same
+  // amount. Both land together or not at all.
   static async markCommissionsPaid(agentId: number, commissionIds?: number[]) {
     const now = new Date();
     const condition = commissionIds && commissionIds.length > 0
       ? and(eq(agentCommissions.agentId, agentId), eq(agentCommissions.status, 'pending'), inArray(agentCommissions.id, commissionIds))
       : and(eq(agentCommissions.agentId, agentId), eq(agentCommissions.status, 'pending'));
 
-    const result = await db
-      .update(agentCommissions)
-      .set({ status: 'paid', paidAt: now })
-      .where(condition)
-      .returning();
+    return db.transaction(async (tx) => {
+      const result = await tx
+        .update(agentCommissions)
+        .set({ status: 'paid', paidAt: now })
+        .where(condition)
+        .returning();
 
-    return { count: result.length, totalRwf: result.reduce((s, r) => s + r.commissionRwf, 0) };
+      const totalRwf = result.reduce((s, r) => s + r.commissionRwf, 0);
+
+      if (totalRwf > 0) {
+        const orderNumbers = result.length;
+        await LedgerService.record(
+          {
+            accountType: 'agent',
+            accountId: agentId,
+            amountRwf: -totalRwf,
+            category: 'commission_paid',
+            referenceType: 'agent_commission_payout',
+            referenceId: agentId,
+            description: `Payout of ${orderNumbers} commission(s) to agent #${agentId}`,
+          },
+          tx
+        );
+        await LedgerService.record(
+          {
+            accountType: 'business',
+            amountRwf: -totalRwf,
+            category: 'commission_paid',
+            referenceType: 'agent_commission_payout',
+            referenceId: agentId,
+            description: `Commission payout sent to agent #${agentId} (${orderNumbers} commission(s))`,
+          },
+          tx
+        );
+      }
+
+      return { count: result.length, totalRwf };
+    });
   }
 
   // ==========================================================

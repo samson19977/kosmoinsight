@@ -326,6 +326,45 @@ export const adminAuditLog = pgTable('admin_audit_log', {
 });
 
 // ============================================
+// LEDGER ENTRIES TABLE
+// A single, append-only, never-edited-or-deleted log of every event that
+// moves money in or out of a tracked account — the one place you can go
+// to answer "show me everything that happened to this money" without
+// cross-referencing five different tables.
+//
+// This is a PRAGMATIC single-entry ledger, not full double-entry
+// bookkeeping: each row records one signed amount against one account,
+// rather than a matching debit+credit pair across two accounts. That's a
+// deliberate scope choice — it's a large jump in complexity to build (and
+// to keep correct) a real chart-of-accounts double-entry system, and this
+// already delivers the thing that actually matters day to day: a
+// complete, filterable, exportable, immutable history per account,
+// reconcilable against orders/loans/commissions. Worth revisiting as a
+// dedicated project if Kosmotive ever needs formal double-entry
+// accounting (e.g. for an external audit or investor due diligence).
+//
+// accountType + accountId identify WHOSE balance this affects:
+//   - accountType='business', accountId=null   → Kosmotive's own cash position
+//   - accountType='agent',    accountId=<id>   → what Kosmotive owes that agent
+// amountRwf is signed: positive = increases the account's balance,
+// negative = decreases it. An account's current balance is always
+// SUM(amountRwf) over its rows — never stored redundantly, so it can
+// never drift out of sync with the entries that produced it.
+// ============================================
+export const ledgerEntries = pgTable('ledger_entries', {
+  id: serial('id').primaryKey(),
+  accountType: varchar('account_type', { length: 20 }).notNull(), // 'business' | 'agent'
+  accountId: integer('account_id'), // agent id when accountType='agent'; null for 'business'
+  amountRwf: integer('amount_rwf').notNull(), // signed: + = credit/increase, - = debit/decrease
+  category: varchar('category', { length: 40 }).notNull(), // 'order_payment' | 'refund' | 'commission_accrued' | 'commission_paid' | 'loan_repayment' | 'manual_adjustment'
+  referenceType: varchar('reference_type', { length: 30 }), // 'order' | 'agent_commission' | 'installment' | ...
+  referenceId: integer('reference_id'),
+  description: text('description').notNull(),
+  createdByAdminId: integer('created_by_admin_id').references(() => admins.id),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// ============================================
 // SETTINGS TABLE (simple key/value store)
 // Platform-wide configuration an admin can change without a code deploy —
 // currently just the default agent commission rate, but deliberately
