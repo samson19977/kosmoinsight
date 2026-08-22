@@ -1,7 +1,7 @@
 import { eq, sql, and, or, ilike, desc, gte, inArray } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 import * as XLSX from 'xlsx';
-import { db } from '../config/database';
+import { db, DbClient } from '../config/database';
 import { agents, agentCommissions, customers, settings, orders, orderItems, loans, installments } from '../db/schema';
 import type { AgentInput, AgentUpdateInput, AgentRegisterInput } from '../lib/validation/schemas';
 
@@ -447,20 +447,25 @@ export class AgentService {
   // it's always safe to call this from every payment-confirmation path
   // (webhook, poll, manual) without double-crediting an agent.
   // ==========================================================
-  static async recordCommissionForOrder(orderId: number): Promise<{ recorded: boolean; commissionRwf?: number }> {
-    const [order] = await db.select().from(orders).where(eq(orders.id, orderId));
+  // Called from PaymentReconciliationService, inside the same DB
+  // transaction as the order's payment-status update (pass its `tx` as
+  // `client`) — so if this fails, the whole reconciliation (including the
+  // order being marked paid) rolls back together instead of leaving an
+  // order marked paid with no commission ever credited.
+  static async recordCommissionForOrder(orderId: number, client: DbClient = db): Promise<{ recorded: boolean; commissionRwf?: number }> {
+    const [order] = await client.select().from(orders).where(eq(orders.id, orderId));
     if (!order || !order.agentId) return { recorded: false };
 
-    const [existing] = await db.select().from(agentCommissions).where(eq(agentCommissions.orderId, orderId));
+    const [existing] = await client.select().from(agentCommissions).where(eq(agentCommissions.orderId, orderId));
     if (existing) return { recorded: false }; // already credited — idempotency guard
 
-    const [agent] = await db.select().from(agents).where(eq(agents.id, order.agentId));
+    const [agent] = await client.select().from(agents).where(eq(agents.id, order.agentId));
     if (!agent) return { recorded: false };
 
     const commissionRwf = Math.round((order.totalRwf * agent.commissionRateBps) / 10000);
 
     try {
-      await db.insert(agentCommissions).values({
+      await client.insert(agentCommissions).values({
         agentId: agent.id,
         orderId: order.id,
         saleAmountRwf: order.totalRwf,
@@ -507,22 +512,29 @@ export class AgentService {
     const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
     if (!agent) throw new Error(`Agent ${agentId} not found`);
 
-    const pending = await db
-      .select()
-      .from(agentCommissions)
-      .where(and(eq(agentCommissions.agentId, agentId), eq(agentCommissions.status, 'pending')));
+    // Wrapped in one transaction: either every pending commission gets
+    // recalculated to the new rate, or none do. Without this, a crash
+    // partway through the loop would leave some commissions at the old
+    // rate and some at the new one for the same agent, on the same
+    // rate-change action — a real reconciliation headache to untangle later.
+    return db.transaction(async (tx) => {
+      const pending = await tx
+        .select()
+        .from(agentCommissions)
+        .where(and(eq(agentCommissions.agentId, agentId), eq(agentCommissions.status, 'pending')));
 
-    let totalRwf = 0;
-    for (const row of pending) {
-      const newCommissionRwf = Math.round((row.saleAmountRwf * agent.commissionRateBps) / 10000);
-      totalRwf += newCommissionRwf;
-      await db
-        .update(agentCommissions)
-        .set({ commissionRwf: newCommissionRwf, commissionRateBps: agent.commissionRateBps })
-        .where(eq(agentCommissions.id, row.id));
-    }
+      let totalRwf = 0;
+      for (const row of pending) {
+        const newCommissionRwf = Math.round((row.saleAmountRwf * agent.commissionRateBps) / 10000);
+        totalRwf += newCommissionRwf;
+        await tx
+          .update(agentCommissions)
+          .set({ commissionRwf: newCommissionRwf, commissionRateBps: agent.commissionRateBps })
+          .where(eq(agentCommissions.id, row.id));
+      }
 
-    return { count: pending.length, totalRwf, newRateBps: agent.commissionRateBps };
+      return { count: pending.length, totalRwf, newRateBps: agent.commissionRateBps };
+    });
   }
 
   // ==========================================================

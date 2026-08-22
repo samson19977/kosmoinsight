@@ -66,92 +66,109 @@ export class LoanService {
       throw new Error('Down payment must be less than the principal — nothing left to finance.');
     }
 
-    // ---- Installment sequencing rule ----
-    // A customer may not open a new PayGo loan while an earlier one is still
-    // active or defaulted. Enforced centrally here so it applies no matter
-    // which channel opens the loan (storefront, agent sale, USSD, or an
-    // admin creating one manually) — one place, no way to bypass it.
-    const openLoans = await db
-      .select({ id: loans.id, loanNumber: loans.loanNumber, status: loans.status })
-      .from(loans)
-      .where(eq(loans.customerId, input.customerId));
-    const blockingLoan = openLoans.find((l) => l.status === 'active' || l.status === 'defaulted');
-    if (blockingLoan) {
-      throw new Error(
-        `This customer already has an installment plan (${blockingLoan.loanNumber}) that hasn't been fully paid off yet. They need to finish paying it before starting a new one.`
-      );
-    }
-
-    const interestRwf = Math.round((financedRwf * input.interestRateBps) / 10000);
-    const totalPayableRwf = financedRwf + interestRwf;
-
     const loanNumber = generateLoanNumber();
     const disbursedAt = new Date();
     const expectedPayoffDate = addMonths(disbursedAt, input.termMonths);
+    const interestRwf = Math.round((financedRwf * input.interestRateBps) / 10000);
+    const totalPayableRwf = financedRwf + interestRwf;
 
-    const [loan] = await db
-      .insert(loans)
-      .values({
-        loanNumber,
-        orderId: input.orderId ?? null,
-        customerId: input.customerId,
-        principalRwf: financedRwf,
-        downPaymentRwf: input.downPaymentRwf,
-        interestRateBps: input.interestRateBps,
-        termMonths: input.termMonths,
-        totalPayableRwf,
-        status: 'active',
-        guarantorType: input.guarantorType,
-        guarantorName: input.guarantorName || null,
-        guarantorPhone: input.guarantorPhone || null,
-        disbursedAt,
-        expectedPayoffDate,
-        notes: input.notes || null,
-      })
-      .returning();
+    // Everything below runs as ONE transaction, for two reasons:
+    //
+    // 1. Race-safety on the sequencing rule: "SELECT ... FOR UPDATE" takes
+    //    a row lock on this customer's existing loans for the duration of
+    //    the transaction. Without it, two near-simultaneous requests to
+    //    open a loan for the same customer (e.g. a slow client double
+    //    submit, or two different channels racing) could BOTH read "no
+    //    active loan yet" before either INSERT completes, and both would
+    //    pass the check — silently violating the one-active-loan-at-a-time
+    //    rule this method exists to enforce. The lock forces the second
+    //    request to wait until the first transaction commits (at which
+    //    point it re-reads and correctly sees the just-created loan).
+    //
+    // 2. Atomicity across steps: the loan row, its installment schedule,
+    //    the disbursement audit entry, and the agreement record are four
+    //    separate inserts. A crash partway through used to risk a loan
+    //    that exists with no installment schedule, or a disbursed loan
+    //    with no audit trail entry — exactly the kind of half-written
+    //    financial state this rewrite is meant to eliminate everywhere.
+    return db.transaction(async (tx) => {
+      // ---- Installment sequencing rule (row-locked) ----
+      const openLoans = await tx
+        .select({ id: loans.id, loanNumber: loans.loanNumber, status: loans.status })
+        .from(loans)
+        .where(eq(loans.customerId, input.customerId))
+        .for('update');
+      const blockingLoan = openLoans.find((l) => l.status === 'active' || l.status === 'defaulted');
+      if (blockingLoan) {
+        throw new Error(
+          `This customer already has an installment plan (${blockingLoan.loanNumber}) that hasn't been fully paid off yet. They need to finish paying it before starting a new one.`
+        );
+      }
 
-    // ---- Generate equal-installment schedule ----
-    const baseAmount = Math.floor(totalPayableRwf / input.termMonths);
-    const remainder = totalPayableRwf - baseAmount * input.termMonths;
+      const [loan] = await tx
+        .insert(loans)
+        .values({
+          loanNumber,
+          orderId: input.orderId ?? null,
+          customerId: input.customerId,
+          principalRwf: financedRwf,
+          downPaymentRwf: input.downPaymentRwf,
+          interestRateBps: input.interestRateBps,
+          termMonths: input.termMonths,
+          totalPayableRwf,
+          status: 'active',
+          guarantorType: input.guarantorType,
+          guarantorName: input.guarantorName || null,
+          guarantorPhone: input.guarantorPhone || null,
+          disbursedAt,
+          expectedPayoffDate,
+          notes: input.notes || null,
+        })
+        .returning();
 
-    const schedule = [];
-    for (let i = 1; i <= input.termMonths; i++) {
-      const amountDueRwf = i === input.termMonths ? baseAmount + remainder : baseAmount;
-      schedule.push({
+      // ---- Generate equal-installment schedule ----
+      const baseAmount = Math.floor(totalPayableRwf / input.termMonths);
+      const remainder = totalPayableRwf - baseAmount * input.termMonths;
+
+      const schedule = [];
+      for (let i = 1; i <= input.termMonths; i++) {
+        const amountDueRwf = i === input.termMonths ? baseAmount + remainder : baseAmount;
+        schedule.push({
+          loanId: loan.id,
+          installmentNumber: i,
+          dueDate: addMonths(disbursedAt, i),
+          amountDueRwf,
+          amountPaidRwf: 0,
+          status: 'upcoming' as const,
+        });
+      }
+      await tx.insert(installments).values(schedule);
+
+      // ---- Record disbursement in the audit trail ----
+      await tx.insert(loanTransactions).values({
         loanId: loan.id,
-        installmentNumber: i,
-        dueDate: addMonths(disbursedAt, i),
-        amountDueRwf,
-        amountPaidRwf: 0,
-        status: 'upcoming' as const,
+        type: 'disbursement',
+        amountRwf: financedRwf,
+        method: null,
+        adminId: input.adminId ?? null,
+        note: `Loan disbursed. Down payment: ${input.downPaymentRwf} RWF. Term: ${input.termMonths} months.`,
       });
-    }
-    await db.insert(installments).values(schedule);
 
-    // ---- Record disbursement in the audit trail ----
-    await db.insert(loanTransactions).values({
-      loanId: loan.id,
-      type: 'disbursement',
-      amountRwf: financedRwf,
-      method: null,
-      adminId: input.adminId ?? null,
-      note: `Loan disbursed. Down payment: ${input.downPaymentRwf} RWF. Term: ${input.termMonths} months.`,
+      // ---- Record the customer's agreement acceptance, if provided ----
+      if (input.agreement) {
+        await tx.insert(loanAgreements).values({
+          loanId: loan.id,
+          orderId: input.orderId ?? null,
+          customerId: input.customerId,
+          agentId: input.agreement.agentId ?? null,
+          termsVersion: input.agreement.termsVersion || 'v1',
+          ipAddress: input.agreement.ipAddress || null,
+          userAgent: input.agreement.userAgent || null,
+        });
+      }
+
+      return loan;
     });
-
-    // ---- Record the customer's agreement acceptance, if provided ----
-    if (input.agreement) {
-      await db.insert(loanAgreements).values({
-        loanId: loan.id,
-        orderId: input.orderId ?? null,
-        customerId: input.customerId,
-        agentId: input.agreement.agentId ?? null,
-        termsVersion: input.agreement.termsVersion || 'v1',
-        ipAddress: input.agreement.ipAddress || null,
-        userAgent: input.agreement.userAgent || null,
-      });
-    }
-
-    return loan;
   }
 
   // ============================================
