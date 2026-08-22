@@ -473,8 +473,13 @@
         <option value="loan_repayment">PayGo repayment</option>
         <option value="manual_adjustment">Manual adjustment</option>
       </select>
-      <input type="date" id="ledgerFromDate" title="From date" />
-      <input type="date" id="ledgerToDate" title="To date" />
+      <!-- autocomplete="off": Firefox was remembering/pre-filling a
+           previously-typed date here across sessions, silently filtering
+           out today's entries without the user ever touching these
+           fields. See the explicit reset in the nav click handler below
+           too — that's the real fix; this is defense-in-depth. -->
+      <input type="date" id="ledgerFromDate" title="From date" autocomplete="off" />
+      <input type="date" id="ledgerToDate" title="To date" autocomplete="off" />
       <button class="btn btn-ghost btn-sm" onclick="exportCsv('ledger')">⬇ Export CSV</button>
     </div>
     <div class="card">
@@ -722,7 +727,17 @@ const MAX_ATTEMPTS = 5;
       if (btn.dataset.page === 'loansPage') loadLoans();
       if (btn.dataset.page === 'agentsPage') loadAgents();
       if (btn.dataset.page === 'customersPage') loadCustomers();
-      if (btn.dataset.page === 'ledgerPage') loadLedger();
+      if (btn.dataset.page === 'ledgerPage') {
+        // Explicitly blank these before loading — a browser can silently
+        // pre-fill a date input from a previous visit (same autofill
+        // behavior we fixed on the agent registration form), and if we
+        // trusted whatever's already in the DOM, that stale date would
+        // quietly filter out everything without the user ever touching
+        // the field. Every fresh visit to this tab starts unfiltered.
+        document.getElementById('ledgerFromDate').value = '';
+        document.getElementById('ledgerToDate').value = '';
+        loadLedger();
+      }
     });
   });
 
