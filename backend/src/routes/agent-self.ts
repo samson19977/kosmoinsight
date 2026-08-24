@@ -7,6 +7,7 @@ import { AgentService } from '../services/agent.service';
 import { LoanService } from '../services/loan.service';
 import { db } from '../config/database';
 import { customers, installments, loans, agents } from '../db/schema';
+import { resolveNationalIdUpdate } from '../lib/fieldCrypto';
 import { createOrderCore } from './orders';
 import { createRateLimiter } from '../lib/rateLimit';
 import { parsePageParams, paginatedResponse, sendCsv } from '../lib/listQuery';
@@ -179,7 +180,7 @@ router.post('/customers', validate(agentCustomerSchema), async (req: AgentAuthed
           sector: input.sector || existing.sector,
           cell: input.cell || existing.cell,
           village: input.village || existing.village,
-          nationalId: input.nationalId || existing.nationalId,
+          ...resolveNationalIdUpdate(input.nationalId, existing.nationalId, existing.nationalIdHash),
           agentId: req.agent!.id,
           updatedAt: new Date(),
         })
@@ -200,7 +201,7 @@ router.post('/customers', validate(agentCustomerSchema), async (req: AgentAuthed
         sector: input.sector || null,
         cell: input.cell || null,
         village: input.village || null,
-        nationalId: input.nationalId || null,
+        ...resolveNationalIdUpdate(input.nationalId, null, null),
         agentId: req.agent!.id,
         source: 'agent',
       })

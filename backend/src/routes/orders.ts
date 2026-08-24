@@ -11,6 +11,7 @@ import { PaymentReconciliationService } from '../services/paymentReconciliation.
 import { requireAdmin } from '../middleware/auth';
 import { db } from '../config/database';
 import { orders, orderItems, customers, products } from '../db/schema';
+import { resolveNationalIdUpdate } from '../lib/fieldCrypto';
 
 const router = Router();
 
@@ -142,7 +143,7 @@ export async function createOrderCore(input: {
           sector: customer.sector || existingCustomer.sector,
           cell: customer.cell || existingCustomer.cell,
           village: customer.village || existingCustomer.village,
-          nationalId: customer.nationalId || existingCustomer.nationalId,
+          ...resolveNationalIdUpdate(customer.nationalId, existingCustomer.nationalId, existingCustomer.nationalIdHash),
           agentId: agentId ?? existingCustomer.agentId, // first agent attribution wins; doesn't get reassigned by a later order
           updatedAt: new Date(),
         })
@@ -159,7 +160,7 @@ export async function createOrderCore(input: {
           sector: customer.sector || null,
           cell: customer.cell || null,
           village: customer.village || null,
-          nationalId: customer.nationalId || null,
+          ...resolveNationalIdUpdate(customer.nationalId, null, null),
           agentId,
           source: channel,
         })

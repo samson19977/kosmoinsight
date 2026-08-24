@@ -9,6 +9,7 @@
     "start": "node dist/app.js",
     "db:push": "drizzle-kit push",
     "db:seed": "ts-node src/db/seed.ts",
+    "encrypt-national-ids": "ts-node src/scripts/encrypt-existing-national-ids.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio"

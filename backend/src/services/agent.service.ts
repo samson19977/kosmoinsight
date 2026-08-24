@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx';
 import { db, DbClient } from '../config/database';
 import { agents, agentCommissions, customers, settings, orders, orderItems, loans, installments } from '../db/schema';
 import { LedgerService } from './ledger.service';
+import { encryptField, hashForLookup } from '../lib/fieldCrypto';
 import type { AgentInput, AgentUpdateInput, AgentRegisterInput } from '../lib/validation/schemas';
 
 const DEFAULT_COMMISSION_BPS = 1500; // 15% — used only if the `settings` row is somehow missing
@@ -63,7 +64,12 @@ export class AgentService {
         phone: input.phone,
         email: input.email.toLowerCase(),
         passwordHash,
-        nationalId: input.nationalId,
+        // National ID is a real government ID number — encrypted at rest
+        // (AES-256-GCM), never stored plaintext. nationalIdHash is a
+        // deterministic lookup index for exact-match search, since the
+        // encrypted value itself can't be searched in SQL.
+        nationalId: input.nationalId ? encryptField(input.nationalId) : null,
+        nationalIdHash: input.nationalId ? hashForLookup(input.nationalId) : null,
         district: input.district,
         sector: input.sector,
         cell: input.cell,

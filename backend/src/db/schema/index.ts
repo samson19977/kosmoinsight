@@ -42,7 +42,13 @@ export const customers = pgTable('customers', {
   sector: varchar('sector', { length: 100 }),
   cell: varchar('cell', { length: 100 }),
   village: varchar('village', { length: 100 }),
-  nationalId: varchar('national_id', { length: 20 }),
+  // Stores the ENCRYPTED national ID (AES-256-GCM, see src/lib/fieldCrypto.ts)
+  // — never the plaintext value. Widened from 20 to 255 chars to fit the
+  // "<iv>:<authTag>:<ciphertext>" envelope. nationalIdHash is a
+  // deterministic HMAC used for exact-match lookup, since the encrypted
+  // value itself can't be searched or compared in SQL.
+  nationalId: varchar('national_id', { length: 255 }),
+  nationalIdHash: varchar('national_id_hash', { length: 64 }),
   // Which reseller/agent this customer belongs to, if any. An agent's own
   // customers earn that agent commission on every sale, regardless of
   // whether the sale itself happens through the agent or the storefront.
@@ -239,7 +245,10 @@ export const agents = pgTable('agents', {
   phone: varchar('phone', { length: 20 }).notNull().unique(),
   email: varchar('email', { length: 100 }).unique(),
   passwordHash: varchar('password_hash', { length: 255 }), // null for spreadsheet-imported agents until they set one
-  nationalId: varchar('national_id', { length: 20 }),
+  // Same encrypted-at-rest treatment as customers.nationalId — see
+  // src/lib/fieldCrypto.ts and the comment on that field for why.
+  nationalId: varchar('national_id', { length: 255 }),
+  nationalIdHash: varchar('national_id_hash', { length: 64 }),
   district: varchar('district', { length: 100 }),
   sector: varchar('sector', { length: 100 }),
   cell: varchar('cell', { length: 100 }),

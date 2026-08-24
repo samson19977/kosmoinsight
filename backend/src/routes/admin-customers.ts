@@ -5,22 +5,27 @@ import { db } from '../config/database';
 import { customers, orders, loans, agents } from '../db/schema';
 import { AuditService } from '../services/audit.service';
 import { parsePageParams, paginatedResponse, sendCsv } from '../lib/listQuery';
+import { decryptField, hashForLookup, maskNationalId } from '../lib/fieldCrypto';
 
 const router = Router();
 router.use(requireAdmin);
 
 // Builds the shared WHERE clause for the paginated list and the CSV export.
-// Search matches first/last name, phone, email, or national ID.
+// Search matches first/last name, phone, or email via ILIKE as before.
+// National ID is DIFFERENT: it's encrypted at rest, so there's no way to
+// substring-match it in SQL anymore — ILIKE against ciphertext would just
+// never match anything real. Instead: if the search term is exactly 16
+// digits (a complete national ID), match it via an exact-match lookup
+// against the deterministic hash column. Partial ID search is no longer
+// possible — a reasonable trade-off for not storing IDs in plaintext.
 function buildCustomersFilter(search: string) {
   if (!search) return undefined;
   const like = `%${search}%`;
-  return or(
-    ilike(customers.firstName, like),
-    ilike(customers.lastName, like),
-    ilike(customers.phone, like),
-    ilike(customers.email, like),
-    ilike(customers.nationalId, like)
-  );
+  const clauses = [ilike(customers.firstName, like), ilike(customers.lastName, like), ilike(customers.phone, like), ilike(customers.email, like)];
+  if (/^\d{16}$/.test(search)) {
+    clauses.push(eq(customers.nationalIdHash, hashForLookup(search)));
+  }
+  return or(...clauses);
 }
 
 function selectCustomerColumns() {
@@ -34,13 +39,27 @@ function selectCustomerColumns() {
     sector: customers.sector,
     cell: customers.cell,
     village: customers.village,
-    nationalId: customers.nationalId,
+    nationalId: customers.nationalId, // encrypted — never send this raw to a client, see helpers below
     agentId: customers.agentId,
     agentName: agents.name,
     acquisitionChannel: customers.acquisitionChannel,
     source: customers.source,
     createdAt: customers.createdAt,
   };
+}
+
+// For list/CSV views: show only the last 4 digits. Browsing a list of many
+// customers doesn't need the full national ID visible for each row — that's
+// unnecessary exposure of a real government ID number. Full ID is only ever
+// decrypted for a single specific customer, in the detail view below.
+function maskRowNationalId<T extends { nationalId: string | null }>(row: T): T {
+  if (!row.nationalId) return row;
+  try {
+    return { ...row, nationalId: maskNationalId(decryptField(row.nationalId)) };
+  } catch (err) {
+    console.error(`Failed to decrypt nationalId for masking (customer row):`, err);
+    return { ...row, nationalId: '—' };
+  }
 }
 
 // ============================================
@@ -65,14 +84,17 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
       db.select({ count: sql<number>`count(*)::int` }).from(customers).where(where),
     ]);
 
-    res.json(paginatedResponse(rows, count, params));
+    res.json(paginatedResponse(rows.map(maskRowNationalId), count, params));
   } catch (error) {
     console.error('List customers error:', error);
     res.status(500).json({ error: 'Failed to load customers' });
   }
 });
 
-// GET /api/admin/customers/export/csv — same search filter, all matching rows.
+// GET /api/admin/customers/export/csv — same search filter, all matching
+// rows. National ID is masked here too — a CSV file is easy to copy,
+// email, or leave on a shared drive, so bulk-exporting full government ID
+// numbers is its own exposure risk even when the underlying storage is encrypted.
 router.get('/export/csv', async (req: Request, res: Response): Promise<void> => {
   try {
     const params = parsePageParams(req.query);
@@ -87,7 +109,7 @@ router.get('/export/csv', async (req: Request, res: Response): Promise<void> => 
       res,
       `customers-${new Date().toISOString().slice(0, 10)}.csv`,
       ['firstName', 'lastName', 'phone', 'email', 'district', 'sector', 'cell', 'village', 'nationalId', 'agentName', 'source', 'createdAt'],
-      rows.map((c) => ({ ...c, createdAt: c.createdAt?.toISOString() }))
+      rows.map(maskRowNationalId).map((c) => ({ ...c, createdAt: c.createdAt?.toISOString() }))
     );
   } catch (error) {
     console.error('Export customers CSV error:', error);
@@ -95,7 +117,11 @@ router.get('/export/csv', async (req: Request, res: Response): Promise<void> => 
   }
 });
 
-// GET /api/admin/customers/:id — full detail for one customer
+// GET /api/admin/customers/:id — full detail for one customer. This is the
+// ONE place the full, unmasked national ID is ever decrypted and returned
+// — there's a legitimate specific need here (e.g. verifying identity
+// against a PayGo application for this one customer), unlike the list/CSV
+// views above which don't need it per-row.
 router.get('/:id', async (req: Request, res: Response): Promise<void> => {
   try {
     const id = Number(req.params.id);
@@ -104,9 +130,19 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
       res.status(404).json({ error: 'Customer not found' });
       return;
     }
+
+    let decryptedNationalId: string | null = null;
+    if (customer.nationalId) {
+      try {
+        decryptedNationalId = decryptField(customer.nationalId);
+      } catch (err) {
+        console.error(`Failed to decrypt nationalId for customer ${id}:`, err);
+      }
+    }
+
     const customerOrders = await db.select().from(orders).where(eq(orders.customerId, id)).orderBy(desc(orders.createdAt));
     const customerLoans = await db.select().from(loans).where(eq(loans.customerId, id)).orderBy(desc(loans.createdAt));
-    res.json({ success: true, customer, orders: customerOrders, loans: customerLoans });
+    res.json({ success: true, customer: { ...customer, nationalId: decryptedNationalId }, orders: customerOrders, loans: customerLoans });
   } catch (error) {
     console.error('Customer detail error:', error);
     res.status(500).json({ error: 'Failed to load customer' });
