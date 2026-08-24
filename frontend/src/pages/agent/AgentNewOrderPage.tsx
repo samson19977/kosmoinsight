@@ -172,15 +172,15 @@ const AgentNewOrderPage: React.FC = () => {
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-3">
-                <input className={inputCls} placeholder="First name *" value={newCustomer.firstName} onChange={(e) => setNewCustomer((f) => ({ ...f, firstName: e.target.value }))} />
-                <input className={inputCls} placeholder="Last name *" value={newCustomer.lastName} onChange={(e) => setNewCustomer((f) => ({ ...f, lastName: e.target.value }))} />
-                <input className={inputCls} placeholder="Phone *" value={newCustomer.phone} onChange={(e) => setNewCustomer((f) => ({ ...f, phone: e.target.value }))} />
-                <input className={inputCls} placeholder="Email" value={newCustomer.email} onChange={(e) => setNewCustomer((f) => ({ ...f, email: e.target.value }))} />
-                <input className={inputCls} placeholder="National ID (for PayGo)" value={newCustomer.nationalId} onChange={(e) => setNewCustomer((f) => ({ ...f, nationalId: e.target.value }))} maxLength={16} />
-                <input className={inputCls} placeholder="District" value={newCustomer.district} onChange={(e) => setNewCustomer((f) => ({ ...f, district: e.target.value }))} />
-                <input className={inputCls} placeholder="Sector" value={newCustomer.sector} onChange={(e) => setNewCustomer((f) => ({ ...f, sector: e.target.value }))} />
-                <input className={inputCls} placeholder="Cell" value={newCustomer.cell} onChange={(e) => setNewCustomer((f) => ({ ...f, cell: e.target.value }))} />
-                <input className={inputCls} placeholder="Village" value={newCustomer.village} onChange={(e) => setNewCustomer((f) => ({ ...f, village: e.target.value }))} />
+                <input className={inputCls} placeholder="First name *" value={newCustomer.firstName} onChange={(e) => setNewCustomer((f) => ({ ...f, firstName: e.target.value }))} autoComplete="off" />
+                <input className={inputCls} placeholder="Last name *" value={newCustomer.lastName} onChange={(e) => setNewCustomer((f) => ({ ...f, lastName: e.target.value }))} autoComplete="off" />
+                <input className={inputCls} placeholder="Phone *" value={newCustomer.phone} onChange={(e) => setNewCustomer((f) => ({ ...f, phone: e.target.value }))} autoComplete="off" />
+                <input className={inputCls} placeholder="Email" value={newCustomer.email} onChange={(e) => setNewCustomer((f) => ({ ...f, email: e.target.value }))} autoComplete="off" />
+                <input className={inputCls} placeholder="National ID (for PayGo)" value={newCustomer.nationalId} onChange={(e) => setNewCustomer((f) => ({ ...f, nationalId: e.target.value }))} maxLength={16} autoComplete="off" />
+                <input className={inputCls} placeholder="District" value={newCustomer.district} onChange={(e) => setNewCustomer((f) => ({ ...f, district: e.target.value }))} autoComplete="off" />
+                <input className={inputCls} placeholder="Sector" value={newCustomer.sector} onChange={(e) => setNewCustomer((f) => ({ ...f, sector: e.target.value }))} autoComplete="off" />
+                <input className={inputCls} placeholder="Cell" value={newCustomer.cell} onChange={(e) => setNewCustomer((f) => ({ ...f, cell: e.target.value }))} autoComplete="off" />
+                <input className={inputCls} placeholder="Village" value={newCustomer.village} onChange={(e) => setNewCustomer((f) => ({ ...f, village: e.target.value }))} autoComplete="off" />
               </div>
             )}
           </div>

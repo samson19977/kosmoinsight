@@ -51,21 +51,21 @@ const NewCustomerModal: React.FC<{ onClose: () => void; onCreated: () => void }>
         </div>
         <form onSubmit={submit} className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
-            <input className={inputCls} placeholder="First name *" value={form.firstName} onChange={set('firstName')} />
-            <input className={inputCls} placeholder="Last name *" value={form.lastName} onChange={set('lastName')} />
+            <input className={inputCls} placeholder="First name *" value={form.firstName} onChange={set('firstName')} autoComplete="off" />
+            <input className={inputCls} placeholder="Last name *" value={form.lastName} onChange={set('lastName')} autoComplete="off" />
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <input className={inputCls} placeholder="Phone (07XXXXXXXX) *" value={form.phone} onChange={set('phone')} />
-            <input className={inputCls} placeholder="Email" value={form.email} onChange={set('email')} />
+            <input className={inputCls} placeholder="Phone (07XXXXXXXX) *" value={form.phone} onChange={set('phone')} autoComplete="off" />
+            <input className={inputCls} placeholder="Email" value={form.email} onChange={set('email')} autoComplete="off" />
           </div>
-          <input className={inputCls} placeholder="National ID (16 digits, for PayGo)" value={form.nationalId} onChange={set('nationalId')} maxLength={16} />
+          <input className={inputCls} placeholder="National ID (16 digits, for PayGo)" value={form.nationalId} onChange={set('nationalId')} maxLength={16} autoComplete="off" />
           <div className="grid grid-cols-2 gap-3">
-            <input className={inputCls} placeholder="District" value={form.district} onChange={set('district')} />
-            <input className={inputCls} placeholder="Sector" value={form.sector} onChange={set('sector')} />
+            <input className={inputCls} placeholder="District" value={form.district} onChange={set('district')} autoComplete="off" />
+            <input className={inputCls} placeholder="Sector" value={form.sector} onChange={set('sector')} autoComplete="off" />
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <input className={inputCls} placeholder="Cell" value={form.cell} onChange={set('cell')} />
-            <input className={inputCls} placeholder="Village" value={form.village} onChange={set('village')} />
+            <input className={inputCls} placeholder="Cell" value={form.cell} onChange={set('cell')} autoComplete="off" />
+            <input className={inputCls} placeholder="Village" value={form.village} onChange={set('village')} autoComplete="off" />
           </div>
           <button type="submit" disabled={saving} className="w-full bg-primary-600 hover:bg-primary-700 disabled:opacity-60 text-white font-semibold py-3 rounded-xl transition-colors flex items-center justify-center gap-2">
             {saving ? <Loader2 className="animate-spin" size={16} /> : <UserPlus size={16} />}

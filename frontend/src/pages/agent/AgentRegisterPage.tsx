@@ -121,22 +121,22 @@ const AgentRegisterPage: React.FC = () => {
           <form onSubmit={handleSubmit} autoComplete="off" className="bg-white rounded-2xl shadow-card p-6 space-y-5">
             <div className="grid grid-cols-2 gap-4">
               <Field label="First Name" required error={errors.firstName}>
-                <input className={inputCls} value={form.firstName} onChange={set('firstName')} placeholder="Jean" />
+                <input className={inputCls} value={form.firstName} onChange={set('firstName')} placeholder="Jean" autoComplete="off" />
               </Field>
               <Field label="Last Name" required error={errors.lastName}>
-                <input className={inputCls} value={form.lastName} onChange={set('lastName')} placeholder="Uwimana" />
+                <input className={inputCls} value={form.lastName} onChange={set('lastName')} placeholder="Uwimana" autoComplete="off" />
               </Field>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <Field label="Phone" required error={errors.phone}>
-                <input className={inputCls} value={form.phone} onChange={set('phone')} placeholder="0788123456" />
+                <input className={inputCls} value={form.phone} onChange={set('phone')} placeholder="0788123456" autoComplete="off" />
               </Field>
               <Field label="Email" required error={errors.email}>
                 <input className={inputCls} type="email" autoComplete="off" value={form.email} onChange={set('email')} placeholder="you@example.com" />
               </Field>
             </div>
             <Field label="National ID" required error={errors.nationalId}>
-              <input className={inputCls} value={form.nationalId} onChange={set('nationalId')} placeholder="16-digit National ID" maxLength={16} />
+              <input className={inputCls} value={form.nationalId} onChange={set('nationalId')} placeholder="16-digit National ID" maxLength={16} autoComplete="off" />
             </Field>
 
             <div className="grid grid-cols-2 gap-4">
@@ -147,15 +147,15 @@ const AgentRegisterPage: React.FC = () => {
                 </select>
               </Field>
               <Field label="Sector" required error={errors.sector}>
-                <input className={inputCls} value={form.sector} onChange={set('sector')} />
+                <input className={inputCls} value={form.sector} onChange={set('sector')} autoComplete="off" />
               </Field>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <Field label="Cell" required error={errors.cell}>
-                <input className={inputCls} value={form.cell} onChange={set('cell')} />
+                <input className={inputCls} value={form.cell} onChange={set('cell')} autoComplete="off" />
               </Field>
               <Field label="Village" required error={errors.village}>
-                <input className={inputCls} value={form.village} onChange={set('village')} />
+                <input className={inputCls} value={form.village} onChange={set('village')} autoComplete="off" />
               </Field>
             </div>
 
