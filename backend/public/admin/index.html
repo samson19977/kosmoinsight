@@ -288,7 +288,7 @@
       <button class="btn btn-ghost" onclick="loadOrders()">⟳ Refresh</button>
     </div>
     <div class="toolbar">
-      <input type="text" class="toolbar-search" id="ordersSearch" placeholder="Search order #, customer, phone…" />
+      <input type="text" class="toolbar-search" id="ordersSearch" placeholder="Search order #, customer, phone…" autocomplete="off" />
       <select id="ordersStatusFilter">
         <option value="">All order statuses</option>
         <option value="pending">Pending</option>
@@ -340,7 +340,7 @@
       </div>
     </div>
     <div class="toolbar">
-      <input type="text" class="toolbar-search" id="loansSearch" placeholder="Search loan #, customer, phone…" />
+      <input type="text" class="toolbar-search" id="loansSearch" placeholder="Search loan #, customer, phone…" autocomplete="off" />
       <select id="loansStatusFilter">
         <option value="">All statuses</option>
         <option value="active">Active</option>
@@ -376,7 +376,7 @@
       <div style="display:flex;gap:8px;align-items:center;">
         <div style="display:flex;align-items:center;gap:6px;background:#fff;border:1px solid #e4e4e7;border-radius:10px;padding:6px 10px;">
           <label style="font-size:12px;color:#8a8f9c;">Default commission</label>
-          <input id="defaultCommissionPct" type="number" min="0" max="50" step="0.5" style="width:56px;border:none;font-size:13px;outline:none;" />
+          <input id="defaultCommissionPct" type="number" min="0" max="50" step="0.5" style="width:56px;border:none;font-size:13px;outline:none;" autocomplete="off" />
           <span style="font-size:12px;color:#8a8f9c;">%</span>
           <button class="btn btn-ghost btn-sm" onclick="saveDefaultCommission()">Save</button>
         </div>
@@ -386,7 +386,7 @@
     </div>
     <div class="kpis" id="agentsPageKpis"></div>
     <div class="toolbar">
-      <input type="text" class="toolbar-search" id="agentsSearch" placeholder="Search name, code, phone, email…" />
+      <input type="text" class="toolbar-search" id="agentsSearch" placeholder="Search name, code, phone, email…" autocomplete="off" />
       <select id="agentsStatusFilter">
         <option value="">All statuses</option>
         <option value="pending">Pending</option>
@@ -426,7 +426,7 @@
       <button class="btn btn-ghost" onclick="loadCustomers()">⟳ Refresh</button>
     </div>
     <div class="toolbar">
-      <input type="text" class="toolbar-search" id="customersSearch" placeholder="Search name, phone, email, national ID…" />
+      <input type="text" class="toolbar-search" id="customersSearch" placeholder="Search name, phone, email, national ID…" autocomplete="off" />
       <button class="btn btn-ghost btn-sm" onclick="exportCsv('customers')">⬇ Export CSV</button>
     </div>
     <div class="card">
@@ -517,17 +517,17 @@
   <div class="modal">
     <h3>New PayGo Installment Plan</h3>
     <label>Customer ID</label>
-    <input type="number" id="loanCustomerId" min="1" placeholder="e.g. 12 — from the customer's order" />
+    <input type="number" id="loanCustomerId" min="1" placeholder="e.g. 12 — from the customer's order" autocomplete="off" />
     <label>Order ID (optional)</label>
-    <input type="number" id="loanOrderId" min="1" placeholder="Links this plan to an existing order" />
+    <input type="number" id="loanOrderId" min="1" placeholder="Links this plan to an existing order" autocomplete="off" />
     <label>Principal (RWF)</label>
-    <input type="number" id="loanPrincipal" min="1000" placeholder="e.g. 30000" />
+    <input type="number" id="loanPrincipal" min="1000" placeholder="e.g. 30000" autocomplete="off" />
     <label>Down payment (RWF)</label>
-    <input type="number" id="loanDownPayment" min="0" value="0" />
+    <input type="number" id="loanDownPayment" min="0" value="0" autocomplete="off" />
     <label>Interest rate (%)</label>
-    <input type="number" id="loanInterestPct" min="0" max="50" step="0.5" value="5" />
+    <input type="number" id="loanInterestPct" min="0" max="50" step="0.5" value="5" autocomplete="off" />
     <label>Term (months)</label>
-    <input type="number" id="loanTermMonths" min="1" max="24" value="6" />
+    <input type="number" id="loanTermMonths" min="1" max="24" value="6" autocomplete="off" />
     <label>Guarantor type</label>
     <select id="loanGuarantorType">
       <option value="none">None</option>
@@ -536,9 +536,9 @@
       <option value="individual">Individual</option>
     </select>
     <label>Guarantor name (optional)</label>
-    <input type="text" id="loanGuarantorName" placeholder="e.g. GS Kigali Parents' Association" />
+    <input type="text" id="loanGuarantorName" placeholder="e.g. GS Kigali Parents' Association" autocomplete="off" />
     <label>Guarantor phone (optional)</label>
-    <input type="text" id="loanGuarantorPhone" placeholder="0788123456" />
+    <input type="text" id="loanGuarantorPhone" placeholder="0788123456" autocomplete="off" />
     <div class="modal-btns">
       <button class="btn btn-ghost" onclick="closeNewLoanModal()">Cancel</button>
       <button class="btn btn-teal" id="saveLoanBtn" onclick="saveNewLoan()">Create loan</button>
@@ -566,7 +566,7 @@
   <div class="modal">
     <h3>Record Installment Payment</h3>
     <label>Amount (RWF)</label>
-    <input type="number" id="payAmount" min="1" />
+    <input type="number" id="payAmount" min="1" autocomplete="off" />
     <label>Method</label>
     <select id="payMethod">
       <option value="momo">Mobile Money</option>
@@ -575,9 +575,9 @@
       <option value="agent">Field agent</option>
     </select>
     <label>Phone (optional)</label>
-    <input type="text" id="payPhone" placeholder="0788123456" />
+    <input type="text" id="payPhone" placeholder="0788123456" autocomplete="off" />
     <label>Note (optional)</label>
-    <input type="text" id="payNote" placeholder="e.g. Paid at kiosk" />
+    <input type="text" id="payNote" placeholder="e.g. Paid at kiosk" autocomplete="off" />
     <div class="modal-btns">
       <button class="btn btn-ghost" onclick="closePayInstallmentModal()">Cancel</button>
       <button class="btn btn-teal" id="savePayBtn" onclick="savePayInstallment()">Save payment</button>
@@ -588,9 +588,9 @@
   <div class="modal">
     <h3 id="modalProductName">Update Stock</h3>
     <label>Current stock</label>
-    <input type="number" id="currentStockInput" disabled />
+    <input type="number" id="currentStockInput" disabled autocomplete="off" />
     <label>New stock level</label>
-    <input type="number" id="newStockInput" min="0" placeholder="e.g. 50" />
+    <input type="number" id="newStockInput" min="0" placeholder="e.g. 50" autocomplete="off" />
     <label>Reason</label>
     <select id="stockReason">
       <option value="restock">Restock (received new inventory)</option>
@@ -599,7 +599,7 @@
       <option value="return">Return (customer return)</option>
     </select>
     <label>Note (optional)</label>
-    <input type="text" id="stockNote" placeholder="e.g. Batch #12 received" />
+    <input type="text" id="stockNote" placeholder="e.g. Batch #12 received" autocomplete="off" />
     <div class="modal-btns">
       <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
       <button class="btn btn-teal" id="saveStockBtn" onclick="saveStock()">Save</button>
@@ -628,7 +628,7 @@
     <label>Region (optional)</label>
     <input type="text" id="newAgentRegion" autocomplete="off" placeholder="e.g. Kigali" />
     <label>Commission rate (%)</label>
-    <input type="number" id="newAgentCommissionPct" min="0" max="50" step="0.5" value="15" />
+    <input type="number" id="newAgentCommissionPct" min="0" max="50" step="0.5" value="15" autocomplete="off" />
     <p style="font-size:12px;color:#8a8f9c;margin:2px 0 0;">This agent is created active with no password set — use "Reset Password" on their row afterwards to give them login credentials.</p>
     <div class="modal-btns">
       <button class="btn btn-ghost" onclick="closeNewAgentModal()">Cancel</button>
@@ -671,7 +671,7 @@
   <div class="modal">
     <h3 id="reasonModalTitle">Reason</h3>
     <label>Reason (optional, shared with the agent)</label>
-    <input type="text" id="reasonInput" placeholder="e.g. Duplicate registration" />
+    <input type="text" id="reasonInput" placeholder="e.g. Duplicate registration" autocomplete="off" />
     <div class="modal-btns">
       <button class="btn btn-ghost" onclick="closeReasonModal()">Cancel</button>
       <button class="btn btn-teal" id="submitReasonBtn" onclick="submitReasonModal()">Confirm</button>
@@ -684,7 +684,7 @@
   <div class="modal">
     <h3>Reset Agent Password</h3>
     <label>New password</label>
-    <input type="text" id="resetAgentPasswordInput" placeholder="At least 8 characters" />
+    <input type="text" id="resetAgentPasswordInput" placeholder="At least 8 characters" autocomplete="new-password" />
     <div class="modal-btns">
       <button class="btn btn-ghost" onclick="closeResetAgentPasswordModal()">Cancel</button>
       <button class="btn btn-teal" id="saveResetAgentPasswordBtn" onclick="saveResetAgentPassword()">Reset password</button>

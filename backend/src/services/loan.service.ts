@@ -4,6 +4,7 @@ import { loans, installments, loanTransactions, customers, payments, loanAgreeme
 import { EmailService } from './email.service';
 import { MomoService } from './momo.service';
 import { LedgerService } from './ledger.service';
+import { SmsService } from './sms.service';
 
 // ============================================
 // Business rules — tunable via env vars so ops can adjust policy without
@@ -524,10 +525,11 @@ export class LoanService {
       if (!customer) continue;
 
       const daysUntilDue = Math.max(0, Math.ceil((inst.dueDate.getTime() - now.getTime()) / (24 * 60 * 60 * 1000)));
+      const customerName = `${customer.firstName} ${customer.lastName}`;
 
       if (customer.email) {
         await EmailService.sendInstallmentReminder({
-          customerName: `${customer.firstName} ${customer.lastName}`,
+          customerName,
           customerEmail: customer.email,
           loanNumber: loan.loanNumber,
           installmentNumber: inst.installmentNumber,
@@ -536,6 +538,16 @@ export class LoanService {
           daysUntilDue,
         }).catch((err) => console.error('Installment reminder email error (non-fatal):', err));
       }
+
+      // SMS is sent unconditionally (every customer has a phone; email is
+      // optional) — this is the channel that actually reaches most
+      // customers, not a backup for when email is unavailable.
+      await SmsService.sendInstallmentReminder(customer.phone, {
+        customerName,
+        loanNumber: loan.loanNumber,
+        amountDueRwf: inst.amountDueRwf,
+        daysUntilDue,
+      }).catch((err) => console.error('Installment reminder SMS error (non-fatal):', err));
 
       await db
         .update(installments)
@@ -582,20 +594,33 @@ export class LoanService {
         penalized++;
       }
 
-      // ---- One-time overdue alert email ----
+      // ---- One-time overdue alert: email + SMS ----
       if (!inst.overdueAlertSentAt) {
         const [loan] = await db.select().from(loans).where(eq(loans.id, inst.loanId));
         const [customer] = loan ? await db.select().from(customers).where(eq(customers.id, loan.customerId)) : [];
-        if (loan && customer?.email) {
+        if (loan && customer) {
           const amountOwedRwf = outstanding + (inst.penaltyRwf || 0);
-          await EmailService.sendInstallmentOverdueAlert({
-            customerName: `${customer.firstName} ${customer.lastName}`,
-            customerEmail: customer.email,
+          const customerName = `${customer.firstName} ${customer.lastName}`;
+
+          if (customer.email) {
+            await EmailService.sendInstallmentOverdueAlert({
+              customerName,
+              customerEmail: customer.email,
+              loanNumber: loan.loanNumber,
+              installmentNumber: inst.installmentNumber,
+              amountOwedRwf,
+              daysOverdue,
+            }).catch((err) => console.error('Overdue alert email error (non-fatal):', err));
+          }
+
+          // Same reasoning as the reminder above — SMS reaches every
+          // customer, not just the ones who provided an email.
+          await SmsService.sendOverdueAlert(customer.phone, {
+            customerName,
             loanNumber: loan.loanNumber,
-            installmentNumber: inst.installmentNumber,
             amountOwedRwf,
             daysOverdue,
-          }).catch((err) => console.error('Overdue alert email error (non-fatal):', err));
+          }).catch((err) => console.error('Overdue alert SMS error (non-fatal):', err));
         }
         await db
           .update(installments)
