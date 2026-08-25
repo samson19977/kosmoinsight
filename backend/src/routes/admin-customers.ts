@@ -117,6 +117,81 @@ router.get('/export/csv', async (req: Request, res: Response): Promise<void> => 
   }
 });
 
+// ============================================
+// GET /api/admin/customers/duplicate-national-ids — flags any national ID
+// that appears on MORE THAN ONE customer record. This is a fraud-review
+// tool, not an automatic block: a duplicate could be an innocent data-entry
+// mistake (an agent re-registered someone who forgot they already had an
+// account) OR it could be someone deliberately creating a second profile
+// to get around the one-active-loan-at-a-time rule — LoanService now
+// blocks that specific attempt automatically (see the identity check in
+// createLoan), but this view lets an admin proactively spot and resolve
+// duplicates before anyone even tries.
+// ============================================
+router.get('/duplicate-national-ids', async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const duplicateHashes = await db
+      .select({ nationalIdHash: customers.nationalIdHash, count: sql<number>`count(*)::int` })
+      .from(customers)
+      .where(sql`${customers.nationalIdHash} IS NOT NULL`)
+      .groupBy(customers.nationalIdHash)
+      .having(sql`count(*) > 1`);
+
+    if (duplicateHashes.length === 0) {
+      res.json({ success: true, groups: [] });
+      return;
+    }
+
+    const hashes = duplicateHashes.map((d) => d.nationalIdHash!);
+    const rows = await db
+      .select({
+        id: customers.id,
+        firstName: customers.firstName,
+        lastName: customers.lastName,
+        phone: customers.phone,
+        nationalId: customers.nationalId,
+        nationalIdHash: customers.nationalIdHash,
+        agentName: agents.name,
+        createdAt: customers.createdAt,
+      })
+      .from(customers)
+      .leftJoin(agents, eq(customers.agentId, agents.id))
+      .where(sql`${customers.nationalIdHash} = ANY(${hashes})`);
+
+    // For each duplicated hash, check whether any of the customer records
+    // sharing it currently has an active/defaulted loan — that's the
+    // urgent case (a real attempt to bypass the sequencing rule, or
+    // already in progress), versus a duplicate with no loans yet
+    // (lower priority — worth merging/cleaning up, but not actively risky).
+    const groups = await Promise.all(
+      duplicateHashes.map(async (d) => {
+        const customersInGroup = rows.filter((r) => r.nationalIdHash === d.nationalIdHash);
+        const customerIds = customersInGroup.map((c) => c.id);
+        const loanRows = await db
+          .select({ id: loans.id, loanNumber: loans.loanNumber, status: loans.status, customerId: loans.customerId })
+          .from(loans)
+          .where(sql`${loans.customerId} = ANY(${customerIds})`);
+        const hasActiveLoan = loanRows.some((l) => l.status === 'active' || l.status === 'defaulted');
+
+        return {
+          maskedNationalId: customersInGroup[0]?.nationalId ? maskNationalId(decryptField(customersInGroup[0].nationalId)) : null,
+          customers: customersInGroup.map((c) => ({ id: c.id, firstName: c.firstName, lastName: c.lastName, phone: c.phone, agentName: c.agentName, createdAt: c.createdAt })),
+          loans: loanRows,
+          hasActiveLoan,
+        };
+      })
+    );
+
+    // Most urgent (has an active/defaulted loan under a duplicate) first
+    groups.sort((a, b) => Number(b.hasActiveLoan) - Number(a.hasActiveLoan));
+
+    res.json({ success: true, groups });
+  } catch (error) {
+    console.error('Duplicate national IDs error:', error);
+    res.status(500).json({ error: 'Failed to check for duplicate national IDs' });
+  }
+});
+
 // GET /api/admin/customers/:id — full detail for one customer. This is the
 // ONE place the full, unmasked national ID is ever decrypted and returned
 // — there's a legitimate specific need here (e.g. verifying identity
@@ -190,4 +265,6 @@ router.delete('/:id', async (req: AuthedRequest, res: Response): Promise<void> =
   }
 });
 
+
 export default router;
+

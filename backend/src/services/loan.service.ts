@@ -107,6 +107,41 @@ export class LoanService {
         );
       }
 
+      // ---- Same check, but by REAL IDENTITY, not just customer record ----
+      // The check above only looks at loans tied to THIS customerId. But
+      // nothing stops the same real person from ending up with two
+      // separate customer records (e.g. registered twice with different
+      // phone numbers, by mistake or deliberately, to get around the
+      // one-loan-at-a-time rule) — the customerId would legitimately be
+      // different, so the check above alone would miss it. National ID is
+      // the one identity marker that's actually the same person, so we
+      // also check for a blocking loan under ANY OTHER customer record
+      // that shares this person's national ID hash. Skipped entirely if
+      // this customer doesn't have a national ID on file (nothing to
+      // cross-check against).
+      const [thisCustomer] = await tx.select({ nationalIdHash: customers.nationalIdHash }).from(customers).where(eq(customers.id, input.customerId));
+      if (thisCustomer?.nationalIdHash) {
+        const sameIdentityCustomers = await tx
+          .select({ id: customers.id })
+          .from(customers)
+          .where(eq(customers.nationalIdHash, thisCustomer.nationalIdHash));
+        const otherCustomerIds = sameIdentityCustomers.map((c) => c.id).filter((id) => id !== input.customerId);
+
+        if (otherCustomerIds.length > 0) {
+          const loansUnderSameIdentity = await tx
+            .select({ id: loans.id, loanNumber: loans.loanNumber, status: loans.status, customerId: loans.customerId })
+            .from(loans)
+            .where(sql`${loans.customerId} = ANY(${otherCustomerIds})`)
+            .for('update');
+          const identityBlockingLoan = loansUnderSameIdentity.find((l) => l.status === 'active' || l.status === 'defaulted');
+          if (identityBlockingLoan) {
+            throw new Error(
+              `This national ID already has an unpaid installment plan (${identityBlockingLoan.loanNumber}) open under a different customer record (#${identityBlockingLoan.customerId}). This looks like the same person registered twice — resolve the duplicate record before opening a new loan.`
+            );
+          }
+        }
+      }
+
       const [loan] = await tx
         .insert(loans)
         .values({

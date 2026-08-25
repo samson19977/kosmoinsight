@@ -430,6 +430,14 @@
       <span class="section-title">Customers</span>
       <button class="btn btn-ghost" onclick="loadCustomers()">⟳ Refresh</button>
     </div>
+    <!-- Duplicate national ID review banner — hidden by default, only
+         shown when loadCustomers() finds duplicates. This is a fraud
+         review surface, not a blocker: a duplicate could be an innocent
+         re-registration or a deliberate attempt to open a second PayGo
+         loan under a different customer profile (which LoanService now
+         blocks automatically at the point of loan creation — this just
+         lets an admin catch and resolve it proactively). -->
+    <div id="duplicateIdBanner" style="display:none;background:#fff4e5;border:1px solid #f5c26b;border-radius:10px;padding:12px 16px;margin-bottom:14px;font-size:13px;color:#8a5a00;"></div>
     <div class="toolbar">
       <input type="text" class="toolbar-search" id="customersSearch" placeholder="Search name, phone, email, national ID…" autocomplete="off" />
       <button class="btn btn-ghost btn-sm" onclick="exportCsv('customers')">⬇ Export CSV</button>
@@ -1660,8 +1668,38 @@ async function loadCustomers() {
     if (!res.ok) throw new Error(data.error || 'Failed to load customers');
     renderCustomers(data.data || []);
     renderPager('customersPager', 'customers', data.pagination, loadCustomers);
+    checkDuplicateNationalIds();
   } catch (e) {
     showToast('⚠️ ' + e.message, true);
+  }
+}
+
+// Fraud-review check: any national ID shared by more than one customer
+// record. Runs alongside the normal customer list load — quiet when
+// clean, a clear banner when there's something worth an admin's attention.
+async function checkDuplicateNationalIds() {
+  const banner = document.getElementById('duplicateIdBanner');
+  try {
+    const res = await fetch(`${API_BASE}/admin/customers/duplicate-national-ids`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) { banner.style.display = 'none'; return; }
+    const data = await res.json();
+    const groups = data.groups || [];
+    if (groups.length === 0) { banner.style.display = 'none'; return; }
+
+    const urgent = groups.filter((g) => g.hasActiveLoan).length;
+    const rows = groups.map((g) => {
+      const names = g.customers.map((c) => `${c.firstName} ${c.lastName} (#${c.id})`).join(', ');
+      return `<div style="margin-top:6px;">${g.hasActiveLoan ? '🔴' : '⚪'} ID ending ${g.maskedNationalId || '—'} — ${names}${g.hasActiveLoan ? ' <strong>— has an active/defaulted PayGo loan</strong>' : ''}</div>`;
+    }).join('');
+
+    banner.innerHTML = `
+      <strong>⚠️ ${groups.length} national ID${groups.length > 1 ? 's' : ''} shared across multiple customer records${urgent ? ` — ${urgent} with an active loan, review urgently` : ''}.</strong>
+      This could be an innocent duplicate registration, or someone opening a second customer profile to work around the one-loan-at-a-time rule.
+      ${rows}
+    `;
+    banner.style.display = 'block';
+  } catch (e) {
+    banner.style.display = 'none';
   }
 }
 
