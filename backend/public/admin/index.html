@@ -78,6 +78,11 @@
   .toolbar-search:focus{border-color:var(--teal-dark);}
   .toolbar select{padding:9px 10px;border:1px solid var(--line);border-radius:10px;font-size:13px;background:#fff;outline:none;}
 
+  /* ── Key/value rows (customer & agent detail panels) ── */
+  .kv{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #eee;}
+  .kv:last-child{border-bottom:none;}
+  .kv span{color:var(--muted);}
+
   /* ── Pager ── */
   .pager{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:14px;padding-top:12px;border-top:1px solid var(--line);flex-wrap:wrap;}
   .pager .pager-info{font-size:12px;color:var(--muted);}
@@ -509,6 +514,24 @@
       <button class="btn btn-ghost" onclick="closeModal('deleteCustomerModal')">Cancel</button>
       <button class="btn" style="background:#c8394f;color:#fff;" id="confirmDeleteCustomerBtn">Delete</button>
     </div>
+  </div>
+</div>
+
+<!-- Customer Detail Modal -->
+<div class="modal-overlay" id="customerDetailModal">
+  <div class="modal" style="max-width:600px;max-height:85vh;overflow-y:auto;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+      <h3 id="customerDetailTitle" style="margin:0;">Customer detail</h3>
+      <button class="btn btn-ghost btn-sm" onclick="closeModal('customerDetailModal')">✕</button>
+    </div>
+    <!-- The full, unmasked national ID is shown ONLY here — on a single,
+         specifically-requested customer record — never in the list view
+         or CSV export, which show only the last 4 digits. This is the
+         intended "reveal on legitimate need" design: an admin opening one
+         customer's file for a real reason (e.g. verifying identity for a
+         PayGo application) sees the full ID; browsing a list of many
+         customers never exposes it in bulk. -->
+    <div id="customerDetailBody"></div>
   </div>
 </div>
 
@@ -1672,13 +1695,37 @@ async function viewCustomer(id) {
     if (res.status === 401) { logout(); return; }
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Failed to load customer');
-    const c = data.customer;
-    const orderCount = data.orders.length;
-    const loanCount = data.loans.length;
-    alert(`${c.firstName} ${c.lastName}\nPhone: ${c.phone}\nEmail: ${c.email || '—'}\nOrders on file: ${orderCount}\nLoans on file: ${loanCount}`);
+    renderCustomerDetail(data);
+    document.getElementById('customerDetailModal').classList.add('show');
   } catch (e) {
     showToast('⚠️ ' + e.message, true);
   }
+}
+
+function renderCustomerDetail(data) {
+  const c = data.customer;
+  document.getElementById('customerDetailTitle').textContent = `${c.firstName} ${c.lastName}`;
+
+  const location = [c.village, c.cell, c.sector, c.district].filter(Boolean).join(', ') || '—';
+  const idRow = c.nationalId
+    ? `<div class="kv"><span>National ID</span><strong style="font-family:monospace;letter-spacing:0.5px;">${c.nationalId}</strong></div>`
+    : `<div class="kv"><span>National ID</span><span style="color:var(--muted);">Not on file</span></div>`;
+
+  document.getElementById('customerDetailBody').innerHTML = `
+    <div style="background:#fafafa;border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:16px;font-size:14px;">
+      <div class="kv"><span>Phone</span><strong>${c.phone}</strong></div>
+      <div class="kv"><span>Email</span><strong>${c.email || '—'}</strong></div>
+      <div class="kv"><span>Location</span><strong>${location}</strong></div>
+      ${idRow}
+      <div class="kv"><span>Agent</span><strong>${c.agentName || '—'}</strong></div>
+      <div class="kv"><span>Source</span><strong>${c.source || 'order'}</strong></div>
+      <div class="kv"><span>Customer since</span><strong>${c.createdAt ? new Date(c.createdAt).toLocaleDateString() : '-'}</strong></div>
+    </div>
+    <h4 style="margin:14px 0 6px;font-size:13px;color:#8a8f9c;text-transform:uppercase;">Orders (${data.orders.length})</h4>
+    ${data.orders.length ? `<table><tbody>${data.orders.map(o => `<tr><td>${o.orderNumber}</td><td>${fmt(o.totalRwf)}</td><td><span class="badge ${o.paymentStatus}">${o.paymentStatus}</span></td><td>${o.createdAt ? new Date(o.createdAt).toLocaleDateString() : '-'}</td></tr>`).join('')}</tbody></table>` : '<p class="empty">No orders yet.</p>'}
+    <h4 style="margin:14px 0 6px;font-size:13px;color:#8a8f9c;text-transform:uppercase;">PayGo Loans (${data.loans.length})</h4>
+    ${data.loans.length ? `<table><tbody>${data.loans.map(l => `<tr><td>${l.loanNumber}</td><td>${fmt(l.totalPayableRwf)}</td><td><span class="badge ${l.status}">${l.status}</span></td></tr>`).join('')}</tbody></table>` : '<p class="empty">No PayGo loans yet.</p>'}
+  `;
 }
 
 // Delete is admin-only (the /api/admin/customers route requires an admin
