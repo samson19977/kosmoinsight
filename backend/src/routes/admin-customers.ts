@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { eq, desc, and, or, ilike, sql } from 'drizzle-orm';
+import { eq, desc, and, or, ilike, sql, inArray } from 'drizzle-orm';
 import { requireAdmin, AuthedRequest } from '../middleware/auth';
 import { db } from '../config/database';
 import { customers, orders, loans, agents } from '../db/schema';
@@ -157,7 +157,7 @@ router.get('/duplicate-national-ids', async (_req: Request, res: Response): Prom
       })
       .from(customers)
       .leftJoin(agents, eq(customers.agentId, agents.id))
-      .where(sql`${customers.nationalIdHash} = ANY(${hashes})`);
+      .where(inArray(customers.nationalIdHash, hashes));
 
     // For each duplicated hash, check whether any of the customer records
     // sharing it currently has an active/defaulted loan — that's the
@@ -171,7 +171,7 @@ router.get('/duplicate-national-ids', async (_req: Request, res: Response): Prom
         const loanRows = await db
           .select({ id: loans.id, loanNumber: loans.loanNumber, status: loans.status, customerId: loans.customerId })
           .from(loans)
-          .where(sql`${loans.customerId} = ANY(${customerIds})`);
+          .where(inArray(loans.customerId, customerIds));
         const hasActiveLoan = loanRows.some((l) => l.status === 'active' || l.status === 'defaulted');
 
         return {

@@ -1,4 +1,4 @@
-import { eq, sql } from 'drizzle-orm';
+import { eq, sql, inArray } from 'drizzle-orm';
 import { db, DbClient } from '../config/database';
 import { loans, installments, loanTransactions, customers, payments, loanAgreements, orders, agents, agentCommissions } from '../db/schema';
 import { EmailService } from './email.service';
@@ -140,7 +140,7 @@ export class LoanService {
           const loansUnderSameIdentity = await tx
             .select({ id: loans.id, loanNumber: loans.loanNumber, status: loans.status, customerId: loans.customerId })
             .from(loans)
-            .where(sql`${loans.customerId} = ANY(${otherCustomerIds})`)
+            .where(inArray(loans.customerId, otherCustomerIds))
             .for('update');
           const identityBlockingLoan = loansUnderSameIdentity.find((l) => l.status === 'active' || l.status === 'defaulted');
           if (identityBlockingLoan) {
