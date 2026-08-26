@@ -463,6 +463,18 @@ export class AgentService {
     const [order] = await client.select().from(orders).where(eq(orders.id, orderId));
     if (!order || !order.agentId) return { recorded: false };
 
+    // If this order has a PayGo loan attached, its commission belongs
+    // ENTIRELY to the per-installment accrual in LoanService.recordPayment
+    // now, not this one-time lump-sum path. Without this check, an admin
+    // manually confirming a PayGo order's payment status (e.g. to record
+    // a down payment receipt) would credit the agent the FULL order
+    // commission upfront here — defeating the entire point of spreading
+    // commission across the loan's actual repayments, and colliding with
+    // the per-installment rows on a database constraint (each order now
+    // gets one commission row per installment payment, not one overall).
+    const [linkedLoan] = await client.select({ id: loans.id }).from(loans).where(eq(loans.orderId, orderId));
+    if (linkedLoan) return { recorded: false };
+
     const [existing] = await client.select().from(agentCommissions).where(eq(agentCommissions.orderId, orderId));
     if (existing) return { recorded: false }; // already credited — idempotency guard
 
