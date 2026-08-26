@@ -6,6 +6,7 @@ import { customers, orders, loans, agents } from '../db/schema';
 import { AuditService } from '../services/audit.service';
 import { parsePageParams, paginatedResponse, sendCsv } from '../lib/listQuery';
 import { decryptField, hashForLookup, maskNationalId } from '../lib/fieldCrypto';
+import { CreditScoreService } from '../services/creditScore.service';
 
 const router = Router();
 router.use(requireAdmin);
@@ -189,6 +190,29 @@ router.get('/duplicate-national-ids', async (_req: Request, res: Response): Prom
   } catch (error) {
     console.error('Duplicate national IDs error:', error);
     res.status(500).json({ error: 'Failed to check for duplicate national IDs' });
+  }
+});
+
+// ============================================
+// GET /api/admin/customers/:id/credit-profile — this customer's PayGo
+// repayment history, tier, and suggested terms for their NEXT loan (if
+// any). Read-only suggestion for the admin creating a new loan — never
+// applied automatically. See src/services/creditScore.service.ts for the
+// full reasoning behind why this stays a human decision.
+// ============================================
+router.get('/:id/credit-profile', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const id = Number(req.params.id);
+    const [customer] = await db.select({ id: customers.id }).from(customers).where(eq(customers.id, id));
+    if (!customer) {
+      res.status(404).json({ error: 'Customer not found' });
+      return;
+    }
+    const profile = await CreditScoreService.getProfile(id);
+    res.json({ success: true, profile });
+  } catch (error) {
+    console.error('Credit profile error:', error);
+    res.status(500).json({ error: 'Failed to compute credit profile' });
   }
 });
 

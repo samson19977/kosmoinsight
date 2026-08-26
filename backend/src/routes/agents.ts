@@ -5,6 +5,10 @@ import { agentSchema, agentUpdateSchema } from '../lib/validation/schemas';
 import { requireAdmin, AuthedRequest } from '../middleware/auth';
 import { AgentService } from '../services/agent.service';
 import { AuditService } from '../services/audit.service';
+import { EmailService } from '../services/email.service';
+import { db } from '../config/database';
+import { agents } from '../db/schema';
+import { eq } from 'drizzle-orm';
 import { parsePageParams, paginatedResponse, sendCsv } from '../lib/listQuery';
 
 const router = Router();
@@ -223,6 +227,19 @@ router.post('/:id/pay-commission', async (req: AuthedRequest, res: Response): Pr
     const { commissionIds } = req.body || {};
     const result = await AgentService.markCommissionsPaid(id, commissionIds);
     await AuditService.log({ adminId: req.admin!.id, action: 'agent.pay_commission', targetType: 'agent', targetId: id, details: { commissionIds, ...result } });
+
+    if (result.totalRwf > 0) {
+      const [agent] = await db.select({ name: agents.name, email: agents.email }).from(agents).where(eq(agents.id, id));
+      if (agent?.email) {
+        await EmailService.sendAgentCommissionPaidNotice({
+          agentName: agent.name,
+          agentEmail: agent.email,
+          totalRwf: result.totalRwf,
+          count: result.count,
+        }).catch((err) => console.error('Agent payout email error (non-fatal):', err));
+      }
+    }
+
     res.json({ success: true, ...result });
   } catch (error) {
     console.error('Pay commission error:', error);

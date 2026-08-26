@@ -11,7 +11,9 @@ import { PaymentReconciliationService } from '../services/paymentReconciliation.
 import { requireAdmin } from '../middleware/auth';
 import { db } from '../config/database';
 import { orders, orderItems, customers, products } from '../db/schema';
+import { agents } from '../db/schema';
 import { resolveNationalIdUpdate } from '../lib/fieldCrypto';
+import { SmsService } from '../services/sms.service';
 
 const router = Router();
 
@@ -93,10 +95,8 @@ export async function createOrderCore(input: {
     }
   }
 
-  // Resolve the agent (if any) this sale should be attributed to.
-  // agentIdOverride (set only by the authenticated agent route, from the
-  // verified JWT) always wins over a client-supplied agentCode — an agent
-  // can never place a sale under someone else's identity.
+  // Resolve the agent (if any) this sale should be attributed to — a read,
+  // fine to do before opening the transaction below.
   let agentId: number | null = null;
   if (agentIdOverride) {
     agentId = agentIdOverride;
@@ -105,137 +105,225 @@ export async function createOrderCore(input: {
     if (agent && (agent.status === 'active' || agent.status === 'approved')) agentId = agent.id;
   }
 
-  // Resolve the customer: either an existing one by ID (an agent picking a
-  // customer they already registered) or find-or-create by phone number
-  // (the normal web/USSD path). Location and National ID are captured
-  // whenever provided — not just for installment orders — so a customer's
-  // profile fills in over repeat purchases, and an update never blanks
-  // out a field given previously.
-  let customerId: number;
-  if (existingCustomerIdInput) {
-    const [found] = await db.select().from(customers).where(eq(customers.id, existingCustomerIdInput));
-    if (!found) throw new Error('Selected customer not found');
-    // An agent may only transact against their OWN customers, or an
-    // unclaimed one (agentId null) which then becomes theirs.
-    if (found.agentId && agentId && found.agentId !== agentId) {
-      throw new Error('This customer belongs to a different agent');
-    }
-    customerId = found.id;
-    if (agentId && !found.agentId) {
-      await db.update(customers).set({ agentId, updatedAt: new Date() }).where(eq(customers.id, customerId));
-    }
-  } else {
-    if (!customer) throw new Error('Customer details are required');
-    const [existingCustomer] = await db.select().from(customers).where(eq(customers.phone, customer.phone));
+  // ----------------------------------------
+  // Everything from here down — resolving/creating the customer, the
+  // order, its line items, and (for PayGo) the loan — runs as ONE
+  // transaction. This closes a real bug: previously the order and its
+  // items were committed to the database BEFORE the loan was attempted,
+  // so a rejected PayGo request (e.g. the customer already has an unpaid
+  // installment plan) left an orphaned "pending" order behind with no
+  // financing attached to it — exactly the kind of dashboard clutter that
+  // shouldn't exist. Now, if the loan request fails for any reason, the
+  // order/items/customer changes made during this attempt all roll back
+  // together — nothing is left in the database from a failed attempt.
+  // ----------------------------------------
+  interface CustomerNotifySnapshot { firstName: string; phone: string; email: string | null }
+  // A mutable property on a `const` holder, not a reassigned `let` —
+  // TypeScript's control-flow narrowing has a known issue tracking a
+  // `let` variable's type correctly when it's assigned only inside an
+  // async closure (like the db.transaction callback below) and read
+  // afterward; wrapping it in a stable object sidesteps that entirely.
+  const notify: { snapshot: CustomerNotifySnapshot | null } = { snapshot: null };
 
-    if (existingCustomer) {
-      customerId = existingCustomer.id;
-      if (existingCustomer.agentId && agentId && existingCustomer.agentId !== agentId) {
-        throw new Error('This customer already belongs to a different agent');
+  try {
+    const result = await db.transaction(async (tx) => {
+      // Resolve the customer: either an existing one by ID (an agent
+      // picking a customer they already registered) or find-or-create by
+      // phone number (the normal web/USSD path).
+      let customerId: number;
+      if (existingCustomerIdInput) {
+        const [found] = await tx.select().from(customers).where(eq(customers.id, existingCustomerIdInput));
+        if (!found) throw new Error('Selected customer not found');
+        if (found.agentId && agentId && found.agentId !== agentId) {
+          throw new Error('This customer belongs to a different agent');
+        }
+        customerId = found.id;
+        if (agentId && !found.agentId) {
+          await tx.update(customers).set({ agentId, updatedAt: new Date() }).where(eq(customers.id, customerId));
+        }
+      } else {
+        if (!customer) throw new Error('Customer details are required');
+        const [existingCustomer] = await tx.select().from(customers).where(eq(customers.phone, customer.phone));
+
+        if (existingCustomer) {
+          customerId = existingCustomer.id;
+          if (existingCustomer.agentId && agentId && existingCustomer.agentId !== agentId) {
+            throw new Error('This customer already belongs to a different agent');
+          }
+          await tx
+            .update(customers)
+            .set({
+              firstName: customer.firstName,
+              lastName: customer.lastName,
+              email: customer.email || existingCustomer.email,
+              district: customer.district || existingCustomer.district,
+              sector: customer.sector || existingCustomer.sector,
+              cell: customer.cell || existingCustomer.cell,
+              village: customer.village || existingCustomer.village,
+              ...resolveNationalIdUpdate(customer.nationalId, existingCustomer.nationalId, existingCustomer.nationalIdHash),
+              agentId: agentId ?? existingCustomer.agentId, // first agent attribution wins; doesn't get reassigned by a later order
+              updatedAt: new Date(),
+            })
+            .where(eq(customers.id, customerId));
+        } else {
+          const [createdCustomer] = await tx
+            .insert(customers)
+            .values({
+              firstName: customer.firstName,
+              lastName: customer.lastName,
+              phone: customer.phone,
+              email: customer.email || null,
+              district: customer.district || null,
+              sector: customer.sector || null,
+              cell: customer.cell || null,
+              village: customer.village || null,
+              ...resolveNationalIdUpdate(customer.nationalId, null, null),
+              agentId,
+              source: channel,
+            })
+            .returning();
+          customerId = createdCustomer.id;
+        }
       }
-      await db
-        .update(customers)
-        .set({
-          firstName: customer.firstName,
-          lastName: customer.lastName,
-          email: customer.email || existingCustomer.email,
-          district: customer.district || existingCustomer.district,
-          sector: customer.sector || existingCustomer.sector,
-          cell: customer.cell || existingCustomer.cell,
-          village: customer.village || existingCustomer.village,
-          ...resolveNationalIdUpdate(customer.nationalId, existingCustomer.nationalId, existingCustomer.nationalIdHash),
-          agentId: agentId ?? existingCustomer.agentId, // first agent attribution wins; doesn't get reassigned by a later order
-          updatedAt: new Date(),
-        })
-        .where(eq(customers.id, customerId));
-    } else {
-      const [createdCustomer] = await db
-        .insert(customers)
+
+      const orderNumber = generateOrderNumber();
+      const paymentInstructions = MomoService.generatePaymentInstructions(orderNumber);
+
+      // Snapshot the customer's current name/phone/email onto the order row.
+      const [resolvedCustomer] = await tx.select().from(customers).where(eq(customers.id, customerId));
+      const customerSnapshot = {
+        firstName: customer?.firstName ?? resolvedCustomer.firstName,
+        lastName: customer?.lastName ?? resolvedCustomer.lastName,
+        email: customer?.email ?? resolvedCustomer.email,
+        phone: customer?.phone ?? resolvedCustomer.phone,
+      };
+      // Captured in the outer scope so the catch block below can send a
+      // friendly explanation SMS even though the transaction is about to
+      // roll back — this assignment survives a later throw in this
+      // function because it's a plain JS variable, not a DB write.
+      notify.snapshot = { firstName: customerSnapshot.firstName, phone: customerSnapshot.phone, email: customerSnapshot.email };
+
+      const [order] = await tx
+        .insert(orders)
         .values({
-          firstName: customer.firstName,
-          lastName: customer.lastName,
-          phone: customer.phone,
-          email: customer.email || null,
-          district: customer.district || null,
-          sector: customer.sector || null,
-          cell: customer.cell || null,
-          village: customer.village || null,
-          ...resolveNationalIdUpdate(customer.nationalId, null, null),
+          orderNumber,
+          customerId,
+          customerName: `${customerSnapshot.firstName} ${customerSnapshot.lastName}`,
+          customerEmail: customerSnapshot.email || null,
+          customerPhone: customerSnapshot.phone,
+          totalRwf,
+          paymentMethod,
+          orderStatus: 'pending',
+          paymentStatus: 'pending',
           agentId,
-          source: channel,
+          channel,
+          notes: notes || null,
         })
         .returning();
-      customerId = createdCustomer.id;
-    }
-  }
 
-  const orderNumber = generateOrderNumber();
-  const paymentInstructions = MomoService.generatePaymentInstructions(orderNumber);
+      await tx.insert(orderItems).values(
+        itemsWithSubtotal.map((item) => ({
+          orderId: order.id,
+          productId: item.productId || null,
+          productName: item.name,
+          quantity: item.quantity,
+          priceRwf: item.price,
+          subtotalRwf: item.price * item.quantity,
+        }))
+      );
 
-  // Snapshot the customer's current name/phone/email onto the order row —
-  // works whether `customer` was passed inline or resolved by customerId.
-  const [resolvedCustomer] = await db.select().from(customers).where(eq(customers.id, customerId));
-  const customerSnapshot = {
-    firstName: customer?.firstName ?? resolvedCustomer.firstName,
-    lastName: customer?.lastName ?? resolvedCustomer.lastName,
-    email: customer?.email ?? resolvedCustomer.email,
-    phone: customer?.phone ?? resolvedCustomer.phone,
-  };
+      // ----------------------------------------
+      // PayGo Installments: the connective tissue between the storefront
+      // (or USSD), the customer record, and the loan module. `client: tx`
+      // is what makes this participate in the SAME transaction as the
+      // order above, instead of opening its own — see the comment on
+      // LoanService.createLoan's `client` parameter for why that matters.
+      // ----------------------------------------
+      let loanResult: Awaited<ReturnType<typeof LoanService.createLoan>> | null = null;
+      if (isInstallment && installmentPlan) {
+        loanResult = await LoanService.createLoan({
+          orderId: order.id,
+          customerId,
+          principalRwf: totalRwf,
+          downPaymentRwf: installmentPlan.downPaymentRwf,
+          interestRateBps: installmentPlan.interestRateBps ?? 0,
+          termMonths: installmentPlan.termMonths,
+          guarantorType: installmentPlan.guarantorName ? 'individual' : 'none',
+          guarantorName: installmentPlan.guarantorName || undefined,
+          guarantorPhone: installmentPlan.guarantorPhone || undefined,
+          notes: `Opened from ${channel} checkout, order ${orderNumber}`,
+          agreement: { agentId, ipAddress, userAgent },
+          client: tx,
+        });
+      }
 
-  const [order] = await db
-    .insert(orders)
-    .values({
-      orderNumber,
-      customerId,
-      customerName: `${customerSnapshot.firstName} ${customerSnapshot.lastName}`,
-      customerEmail: customerSnapshot.email || null,
-      customerPhone: customerSnapshot.phone,
-      totalRwf,
-      paymentMethod,
-      orderStatus: 'pending',
-      paymentStatus: 'pending',
-      agentId,
-      channel,
-      notes: notes || null,
-    })
-    .returning();
-
-  await db.insert(orderItems).values(
-    itemsWithSubtotal.map((item) => ({
-      orderId: order.id,
-      productId: item.productId || null,
-      productName: item.name,
-      quantity: item.quantity,
-      priceRwf: item.price,
-      subtotalRwf: item.price * item.quantity,
-    }))
-  );
-
-  // ----------------------------------------
-  // PayGo Installments: the connective tissue between the storefront (or
-  // USSD), the customer record, and the loan module. The order represents
-  // the sale; the loan represents financing what's left after the down
-  // payment. Both point back to the same order/customer, so nothing needs
-  // reconciling by hand afterward.
-  // ----------------------------------------
-  let loanResult: Awaited<ReturnType<typeof LoanService.createLoan>> | null = null;
-  if (isInstallment && installmentPlan) {
-    loanResult = await LoanService.createLoan({
-      orderId: order.id,
-      customerId,
-      principalRwf: totalRwf,
-      downPaymentRwf: installmentPlan.downPaymentRwf,
-      interestRateBps: installmentPlan.interestRateBps ?? 0,
-      termMonths: installmentPlan.termMonths,
-      guarantorType: installmentPlan.guarantorName ? 'individual' : 'none',
-      guarantorName: installmentPlan.guarantorName || undefined,
-      guarantorPhone: installmentPlan.guarantorPhone || undefined,
-      notes: `Opened from ${channel} checkout, order ${orderNumber}`,
-      agreement: { agentId, ipAddress, userAgent },
+      return { order, orderNumber, totalRwf, itemsWithSubtotal, paymentInstructions, loan: loanResult, customerId };
     });
-  }
 
-  return { order, orderNumber, totalRwf, itemsWithSubtotal, paymentInstructions, loan: loanResult, customerId };
+    // ---- Order confirmation notification — fires for EVERY channel ----
+    // Previously this only ran in the standalone POST /api/orders route
+    // handler, so an order placed by an agent (or via USSD) never
+    // triggered a customer confirmation email at all. Moving it into the
+    // shared function means every entry point gets it automatically, with
+    // no way for a future new channel to forget it.
+    if (notify.snapshot?.email) {
+      await EmailService.sendOrderConfirmation({
+        orderNumber: result.orderNumber,
+        customerName: result.order.customerName,
+        customerEmail: notify.snapshot!.email,
+        phone: notify.snapshot!.phone,
+        items: result.itemsWithSubtotal,
+        total: result.totalRwf,
+        paymentMethod,
+        ussdCode: result.paymentInstructions.ussdCode,
+        reference: result.orderNumber,
+        notes,
+      }).catch((err) => console.error('Order confirmation email error (non-fatal):', err));
+    } else {
+      await EmailService.sendAdminNotification({
+        orderNumber: result.orderNumber,
+        customerName: result.order.customerName,
+        customerPhone: notify.snapshot?.phone || result.order.customerPhone,
+        total: result.totalRwf,
+        paymentMethod,
+        items: result.itemsWithSubtotal,
+        notes,
+      }).catch((err) => console.error('Admin notification email error (non-fatal):', err));
+    }
+
+    // Let the agent who made this sale know too, if there is one — an
+    // agent should hear about their own sale succeeding without having to
+    // go check the dashboard.
+    if (agentId) {
+      const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
+      if (agent?.email) {
+        await EmailService.sendAgentSaleNotification({
+          agentName: agent.name,
+          agentEmail: agent.email,
+          orderNumber: result.orderNumber,
+          customerName: result.order.customerName,
+          totalRwf: result.totalRwf,
+          isInstallment: Boolean(result.loan),
+        }).catch((err) => console.error('Agent sale notification email error (non-fatal):', err));
+      }
+    }
+
+    return result;
+  } catch (error: any) {
+    // Friendly, encouraging explanation sent directly to the customer
+    // when the specific reason their order failed was the PayGo
+    // sequencing/identity rule — not for other failures (insufficient
+    // stock, validation errors, etc.), which don't need this framing and
+    // whose messages aren't written for a customer to read.
+    const isPayGoBlock = /installment plan/i.test(error?.message || '');
+    if (isPayGoBlock && notify.snapshot?.phone) {
+      await SmsService.send(
+        notify.snapshot!.phone,
+        `Hi ${notify.snapshot!.firstName}, you already have an unpaid PayGo installment plan with KosmoPads. Please finish paying it first — once it's done, you're welcome to start a new one. Customers who pay well can unlock even better rates next time. Keep it up! — Kosmotive`
+      ).catch((err) => console.error('PayGo-block explanation SMS error (non-fatal):', err));
+    }
+    throw error;
+  }
 }
 
 // POST /api/orders

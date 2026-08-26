@@ -1,6 +1,6 @@
 import { eq, sql } from 'drizzle-orm';
-import { db } from '../config/database';
-import { loans, installments, loanTransactions, customers, payments, loanAgreements } from '../db/schema';
+import { db, DbClient } from '../config/database';
+import { loans, installments, loanTransactions, customers, payments, loanAgreements, orders, agents, agentCommissions } from '../db/schema';
 import { EmailService } from './email.service';
 import { MomoService } from './momo.service';
 import { LedgerService } from './ledger.service';
@@ -62,6 +62,15 @@ export class LoanService {
       ipAddress?: string;
       userAgent?: string;
     };
+    // Lets a caller that already has its own open transaction (e.g.
+    // createOrderCore, which needs the order row and the loan to commit
+    // or roll back TOGETHER — an order shouldn't survive as an orphaned
+    // "pending" record if the loan request gets rejected) pass that
+    // transaction handle in, instead of this method opening a second,
+    // unrelated one. Standalone callers (the admin "create loan" route,
+    // the seed script) simply omit this and get the original
+    // self-contained-transaction behavior.
+    client?: DbClient;
   }) {
     const financedRwf = input.principalRwf - input.downPaymentRwf;
     if (financedRwf <= 0) {
@@ -93,7 +102,7 @@ export class LoanService {
     //    that exists with no installment schedule, or a disbursed loan
     //    with no audit trail entry — exactly the kind of half-written
     //    financial state this rewrite is meant to eliminate everywhere.
-    return db.transaction(async (tx) => {
+    const runInTransaction = async (tx: DbClient) => {
       // ---- Installment sequencing rule (row-locked) ----
       const openLoans = await tx
         .select({ id: loans.id, loanNumber: loans.loanNumber, status: loans.status })
@@ -205,7 +214,14 @@ export class LoanService {
       }
 
       return loan;
-    });
+    };
+
+    // If the caller already has an open transaction (e.g. createOrderCore
+    // creating the order and the loan together), run inside it — that's
+    // what makes the order and the loan commit or roll back as one unit.
+    // Otherwise (admin manually creating a loan, the seed script), open a
+    // fresh transaction exactly as before.
+    return input.client ? runInTransaction(input.client) : db.transaction(runInTransaction);
   }
 
   // ============================================
@@ -228,6 +244,26 @@ export class LoanService {
 
       const [loan] = await tx.select().from(loans).where(eq(loans.id, installment.loanId));
       if (!loan) throw new Error('Loan not found');
+
+      // ---- Resolve the agent who sold this, once, before the loop ----
+      // PayGo commission accrues PER INSTALLMENT PAYMENT, proportional to
+      // what's actually collected right now — not as one lump sum when
+      // the order is created, and not held back until the whole loan is
+      // paid off. Waiting for full payoff could mean an agent waits many
+      // months for any commission on a sale they already made; paying it
+      // all upfront would mean Kosmotive pays commission on money it
+      // hasn't collected yet. Accruing per payment keeps the agent's
+      // incentive aligned with the customer's ENTIRE repayment journey —
+      // they have a reason to check in on their customer at any point in
+      // the loan term, not just once at the start.
+      let commissionAgent: { id: number; commissionRateBps: number } | null = null;
+      if (loan.orderId) {
+        const [order] = await tx.select({ agentId: orders.agentId }).from(orders).where(eq(orders.id, loan.orderId));
+        if (order?.agentId) {
+          const [agent] = await tx.select({ id: agents.id, commissionRateBps: agents.commissionRateBps }).from(agents).where(eq(agents.id, order.agentId));
+          if (agent) commissionAgent = agent;
+        }
+      }
 
       let remaining = input.amountRwf;
       let cursor = installment;
@@ -276,6 +312,40 @@ export class LoanService {
             },
             tx
           );
+
+          // ---- Agent commission accrual for THIS payment ----
+          if (commissionAgent) {
+            const commissionRwf = Math.round((applied * commissionAgent.commissionRateBps) / 10000);
+            if (commissionRwf > 0) {
+              const [commissionRow] = await tx
+                .insert(agentCommissions)
+                .values({
+                  agentId: commissionAgent.id,
+                  orderId: loan.orderId!,
+                  loanId: loan.id,
+                  installmentId: cursor.id,
+                  saleAmountRwf: applied,
+                  commissionRateBps: commissionAgent.commissionRateBps,
+                  commissionRwf,
+                  status: 'pending',
+                  note: `Accrued from installment #${cursor.installmentNumber} payment on loan ${loan.loanNumber}`,
+                })
+                .returning();
+
+              await LedgerService.record(
+                {
+                  accountType: 'agent',
+                  accountId: commissionAgent.id,
+                  amountRwf: commissionRwf,
+                  category: 'commission_accrued',
+                  referenceType: 'agent_commission',
+                  referenceId: commissionRow.id,
+                  description: `Commission accrued from PayGo installment #${cursor.installmentNumber} payment on loan ${loan.loanNumber}`,
+                },
+                tx
+              );
+            }
+          }
         }
 
         remaining -= applied;

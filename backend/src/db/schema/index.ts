@@ -289,6 +289,12 @@ export const agentCommissions = pgTable('agent_commissions', {
   saleAmountRwf: integer('sale_amount_rwf').notNull(), // the order/loan amount the commission was calculated against
   commissionRateBps: integer('commission_rate_bps').notNull(), // rate actually applied, frozen at the time of sale
   commissionRwf: integer('commission_rwf').notNull(),
+  // For PayGo sales, commission accrues PER INSTALLMENT PAYMENT (see
+  // LoanService.recordPayment) rather than as one lump sum — this traces
+  // each accrual row back to the exact installment payment that produced
+  // it. Null for one-time (non-PayGo) sales, which still get a single
+  // commission row as before.
+  installmentId: integer('installment_id').references(() => installments.id),
   status: varchar('status', { length: 20 }).notNull().default('pending'), // pending | paid | reversed
   paidAt: timestamp('paid_at'),
   note: text('note'),

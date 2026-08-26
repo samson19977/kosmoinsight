@@ -394,6 +394,78 @@ export class EmailService {
   }
 
   // ============================================
+  // Agent notification — one of their sales just went through. Agents
+  // earn commission on their sales, so they should hear about a
+  // successful sale directly rather than having to check the dashboard.
+  // ============================================
+  static async sendAgentSaleNotification(data: {
+    agentName: string;
+    agentEmail: string;
+    orderNumber: string;
+    customerName: string;
+    totalRwf: number;
+    isInstallment: boolean;
+  }): Promise<void> {
+    if (!data.agentEmail) return;
+    const html = `<div style="font-family:sans-serif;padding:20px;max-width:500px;">
+      <div style="background:#0F766E;padding:20px;text-align:center;border-radius:8px 8px 0 0;">
+        <h2 style="margin:0;color:#fff;">✅ New Sale Recorded</h2>
+      </div>
+      <div style="background:#fff;padding:28px;border-radius:0 0 8px 8px;">
+        <h2>Hi ${data.agentName},</h2>
+        <p>Your sale to <strong>${data.customerName}</strong> (order <strong>${data.orderNumber}</strong>) is confirmed.</p>
+        <p><strong>Order total:</strong> ${data.totalRwf.toLocaleString()} RWF</p>
+        ${data.isInstallment
+          ? '<p>This is a PayGo installment sale — your commission accrues as the customer pays each installment, so it\'s worth checking in with them to help them stay on track.</p>'
+          : '<p>Your commission for this sale has been recorded.</p>'}
+      </div>
+    </div>`;
+    await this.sendEmail({
+      to: data.agentEmail,
+      subject: `✅ Sale confirmed: ${data.orderNumber}`,
+      html,
+      text: `Your sale to ${data.customerName} (order ${data.orderNumber}, ${data.totalRwf.toLocaleString()} RWF) is confirmed.`,
+    });
+  }
+
+  // ============================================
+  // Agent payout confirmation — sent the moment an admin clicks "mark as
+  // paid" for this agent's pending commissions. This is deliberately the
+  // ONLY money Kosmotive actually sends an agent through this system —
+  // Kosmotive pays agents out-of-band (cash, bank transfer, or a manual
+  // MoMo send) on a weekly/monthly schedule, then records that it
+  // happened here. No second payment-sending API integration needed;
+  // this email (plus the ledger entry already recorded alongside it) is
+  // the agent-facing confirmation that the payout is official.
+  // ============================================
+  static async sendAgentCommissionPaidNotice(data: {
+    agentName: string;
+    agentEmail: string;
+    totalRwf: number;
+    count: number;
+  }): Promise<void> {
+    if (!data.agentEmail) return;
+    const html = `<div style="font-family:sans-serif;padding:20px;max-width:500px;">
+      <div style="background:#0F766E;padding:20px;text-align:center;border-radius:8px 8px 0 0;">
+        <h2 style="margin:0;color:#fff;">💰 Commission Paid</h2>
+      </div>
+      <div style="background:#fff;padding:28px;border-radius:0 0 8px 8px;">
+        <h2>Hi ${data.agentName},</h2>
+        <p>Your commission payout has been recorded as paid.</p>
+        <p style="font-size:24px;font-weight:bold;color:#0F766E;">${data.totalRwf.toLocaleString()} RWF</p>
+        <p style="color:#666;">(${data.count} commission${data.count === 1 ? '' : 's'} settled)</p>
+        <p>Thank you for your continued work with KosmoPads — keep an eye on your PayGo customers' repayments, since your commission on those keeps growing with every installment they pay.</p>
+      </div>
+    </div>`;
+    await this.sendEmail({
+      to: data.agentEmail,
+      subject: `💰 Commission paid: ${data.totalRwf.toLocaleString()} RWF`,
+      html,
+      text: `Your commission payout of ${data.totalRwf.toLocaleString()} RWF (${data.count} commission(s)) has been recorded as paid.`,
+    });
+  }
+
+  // ============================================
   // Admin alert — high-risk loan (e.g. crossed default threshold)
   // ============================================
   static async sendAdminLoanRiskAlert(data: {

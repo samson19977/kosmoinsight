@@ -548,7 +548,14 @@
   <div class="modal">
     <h3>New PayGo Installment Plan</h3>
     <label>Customer ID</label>
-    <input type="number" id="loanCustomerId" min="1" placeholder="e.g. 12 — from the customer's order" autocomplete="off" />
+    <div style="display:flex;gap:6px;">
+      <input type="number" id="loanCustomerId" min="1" placeholder="e.g. 12 — from the customer's order" autocomplete="off" style="flex:1;" />
+      <button type="button" class="btn btn-ghost btn-sm" onclick="checkLoanCustomerCredit()">Check credit</button>
+    </div>
+    <!-- Populated by checkLoanCustomerCredit() — a suggestion only, never
+         auto-applied to the fields below. The admin reads it and decides
+         whether to adjust the interest rate / term themselves. -->
+    <div id="loanCreditProfileBox" style="display:none;font-size:12px;padding:8px 10px;border-radius:8px;margin:4px 0 10px;"></div>
     <label>Order ID (optional)</label>
     <input type="number" id="loanOrderId" min="1" placeholder="Links this plan to an existing order" autocomplete="off" />
     <label>Principal (RWF)</label>
@@ -1463,9 +1470,36 @@ function openNewLoanModal() {
   document.getElementById('loanInterestPct').value = 5;
   document.getElementById('loanTermMonths').value = 6;
   document.getElementById('loanGuarantorType').value = 'none';
+  // Reset every time — same explicit-reset pattern used everywhere else
+  // in this file, so a previous customer's credit check never lingers.
+  document.getElementById('loanCreditProfileBox').style.display = 'none';
   document.getElementById('newLoanModal').classList.add('show');
 }
 function closeNewLoanModal() { document.getElementById('newLoanModal').classList.remove('show'); }
+
+// Fetches the entered customer's credit profile and shows it as a
+// suggestion — never touches the interest rate/term fields directly.
+// The admin reads the suggestion and adjusts those fields themselves if
+// they choose to.
+async function checkLoanCustomerCredit() {
+  const customerId = Number(document.getElementById('loanCustomerId').value);
+  const box = document.getElementById('loanCreditProfileBox');
+  if (!customerId) { showToast('⚠️ Enter a customer ID first', true); return; }
+  try {
+    const res = await fetch(`${API_BASE}/admin/customers/${customerId}/credit-profile`, { headers: { Authorization: `Bearer ${token}` } });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to check credit profile');
+    const p = data.profile;
+    const bg = p.tier === 'gold' ? '#fff8e1' : p.tier === 'silver' ? '#eef2f5' : p.tier === 'needs_review' ? '#fdecee' : '#f5f5f5';
+    const color = p.tier === 'gold' ? '#8a6d00' : p.tier === 'needs_review' ? '#c8394f' : '#5b6b7a';
+    box.style.background = bg;
+    box.style.color = color;
+    box.innerHTML = `<strong>${p.tierLabel}</strong><br>${p.suggestion.note}`;
+    box.style.display = 'block';
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
+  }
+}
 
 async function saveNewLoan() {
   const btn = document.getElementById('saveLoanBtn');
@@ -1729,18 +1763,30 @@ function renderCustomers(list) {
 
 async function viewCustomer(id) {
   try {
-    const res = await fetch(`${API_BASE}/admin/customers/${id}`, { headers: { Authorization: `Bearer ${token}` } });
-    if (res.status === 401) { logout(); return; }
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Failed to load customer');
-    renderCustomerDetail(data);
+    const [detailRes, creditRes] = await Promise.all([
+      fetch(`${API_BASE}/admin/customers/${id}`, { headers: { Authorization: `Bearer ${token}` } }),
+      fetch(`${API_BASE}/admin/customers/${id}/credit-profile`, { headers: { Authorization: `Bearer ${token}` } }),
+    ]);
+    if (detailRes.status === 401) { logout(); return; }
+    const data = await detailRes.json();
+    if (!detailRes.ok) throw new Error(data.error || 'Failed to load customer');
+    const creditData = creditRes.ok ? await creditRes.json() : null;
+    renderCustomerDetail(data, creditData?.profile || null);
     document.getElementById('customerDetailModal').classList.add('show');
   } catch (e) {
     showToast('⚠️ ' + e.message, true);
   }
 }
 
-function renderCustomerDetail(data) {
+const tierColors = {
+  new: '#8a8f9c',
+  needs_review: '#c8394f',
+  bronze: '#a9702c',
+  silver: '#5b6b7a',
+  gold: '#b8860b',
+};
+
+function renderCustomerDetail(data, credit) {
   const c = data.customer;
   document.getElementById('customerDetailTitle').textContent = `${c.firstName} ${c.lastName}`;
 
@@ -1749,7 +1795,26 @@ function renderCustomerDetail(data) {
     ? `<div class="kv"><span>National ID</span><strong style="font-family:monospace;letter-spacing:0.5px;">${c.nationalId}</strong></div>`
     : `<div class="kv"><span>National ID</span><span style="color:var(--muted);">Not on file</span></div>`;
 
+  // Credit profile: a SUGGESTION for the admin manually creating this
+  // customer's next loan — never applied automatically. See
+  // creditScore.service.ts for the full reasoning.
+  const creditBlock = credit ? `
+    <div style="background:#fafafa;border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:16px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <span style="width:8px;height:8px;border-radius:50%;background:${tierColors[credit.tier] || '#8a8f9c'};display:inline-block;"></span>
+        <strong style="font-size:13px;">${credit.tierLabel}</strong>
+      </div>
+      <div style="font-size:13px;color:var(--muted);margin-bottom:6px;">
+        ${credit.completedLoans} completed loan(s)${credit.defaultedLoans ? `, ${credit.defaultedLoans} defaulted` : ''}${credit.onTimePaymentRate !== null ? ` · ${Math.round(credit.onTimePaymentRate * 100)}% on-time payment rate` : ''}
+      </div>
+      <div style="font-size:13px;color:#1a5f3f;background:#e8f5ee;border-radius:6px;padding:8px 10px;">
+        💡 ${credit.suggestion.note}
+      </div>
+    </div>
+  ` : '';
+
   document.getElementById('customerDetailBody').innerHTML = `
+    ${creditBlock}
     <div style="background:#fafafa;border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:16px;font-size:14px;">
       <div class="kv"><span>Phone</span><strong>${c.phone}</strong></div>
       <div class="kv"><span>Email</span><strong>${c.email || '—'}</strong></div>
