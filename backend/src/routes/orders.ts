@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { eq, desc, and, or, ilike, sql } from 'drizzle-orm';
+import { eq, desc, and, or, ilike, sql, inArray } from 'drizzle-orm';
 import { parsePageParams, paginatedResponse, sendCsv } from '../lib/listQuery';
 import { validate } from '../middleware/validate';
 import { orderSchema } from '../lib/validation/schemas';
@@ -11,7 +11,7 @@ import { PaymentReconciliationService } from '../services/paymentReconciliation.
 import { requireAdmin } from '../middleware/auth';
 import { db } from '../config/database';
 import { orders, orderItems, customers, products } from '../db/schema';
-import { agents } from '../db/schema';
+import { agents, loans, installments } from '../db/schema';
 import { resolveNationalIdUpdate } from '../lib/fieldCrypto';
 import { SmsService } from '../services/sms.service';
 
@@ -425,6 +425,47 @@ router.get('/:orderNumber/status', async (req: Request, res: Response): Promise<
       }
     }
 
+    // ----------------------------------------
+    // PayGo orders need to report something more honest than a flat
+    // "paid" — order.paymentStatus turning 'paid' only ever means the
+    // DOWN PAYMENT was received (that's what admin's "Confirm Paid"
+    // button, or a MoMo push at checkout, is actually confirming for a
+    // PayGo order — see PaymentReconciliationService). The remaining
+    // balance is still owed across the installment schedule. Showing a
+    // bare "Paid ✅ / Total: 21,000 RWF" for an order like that would
+    // tell the customer their whole balance is settled when it isn't —
+    // exactly the confusion this endpoint used to cause.
+    let paygoSummary: {
+      loanNumber: string;
+      status: string;
+      downPaymentRwf: number;
+      totalPayableRwf: number;
+      amountPaidRwf: number;
+      remainingRwf: number;
+      nextDueDate: string | null;
+      nextDueAmountRwf: number | null;
+    } | null = null;
+
+    const [linkedLoan] = await db.select().from(loans).where(eq(loans.orderId, order.id));
+    if (linkedLoan) {
+      const loanInstallments = await db.select().from(installments).where(eq(installments.loanId, linkedLoan.id));
+      const amountPaidRwf = loanInstallments.reduce((s, i) => s + (i.amountPaidRwf || 0), 0);
+      const nextUnpaid = loanInstallments
+        .filter((i) => i.status !== 'paid')
+        .sort((a, b) => a.installmentNumber - b.installmentNumber)[0];
+
+      paygoSummary = {
+        loanNumber: linkedLoan.loanNumber,
+        status: linkedLoan.status ?? 'active',
+        downPaymentRwf: linkedLoan.downPaymentRwf ?? 0,
+        totalPayableRwf: linkedLoan.totalPayableRwf,
+        amountPaidRwf,
+        remainingRwf: Math.max(0, linkedLoan.totalPayableRwf - amountPaidRwf),
+        nextDueDate: nextUnpaid ? nextUnpaid.dueDate.toISOString() : null,
+        nextDueAmountRwf: nextUnpaid ? nextUnpaid.amountDueRwf + (nextUnpaid.penaltyRwf || 0) - (nextUnpaid.amountPaidRwf || 0) : null,
+      };
+    }
+
     res.json({
       success: true,
       orderNumber: order.orderNumber,
@@ -433,6 +474,7 @@ router.get('/:orderNumber/status', async (req: Request, res: Response): Promise<
       paymentMethod: order.paymentMethod,
       total: order.totalRwf,
       createdAt: order.createdAt,
+      paygo: paygoSummary,
     });
   } catch (error) {
     console.error('Order status error:', error);
@@ -475,6 +517,18 @@ router.get('/', requireAdmin, async (req: Request, res: Response): Promise<void>
       db.select({ count: sql<number>`count(*)::int` }).from(orders).where(where),
     ]);
 
+    // One extra query for the whole page, not one per row: which of these
+    // orders have a PayGo loan, and is it fully paid off yet? This is what
+    // lets the admin Orders list show "Down payment" instead of a bare
+    // "paid" for a PayGo order that's only had its down payment confirmed
+    // — the same honesty fix as the customer-facing order status page.
+    const orderIds = rows.map((o) => o.id);
+    const loanByOrderId = new Map<number, { status: string }>();
+    if (orderIds.length > 0) {
+      const loanRows = await db.select({ orderId: loans.orderId, status: loans.status }).from(loans).where(inArray(loans.orderId, orderIds));
+      for (const l of loanRows) if (l.orderId) loanByOrderId.set(l.orderId, { status: l.status ?? 'active' });
+    }
+
     res.json(
       paginatedResponse(
         rows.map((o) => ({
@@ -487,6 +541,7 @@ router.get('/', requireAdmin, async (req: Request, res: Response): Promise<void>
           paymentMethod: o.paymentMethod,
           channel: o.channel,
           createdAt: o.createdAt,
+          paygoLoanStatus: loanByOrderId.get(o.id)?.status ?? null,
         })),
         count,
         params

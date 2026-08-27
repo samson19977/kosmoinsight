@@ -102,8 +102,13 @@ const OrderStatusPage: React.FC = () => {
                 <div className="grid grid-cols-2 gap-4">
                   {[
                     { label: 'Order Number', value: result.orderNumber },
-                    { label: 'Payment', value: result.paymentStatus === 'paid' ? '✅ Paid' : '⏳ Pending' },
-                    { label: 'Total', value: result.total ? `${result.total.toLocaleString()} FRW` : '—' },
+                    // For a PayGo order, "Payment: Paid" would falsely imply the
+                    // whole total is settled — it only ever means the down
+                    // payment was received. Label it honestly per order type.
+                    { label: 'Payment', value: result.paygo
+                        ? (result.paymentStatus === 'paid' ? '✅ Down payment received' : '⏳ Down payment pending')
+                        : (result.paymentStatus === 'paid' ? '✅ Paid' : '⏳ Pending') },
+                    { label: result.paygo ? 'Product Price' : 'Total', value: result.total ? `${result.total.toLocaleString()} FRW` : '—' },
                     { label: 'Placed', value: result.createdAt ? new Date(result.createdAt).toLocaleDateString() : '—' },
                   ].map(({ label, value }) => (
                     <div key={label} className="bg-gray-50 rounded-xl p-3">
@@ -112,6 +117,41 @@ const OrderStatusPage: React.FC = () => {
                     </div>
                   ))}
                 </div>
+
+                {/* PayGo installment breakdown — the honest picture of what's
+                    actually been paid vs. what's still owed, instead of
+                    letting the order-level "Paid" badge above imply the
+                    whole thing is settled. */}
+                {result.paygo && (
+                  <div className="bg-teal-50 border border-teal-200 rounded-xl p-4 text-sm space-y-2">
+                    <p className="font-semibold text-teal-800">📅 PayGo Installment Plan ({result.paygo.loanNumber})</p>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <p className="text-teal-600">Down payment</p>
+                        <p className="font-semibold text-teal-900">{result.paygo.downPaymentRwf.toLocaleString()} FRW</p>
+                      </div>
+                      <div>
+                        <p className="text-teal-600">Total payable (financed + interest)</p>
+                        <p className="font-semibold text-teal-900">{result.paygo.totalPayableRwf.toLocaleString()} FRW</p>
+                      </div>
+                      <div>
+                        <p className="text-teal-600">Paid so far on installments</p>
+                        <p className="font-semibold text-teal-900">{result.paygo.amountPaidRwf.toLocaleString()} FRW</p>
+                      </div>
+                      <div>
+                        <p className="text-teal-600">Remaining balance</p>
+                        <p className="font-semibold text-teal-900">{result.paygo.remainingRwf.toLocaleString()} FRW</p>
+                      </div>
+                    </div>
+                    {result.paygo.status === 'completed' ? (
+                      <p className="text-teal-700 text-xs pt-1">🎉 This installment plan is fully paid off!</p>
+                    ) : result.paygo.nextDueDate ? (
+                      <p className="text-teal-700 text-xs pt-1">
+                        Next payment: <strong>{result.paygo.nextDueAmountRwf?.toLocaleString()} FRW</strong> due <strong>{new Date(result.paygo.nextDueDate).toLocaleDateString()}</strong>
+                      </p>
+                    ) : null}
+                  </div>
+                )}
 
                 {result.paymentStatus !== 'paid' && !isCash && (
                   <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm">

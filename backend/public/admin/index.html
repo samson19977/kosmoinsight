@@ -1196,6 +1196,24 @@ function isCashMethod(method) { return /^cash/i.test(method || ''); }
 // customer one) that don't need any extra per-modal teardown logic.
 function closeModal(id) { document.getElementById(id).classList.remove('show'); }
 
+// For a PayGo order, order.paymentStatus turning 'paid' only ever means
+// the DOWN PAYMENT was confirmed — the customer still owes the rest across
+// the installment schedule. Showing a bare "paid" badge for that (same as
+// a fully-settled cash/MoMo order) is misleading, so PayGo orders get a
+// distinct "Down payment" / "Fully paid" label instead, driven by the
+// linked loan's own status rather than the order's payment flag.
+function paymentBadge(o) {
+  if (o.paygoLoanStatus) {
+    if (o.paygoLoanStatus === 'completed') {
+      return '<span class="badge paid">✓ Fully paid off</span>';
+    }
+    return o.paymentStatus === 'paid'
+      ? `<span class="badge" style="background:#fff4e5;color:#8a5a00;">Down payment paid</span>`
+      : `<span class="badge pending">Down payment pending</span>`;
+  }
+  return `<span class="badge ${o.paymentStatus}">${o.paymentStatus || 'pending'}</span>`;
+}
+
 function methodChip(method) {
   const cash = isCashMethod(method);
   const label = cash ? 'Cash' : (method && /momo|mobile/i.test(method) ? 'MoMo' : (method || '—'));
@@ -1341,13 +1359,13 @@ async function loadOrders() {
         <td>${o.customerName}<div style="font-size:11px;color:var(--muted);">${o.customerPhone || ''}</div></td>
         <td>${(o.totalRwf || 0).toLocaleString()} FRW</td>
         <td>${methodChip(o.paymentMethod)}</td>
-        <td><span class="badge ${o.paymentStatus}">${o.paymentStatus || 'pending'}</span></td>
+        <td>${paymentBadge(o)}</td>
         <td><span class="badge ${o.orderStatus}">${o.orderStatus || 'pending'}</span></td>
         <td>${o.createdAt ? new Date(o.createdAt).toLocaleDateString() : '-'}</td>
         <td><div class="order-actions">
           ${o.paymentStatus === 'paid'
-            ? '<span class="paid-check">✓ Paid</span>'
-            : `<button class="btn btn-teal btn-sm" onclick="confirmPayment('${o.orderNumber}', this)">✓ Confirm paid</button>`}
+            ? `<span class="paid-check">✓ ${o.paygoLoanStatus && o.paygoLoanStatus !== 'completed' ? 'Down payment confirmed' : 'Paid'}</span>`
+            : `<button class="btn btn-teal btn-sm" onclick="confirmPayment('${o.orderNumber}', this, false, ${Boolean(o.paygoLoanStatus)})">${o.paygoLoanStatus ? '✓ Confirm down payment' : '✓ Confirm paid'}</button>`}
           ${statusSelect(o)}
         </div></td>
       </tr>`).join('');
@@ -1361,8 +1379,11 @@ async function loadOrders() {
 // Admin manually marks an order's payment as received — this is how cash
 // (pay on delivery/pickup) orders get confirmed, and also how MoMo sandbox
 // orders get confirmed since no real webhook will ever fire for those.
-async function confirmPayment(orderNumber, btnEl, fromDashboard) {
-  if (!confirm(`Confirm that payment has been received for order ${orderNumber}?\n\nThis will mark the order as paid & confirmed, and notify the customer.`)) return;
+async function confirmPayment(orderNumber, btnEl, fromDashboard, isPaygo) {
+  const confirmMsg = isPaygo
+    ? `Confirm that the DOWN PAYMENT has been received for order ${orderNumber}?\n\nThis marks the down payment as received and starts the installment schedule — it does NOT mean the full amount is paid. The customer notification will reflect that too.`
+    : `Confirm that payment has been received for order ${orderNumber}?\n\nThis will mark the order as paid & confirmed, and notify the customer.`;
+  if (!confirm(confirmMsg)) return;
   const originalText = btnEl.textContent;
   btnEl.disabled = true;
   btnEl.textContent = 'Confirming…';
