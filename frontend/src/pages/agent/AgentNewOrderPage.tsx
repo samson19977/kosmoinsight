@@ -73,17 +73,26 @@ const AgentNewOrderPage: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<OrderResult | null>(null);
 
+  const RWANDA_PHONE_REGEX = /^(\+250|0)[78][0-9]{8}$/;
+  const newCustomerPhoneValid = !newCustomer.phone || RWANDA_PHONE_REGEX.test(newCustomer.phone.trim());
+
   const canSubmit =
     cart.length > 0 &&
-    (customerMode === 'existing' ? !!selectedCustomer : (newCustomer.firstName && newCustomer.lastName && newCustomer.phone)) &&
+    (customerMode === 'existing'
+      ? !!selectedCustomer
+      : (newCustomer.firstName && newCustomer.lastName && newCustomer.phone && RWANDA_PHONE_REGEX.test(newCustomer.phone.trim()))) &&
     (paymentMethod !== 'PayGo Installments' || (allEligibleForPayGo && downPayment > 0 && downPayment < cartTotal && agreementAccepted));
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
+    if (customerMode === 'new' && !RWANDA_PHONE_REGEX.test(newCustomer.phone.trim())) {
+      toast.error('Enter a valid Rwandan phone number (e.g. 0788123456)');
+      return;
+    }
     setSubmitting(true);
     try {
       const payload: CreateAgentOrderInput = {
-        ...(customerMode === 'existing' ? { customerId: selectedCustomer!.id } : { customer: newCustomer }),
+        ...(customerMode === 'existing' ? { customerId: selectedCustomer!.id } : { customer: { ...newCustomer, phone: newCustomer.phone.trim() } }),
         items: cart.map((l) => ({ name: l.name, quantity: l.quantity, price: l.price, productId: l.productId })),
         paymentMethod,
         ...(paymentMethod === 'PayGo Installments' ? { installmentPlan: { downPaymentRwf: downPayment, termMonths, agreementAccepted } } : {}),
@@ -175,6 +184,9 @@ const AgentNewOrderPage: React.FC = () => {
                 <input className={inputCls} placeholder="First name *" value={newCustomer.firstName} onChange={(e) => setNewCustomer((f) => ({ ...f, firstName: e.target.value }))} autoComplete="off" />
                 <input className={inputCls} placeholder="Last name *" value={newCustomer.lastName} onChange={(e) => setNewCustomer((f) => ({ ...f, lastName: e.target.value }))} autoComplete="off" />
                 <input className={inputCls} placeholder="Phone *" value={newCustomer.phone} onChange={(e) => setNewCustomer((f) => ({ ...f, phone: e.target.value }))} autoComplete="off" />
+                {!newCustomerPhoneValid && (
+                  <p className="text-xs text-red-500 col-span-2 -mt-2">Enter a valid Rwandan phone number, e.g. 0788123456</p>
+                )}
                 <input className={inputCls} placeholder="Email" value={newCustomer.email} onChange={(e) => setNewCustomer((f) => ({ ...f, email: e.target.value }))} autoComplete="off" />
                 <input className={inputCls} placeholder="National ID (for PayGo)" value={newCustomer.nationalId} onChange={(e) => setNewCustomer((f) => ({ ...f, nationalId: e.target.value }))} maxLength={16} autoComplete="off" />
                 <input className={inputCls} placeholder="District" value={newCustomer.district} onChange={(e) => setNewCustomer((f) => ({ ...f, district: e.target.value }))} autoComplete="off" />

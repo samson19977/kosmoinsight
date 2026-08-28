@@ -1,6 +1,6 @@
 import { eq, and, notInArray } from 'drizzle-orm';
 import { db } from '../config/database';
-import { orders, payments, orderItems } from '../db/schema';
+import { orders, payments, orderItems, loans } from '../db/schema';
 import { InventoryService } from './inventory.service';
 import { AgentService } from './agent.service';
 import { EmailService } from './email.service';
@@ -111,6 +111,16 @@ export class PaymentReconciliationService {
 
     const { order: updatedOrder, payment } = result;
 
+    // Check for a linked PayGo loan — the receipt email (and the amount
+    // it reports) needs to be honest about whether this confirmation was
+    // the full price or just a down payment. Same fix already applied to
+    // the order-status page and admin dashboard; this was the one place
+    // it got missed, and it's the artifact the customer actually keeps.
+    const [linkedLoan] = await db.select().from(loans).where(eq(loans.orderId, orderId));
+    const paygoInfo = linkedLoan
+      ? { loanNumber: linkedLoan.loanNumber, totalPayableRwf: linkedLoan.totalPayableRwf, remainingRwf: linkedLoan.totalPayableRwf }
+      : undefined;
+
     // Best-effort notifications — outside the transaction, never allowed
     // to affect whether the payment itself was recorded correctly.
     if (updatedOrder.customerEmail) {
@@ -122,6 +132,7 @@ export class PaymentReconciliationService {
         amountRwf: payment?.amountRwf ?? updatedOrder.totalRwf,
         paidAt: now,
         items: items.map((i) => ({ name: i.productName, quantity: i.quantity, priceRwf: i.priceRwf, subtotalRwf: i.subtotalRwf })),
+        paygo: paygoInfo,
       }).catch((err) => console.error('Receipt email error (non-fatal):', err));
     }
 

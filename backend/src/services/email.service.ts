@@ -39,6 +39,17 @@ interface PaymentReceiptData {
   amountRwf: number;
   paidAt: Date;
   items: Array<{ name: string; quantity: number; priceRwf: number; subtotalRwf: number }>;
+  // When present, this order is financed via PayGo — the receipt must say
+  // "down payment received" and show what's still owed, NOT imply the
+  // order total itself was paid in full. This is the exact same honesty
+  // fix already applied to the order-status page and admin dashboard;
+  // this email was the one place it got missed, and it's the one the
+  // customer actually reads.
+  paygo?: {
+    loanNumber: string;
+    totalPayableRwf: number;
+    remainingRwf: number;
+  };
 }
 
 interface AdminPaymentAlertData {
@@ -158,6 +169,14 @@ export class EmailService {
       .join('');
 
     const paidAtStr = data.paidAt.toLocaleString('en-RW', { dateStyle: 'long', timeStyle: 'short' });
+    const isPaygo = Boolean(data.paygo);
+
+    const paygoNote = data.paygo
+      ? `<div style="background:#fff8e6;border:1px solid #f5c26b;border-radius:8px;padding:14px 18px;margin:16px 0;font-size:14px;">
+          <strong>📅 This is a PayGo installment plan (${data.paygo.loanNumber}).</strong><br/>
+          This confirms your <strong>down payment</strong> — it is not the full price. Remaining balance to pay over your installment schedule: <strong>${data.paygo.remainingRwf.toLocaleString()} FRW</strong> (total payable: ${data.paygo.totalPayableRwf.toLocaleString()} FRW). We'll remind you before each installment is due.
+        </div>`
+      : '';
 
     const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
     <title>Payment Receipt – KosmoPads</title></head>
@@ -165,18 +184,20 @@ export class EmailService {
       <div style="max-width:600px;margin:0 auto;">
         <div style="background:linear-gradient(135deg,#1e8e4e,#155e37);color:#fff;padding:30px 24px;border-radius:10px 10px 0 0;text-align:center;">
           <div style="font-size:40px;margin-bottom:6px;">✅</div>
-          <h1 style="margin:0;font-size:24px;">Payment Confirmed</h1>
+          <h1 style="margin:0;font-size:24px;">${isPaygo ? 'Down Payment Confirmed' : 'Payment Confirmed'}</h1>
           <p style="margin:6px 0 0;opacity:.9;">KosmoPads Rwanda</p>
         </div>
         <div style="background:#fff;padding:28px 24px;border-radius:0 0 10px 10px;box-shadow:0 2px 6px rgba(0,0,0,.08);">
           <h2 style="color:#1e8e4e;margin-top:0;">Hi ${data.customerName},</h2>
-          <p>Your payment has been received and your order is now being processed. Thank you! 🙏</p>
+          <p>${isPaygo ? 'Your down payment has been received and your order is now being processed. Thank you! 🙏' : 'Your payment has been received and your order is now being processed. Thank you! 🙏'}</p>
 
           <div style="background:#e5f6ec;border-radius:8px;padding:16px 20px;margin:20px 0;">
             <p style="margin:4px 0;"><strong>Order #:</strong> ${data.orderNumber}</p>
-            <p style="margin:4px 0;"><strong>Amount paid:</strong> <span style="font-size:18px;font-weight:bold;color:#1e8e4e;">${data.amountRwf.toLocaleString()} FRW</span></p>
+            <p style="margin:4px 0;"><strong>${isPaygo ? 'Down payment received' : 'Amount paid'}:</strong> <span style="font-size:18px;font-weight:bold;color:#1e8e4e;">${data.amountRwf.toLocaleString()} FRW</span></p>
             <p style="margin:4px 0;"><strong>Date:</strong> ${paidAtStr}</p>
           </div>
+
+          ${paygoNote}
 
           <h3 style="color:#333;">Items ordered</h3>
           <table style="width:100%;border-collapse:collapse;">
@@ -187,7 +208,7 @@ export class EmailService {
             </tr></thead>
             <tbody>${itemsHtml}</tbody>
             <tfoot><tr>
-              <td colspan="2" style="padding:10px 8px;font-weight:bold;text-align:right;">Total paid:</td>
+              <td colspan="2" style="padding:10px 8px;font-weight:bold;text-align:right;">${isPaygo ? 'Down payment received:' : 'Total paid:'}</td>
               <td style="padding:10px 8px;font-weight:bold;font-size:16px;text-align:right;color:#1e8e4e;">${data.amountRwf.toLocaleString()} FRW</td>
             </tr></tfoot>
           </table>
@@ -202,9 +223,11 @@ export class EmailService {
 
     await this.sendEmail({
       to: data.customerEmail,
-      subject: `✅ Payment Received – Order #${data.orderNumber} | KosmoPads`,
+      subject: isPaygo ? `✅ Down Payment Received – Order #${data.orderNumber} | KosmoPads` : `✅ Payment Received – Order #${data.orderNumber} | KosmoPads`,
       html,
-      text: `Hi ${data.customerName}, your payment of ${data.amountRwf.toLocaleString()} FRW for order #${data.orderNumber} has been confirmed. Thank you!`,
+      text: isPaygo
+        ? `Hi ${data.customerName}, your down payment of ${data.amountRwf.toLocaleString()} FRW for order #${data.orderNumber} has been confirmed. Remaining balance: ${data.paygo!.remainingRwf.toLocaleString()} FRW across your installment schedule. Thank you!`
+        : `Hi ${data.customerName}, your payment of ${data.amountRwf.toLocaleString()} FRW for order #${data.orderNumber} has been confirmed. Thank you!`,
     });
   }
 
@@ -390,6 +413,49 @@ export class EmailService {
       subject: `🎉 Your PayGo loan ${data.loanNumber} is fully paid off`,
       html,
       text: `Your PayGo loan ${data.loanNumber} is fully paid. Total paid: ${data.totalPaidRwf.toLocaleString()} RWF.`,
+    });
+  }
+
+  // ============================================
+  // Confirmation sent after EVERY installment payment — not just the
+  // final one. Previously the only PayGo-related notification was the
+  // "loan completed" email sent once, at the very end. A customer paying
+  // over many months deserves to see, each time, exactly what they just
+  // paid and what's still left — this is the difference between a
+  // platform that feels transparent and one that leaves people guessing
+  // where they stand on a debt.
+  // ============================================
+  static async sendInstallmentPaymentReceipt(data: {
+    customerName: string;
+    customerEmail: string;
+    loanNumber: string;
+    installmentNumber: number;
+    amountPaidRwf: number;
+    remainingBalanceRwf: number;
+    isFullyPaid: boolean;
+  }): Promise<void> {
+    if (!data.customerEmail) return;
+    const html = `<div style="font-family:sans-serif;padding:20px;max-width:500px;margin:0 auto;">
+      <div style="background:#0F766E;padding:20px;text-align:center;border-radius:8px 8px 0 0;">
+        <h2 style="margin:0;color:#fff;">${data.isFullyPaid ? '🎉 Loan Fully Paid!' : '✅ Installment Payment Received'}</h2>
+      </div>
+      <div style="background:#fff;padding:28px;border-radius:0 0 8px 8px;box-shadow:0 2px 6px rgba(0,0,0,.08);">
+        <h2 style="margin-top:0;">Hi ${data.customerName},</h2>
+        <p>We've received your payment on installment #${data.installmentNumber} for loan ${data.loanNumber}.</p>
+        <div style="background:#e5f6ec;border-radius:8px;padding:16px 20px;margin:16px 0;">
+          <p style="margin:4px 0;"><strong>Amount paid today:</strong> <span style="color:#0F766E;font-weight:bold;">${data.amountPaidRwf.toLocaleString()} FRW</span></p>
+          <p style="margin:4px 0;"><strong>Remaining balance:</strong> <span style="font-weight:bold;">${data.remainingBalanceRwf.toLocaleString()} FRW</span></p>
+        </div>
+        ${data.isFullyPaid
+          ? '<p>🎉 Congratulations — your installment plan is now fully paid off! Thank you for staying on track with your payments.</p>'
+          : '<p>Thank you for keeping up with your payments. We\'ll remind you before your next installment is due.</p>'}
+      </div>
+    </div>`;
+    await this.sendEmail({
+      to: data.customerEmail,
+      subject: data.isFullyPaid ? `🎉 Loan ${data.loanNumber} fully paid off!` : `✅ Payment received — ${data.remainingBalanceRwf.toLocaleString()} FRW remaining`,
+      html,
+      text: `Payment of ${data.amountPaidRwf.toLocaleString()} FRW received on loan ${data.loanNumber}, installment #${data.installmentNumber}. Remaining balance: ${data.remainingBalanceRwf.toLocaleString()} FRW.${data.isFullyPaid ? ' Your loan is now fully paid off!' : ''}`,
     });
   }
 

@@ -107,4 +107,20 @@ export class SmsService {
       `Hi ${opts.customerName}, your KosmoPads PayGo payment (loan ${opts.loanNumber}) is ${opts.daysOverdue} day(s) overdue. Amount owed: ${opts.amountOwedRwf.toLocaleString()} RWF. Please pay via MoMo as soon as possible. — Kosmotive`
     );
   }
+
+  // Sent after EVERY installment payment — not just when the loan is
+  // fully paid off. Reaches every customer regardless of whether they
+  // have an email, since SMS is the one channel everyone here has.
+  static async sendInstallmentPaymentConfirmation(phone: string, opts: { customerName: string; loanNumber: string; amountPaidRwf: number; remainingBalanceRwf: number; isFullyPaid: boolean }) {
+    if (opts.isFullyPaid) {
+      return this.send(
+        phone,
+        `Hi ${opts.customerName}, payment received! Your KosmoPads PayGo loan ${opts.loanNumber} is now FULLY PAID OFF. Thank you for staying on track — well done! — Kosmotive`
+      );
+    }
+    return this.send(
+      phone,
+      `Hi ${opts.customerName}, we received your payment of ${opts.amountPaidRwf.toLocaleString()} RWF on loan ${opts.loanNumber}. Remaining balance: ${opts.remainingBalanceRwf.toLocaleString()} RWF. Thank you! — Kosmotive`
+    );
+  }
 }

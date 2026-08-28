@@ -238,7 +238,7 @@ export class LoanService {
     installmentId: number,
     input: { amountRwf: number; method: string; phone?: string; note?: string; adminId?: number | null }
   ) {
-    const { loanId, allPaid, loanNumber, customerId } = await db.transaction(async (tx) => {
+    const { loanId, allPaid, loanNumber, customerId, totalAppliedThisCall } = await db.transaction(async (tx) => {
       const [installment] = await tx.select().from(installments).where(eq(installments.id, installmentId));
       if (!installment) throw new Error('Installment not found');
 
@@ -266,6 +266,7 @@ export class LoanService {
       }
 
       let remaining = input.amountRwf;
+      let totalAppliedThisCall = 0;
       let cursor = installment;
 
       while (remaining > 0 && cursor) {
@@ -273,6 +274,7 @@ export class LoanService {
         const applied = Math.min(remaining, Math.max(owed, 0));
 
         if (applied > 0) {
+          totalAppliedThisCall += applied;
           const newPaid = (cursor.amountPaidRwf || 0) + applied;
           const fullyPaid = newPaid >= cursor.amountDueRwf + (cursor.penaltyRwf || 0);
 
@@ -372,20 +374,41 @@ export class LoanService {
           .where(eq(loans.id, loan.id));
       }
 
-      return { loanId: loan.id, allPaid, loanNumber: loan.loanNumber, customerId: loan.customerId };
+      return { loanId: loan.id, allPaid, loanNumber: loan.loanNumber, customerId: loan.customerId, totalAppliedThisCall };
     });
 
-    if (allPaid) {
-      const [customer] = await db.select().from(customers).where(eq(customers.id, customerId));
-      if (customer?.email) {
-        const allInstallments = await db.select().from(installments).where(eq(installments.loanId, loanId));
-        const totalPaidRwf = allInstallments.reduce((s, i) => s + (i.amountPaidRwf || 0), 0);
-        EmailService.sendLoanCompletedNotice({
-          customerName: `${customer.firstName} ${customer.lastName}`,
+    // ---- Confirmation sent after EVERY installment payment ----
+    // Not just when the loan finishes — a customer paying over many
+    // months deserves to see, each time, exactly what they just paid and
+    // what's still left. Reaches the customer by SMS (every customer has
+    // a phone) and by email too when they have one on file.
+    const [customer] = await db.select().from(customers).where(eq(customers.id, customerId));
+    if (customer) {
+      const allInstallments = await db.select().from(installments).where(eq(installments.loanId, loanId));
+      const totalPaidRwf = allInstallments.reduce((s, i) => s + (i.amountPaidRwf || 0), 0);
+      const [loanRow] = await db.select({ totalPayableRwf: loans.totalPayableRwf }).from(loans).where(eq(loans.id, loanId));
+      const remainingBalanceRwf = Math.max(0, (loanRow?.totalPayableRwf ?? 0) - totalPaidRwf);
+      const customerName = `${customer.firstName} ${customer.lastName}`;
+
+      await SmsService.sendInstallmentPaymentConfirmation(customer.phone, {
+        customerName,
+        loanNumber,
+        amountPaidRwf: totalAppliedThisCall,
+        remainingBalanceRwf,
+        isFullyPaid: allPaid,
+      }).catch((err) => console.error('Installment payment SMS error (non-fatal):', err));
+
+      if (customer.email) {
+        const lastPaidInstallment = allInstallments.filter((i) => i.status === 'paid').sort((a, b) => b.installmentNumber - a.installmentNumber)[0];
+        EmailService.sendInstallmentPaymentReceipt({
+          customerName,
           customerEmail: customer.email,
           loanNumber,
-          totalPaidRwf,
-        }).catch((err) => console.error('Loan completion email error (non-fatal):', err));
+          installmentNumber: lastPaidInstallment?.installmentNumber ?? 1,
+          amountPaidRwf: totalAppliedThisCall,
+          remainingBalanceRwf,
+          isFullyPaid: allPaid,
+        }).catch((err) => console.error('Installment payment email error (non-fatal):', err));
       }
     }
 
