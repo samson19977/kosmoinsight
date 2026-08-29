@@ -11,6 +11,7 @@ import {
   fetchMyCustomers, createMyOrder, type AgentCustomer, type NewCustomerInput, type CreateAgentOrderInput,
 } from '../../services/agent.service';
 import { formatRwf } from '../../components/agent/StatCard';
+import CascadingLocationSelect from '../../components/common/CascadingLocationSelect';
 
 type CartLine = { productId: number; name: string; price: number; quantity: number; installmentEligible?: boolean };
 type PaymentChoice = 'Cash on Delivery' | 'Mobile Money (MTN / Airtel)' | 'PayGo Installments';
@@ -189,10 +190,12 @@ const AgentNewOrderPage: React.FC = () => {
                 )}
                 <input className={inputCls} placeholder="Email" value={newCustomer.email} onChange={(e) => setNewCustomer((f) => ({ ...f, email: e.target.value }))} autoComplete="off" />
                 <input className={inputCls} placeholder="National ID (for PayGo)" value={newCustomer.nationalId} onChange={(e) => setNewCustomer((f) => ({ ...f, nationalId: e.target.value }))} maxLength={16} autoComplete="off" />
-                <input className={inputCls} placeholder="District" value={newCustomer.district} onChange={(e) => setNewCustomer((f) => ({ ...f, district: e.target.value }))} autoComplete="off" />
-                <input className={inputCls} placeholder="Sector" value={newCustomer.sector} onChange={(e) => setNewCustomer((f) => ({ ...f, sector: e.target.value }))} autoComplete="off" />
-                <input className={inputCls} placeholder="Cell" value={newCustomer.cell} onChange={(e) => setNewCustomer((f) => ({ ...f, cell: e.target.value }))} autoComplete="off" />
-                <input className={inputCls} placeholder="Village" value={newCustomer.village} onChange={(e) => setNewCustomer((f) => ({ ...f, village: e.target.value }))} autoComplete="off" />
+                <div className="col-span-2">
+                  <CascadingLocationSelect
+                    value={{ district: newCustomer.district || '', sector: newCustomer.sector || '', cell: newCustomer.cell || '', village: newCustomer.village || '' }}
+                    onChange={(loc) => setNewCustomer((f) => ({ ...f, ...loc }))}
+                  />
+                </div>
               </div>
             )}
           </div>

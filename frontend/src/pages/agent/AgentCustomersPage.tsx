@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import { Loader2, Search, UserPlus, X, Phone, MapPin, Download } from 'lucide-react';
 import { fetchMyCustomers, createMyCustomer, downloadMyCustomersCsv, type NewCustomerInput } from '../../services/agent.service';
 import Pagination from '../../components/agent/Pagination';
+import CascadingLocationSelect from '../../components/common/CascadingLocationSelect';
 
 const inputCls = 'w-full px-3.5 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent bg-white transition-all';
 
@@ -59,14 +60,10 @@ const NewCustomerModal: React.FC<{ onClose: () => void; onCreated: () => void }>
             <input className={inputCls} placeholder="Email" value={form.email} onChange={set('email')} autoComplete="off" />
           </div>
           <input className={inputCls} placeholder="National ID (16 digits, for PayGo)" value={form.nationalId} onChange={set('nationalId')} maxLength={16} autoComplete="off" />
-          <div className="grid grid-cols-2 gap-3">
-            <input className={inputCls} placeholder="District" value={form.district} onChange={set('district')} autoComplete="off" />
-            <input className={inputCls} placeholder="Sector" value={form.sector} onChange={set('sector')} autoComplete="off" />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <input className={inputCls} placeholder="Cell" value={form.cell} onChange={set('cell')} autoComplete="off" />
-            <input className={inputCls} placeholder="Village" value={form.village} onChange={set('village')} autoComplete="off" />
-          </div>
+          <CascadingLocationSelect
+            value={{ district: form.district || '', sector: form.sector || '', cell: form.cell || '', village: form.village || '' }}
+            onChange={(loc) => setForm((f) => ({ ...f, ...loc }))}
+          />
           <button type="submit" disabled={saving} className="w-full bg-primary-600 hover:bg-primary-700 disabled:opacity-60 text-white font-semibold py-3 rounded-xl transition-colors flex items-center justify-center gap-2">
             {saving ? <Loader2 className="animate-spin" size={16} /> : <UserPlus size={16} />}
             {saving ? 'Saving…' : 'Register Customer'}

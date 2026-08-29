@@ -12,6 +12,7 @@ import { payments } from './db/schema';
 
 import productsRouter from './routes/products';
 import ordersRouter from './routes/orders';
+import locationsRouter from './routes/locations';
 import paymentsRouter from './routes/payments';
 import adminAuthRouter from './routes/admin-auth';
 import adminDashboardRouter from './routes/admin-dashboard';
@@ -102,6 +103,7 @@ app.use(express.static('public'));
 // ============================================
 app.use('/api/products', productsRouter);
 app.use('/api/orders', ordersRouter);
+app.use('/api/locations', locationsRouter);
 app.use('/api/payments', paymentsRouter);
 app.use('/api/admin', adminAuthRouter);
 app.use('/api/admin/dashboard', adminDashboardRouter);

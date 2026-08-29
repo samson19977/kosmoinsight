@@ -390,3 +390,49 @@ export const settings = pgTable('settings', {
   value: text('value').notNull(),
   updatedAt: timestamp('updated_at').defaultNow(),
 });
+
+// ============================================
+// RWANDA ADMINISTRATIVE HIERARCHY (reference data — read-only lookups)
+// Province → District → Sector → Cell → Village. This is what powers the
+// cascading location dropdowns everywhere a customer/agent address is
+// entered, replacing free-text district/sector/cell/village fields that
+// let anyone type anything (misspellings, made-up places, inconsistent
+// naming across records — all a real problem for KYC/PayGo, where an
+// address is part of verifying who someone actually is).
+//
+// DELIBERATE DESIGN CHOICE: these tables are reference-only. The existing
+// customers.district/sector/cell/village and agents.district/sector/cell/
+// village columns stay exactly as they are (free-text varchar) — a
+// selection here just fills in the resolved official name into those
+// same fields. This gets you validated, consistent, cascading selection
+// without a breaking schema change across every place that already reads
+// those columns as plain strings.
+//
+// DATA SOURCE: seeded from a real, complete Rwanda administrative dataset
+// (5 provinces, 30 districts, 416 sectors, 2,149 cells, 14,837 villages)
+// — see src/db/seedLocations.ts and backend/data/rwanda-locations.json.
+// ============================================
+export const rwDistricts = pgTable('rw_districts', {
+  id: serial('id').primaryKey(),
+  province: varchar('province', { length: 50 }).notNull(),
+  name: varchar('name', { length: 100 }).notNull().unique(),
+});
+
+export const rwSectors = pgTable('rw_sectors', {
+  id: serial('id').primaryKey(),
+  districtId: integer('district_id').references(() => rwDistricts.id).notNull(),
+  name: varchar('name', { length: 100 }).notNull(),
+});
+
+export const rwCells = pgTable('rw_cells', {
+  id: serial('id').primaryKey(),
+  sectorId: integer('sector_id').references(() => rwSectors.id).notNull(),
+  name: varchar('name', { length: 100 }).notNull(),
+});
+
+export const rwVillages = pgTable('rw_villages', {
+  id: serial('id').primaryKey(),
+  cellId: integer('cell_id').references(() => rwCells.id).notNull(),
+  name: varchar('name', { length: 100 }).notNull(),
+});
+

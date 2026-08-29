@@ -7,14 +7,7 @@ import { initiateMomoPayment } from '../services/payment.service';
 import { getStoredReferralCode } from '../utils/referral';
 import toast from 'react-hot-toast';
 import { Phone, CreditCard, ArrowLeft, CheckCircle, Loader2, ShieldCheck } from 'lucide-react';
-
-const RWANDAN_DISTRICTS = [
-  'Bugesera','Burera','Gakenke','Gasabo','Gatsibo','Gicumbi','Gisagara','Huye',
-  'Kamonyi','Karongi','Kayonza','Kicukiro','Kirehe','Muhanga','Musanze',
-  'Ngoma','Ngororero','Nyabihu','Nyagatare','Nyamagabe','Nyamasheke',
-  'Nyanza','Nyarugenge','Nyaruguru','Rubavu','Ruhango','Rulindo','Rusizi',
-  'Rutsiro','Rwamagana',
-];
+import CascadingLocationSelect from '../components/common/CascadingLocationSelect';
 
 const Field: React.FC<{ label: string; required?: boolean; children: React.ReactNode; hint?: string }> = ({ label, required, children, hint }) => (
   <div>
@@ -31,7 +24,7 @@ const CheckoutPage: React.FC = () => {
   const { items, totalPrice, clearCart } = useCart();
   const [loading, setLoading] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'momo' | 'cash'>('momo');
-  const [form, setForm] = useState({ firstName: '', lastName: '', email: '', phone: '', district: '', village: '', notes: '' });
+  const [form, setForm] = useState({ firstName: '', lastName: '', email: '', phone: '', district: '', sector: '', cell: '', village: '', notes: '' });
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   useEffect(() => { if (items.length === 0) navigate('/products'); }, [items, navigate]);
@@ -60,7 +53,7 @@ const CheckoutPage: React.FC = () => {
     setLoading(true);
     try {
       const payload = {
-        customer: { firstName: form.firstName.trim(), lastName: form.lastName.trim(), email: form.email || undefined, phone: form.phone.trim(), district: form.district, village: form.village || undefined },
+        customer: { firstName: form.firstName.trim(), lastName: form.lastName.trim(), email: form.email || undefined, phone: form.phone.trim(), district: form.district, sector: form.sector || undefined, cell: form.cell || undefined, village: form.village || undefined },
         items: items.map((i) => ({ name: i.name, quantity: i.quantity, price: i.price, productId: i.id })),
         paymentMethod: paymentMethod === 'momo' ? 'Mobile Money (MTN / Airtel)' : 'Cash on Delivery',
         notes: form.notes || undefined,
@@ -145,19 +138,17 @@ const CheckoutPage: React.FC = () => {
               {errors.phone && <p className="text-xs text-red-500 mt-1">{errors.phone}</p>}
             </Field>
 
-            {/* District & Village */}
-            <div className="grid grid-cols-2 gap-4">
-              <Field label="District" required>
-                <select value={form.district} onChange={set('district')} className={`${inputCls} ${errors.district ? 'border-red-400' : ''}`}>
-                  <option value="">Select district</option>
-                  {RWANDAN_DISTRICTS.map((d) => <option key={d} value={d}>{d}</option>)}
-                </select>
-                {errors.district && <p className="text-xs text-red-500 mt-1">{errors.district}</p>}
-              </Field>
-              <Field label="Village / Sector" hint="Optional">
-                <input type="text" value={form.village} onChange={set('village')} placeholder="Kimironko" className={inputCls} />
-              </Field>
-            </div>
+            {/* District, Sector, Cell, Village — cascading, from Rwanda's
+                official administrative hierarchy, not free text. District
+                is required (delivery needs at least that much); the rest
+                help narrow down delivery but aren't required to check out. */}
+            <Field label="Delivery Location" required>
+              <CascadingLocationSelect
+                value={{ district: form.district, sector: form.sector, cell: form.cell, village: form.village }}
+                onChange={(loc) => { setForm((f) => ({ ...f, ...loc })); setErrors((er) => ({ ...er, district: '' })); }}
+              />
+              {errors.district && <p className="text-xs text-red-500 mt-1">{errors.district}</p>}
+            </Field>
 
             {/* Notes */}
             <Field label="Additional Notes" hint="Optional — special instructions or delivery notes">

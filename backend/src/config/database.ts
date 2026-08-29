@@ -9,7 +9,17 @@ const pool = new Pool({
   },
   max: 10,
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
+  // Was 2000ms — genuinely too aggressive for a real network hop to a
+  // remote Postgres instance (Supabase, over the internet, from Rwanda).
+  // A brief network hiccup or a cold connection pool taking slightly
+  // longer than 2 seconds to establish would fail outright with
+  // "Connection terminated due to connection timeout" — not just for
+  // one-off scripts like the location seed, but potentially for real
+  // production requests too. 10 seconds is a much more realistic timeout
+  // for establishing a connection, while still failing fast enough to
+  // notice a genuinely broken connection string or unreachable database.
+  connectionTimeoutMillis: 10000,
+  keepAlive: true,
 });
 
 export const db = drizzle(pool, { schema });

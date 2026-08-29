@@ -4,14 +4,7 @@ import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { UserPlus, Loader2, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import { registerAgent } from '../../services/agent.service';
-
-const RWANDAN_DISTRICTS = [
-  'Bugesera', 'Burera', 'Gakenke', 'Gasabo', 'Gatsibo', 'Gicumbi', 'Gisagara', 'Huye',
-  'Kamonyi', 'Karongi', 'Kayonza', 'Kicukiro', 'Kirehe', 'Muhanga', 'Musanze',
-  'Ngoma', 'Ngororero', 'Nyabihu', 'Nyagatare', 'Nyamagabe', 'Nyamasheke',
-  'Nyanza', 'Nyarugenge', 'Nyaruguru', 'Rubavu', 'Ruhango', 'Rulindo', 'Rusizi',
-  'Rutsiro', 'Rwamagana',
-];
+import CascadingLocationSelect from '../../components/common/CascadingLocationSelect';
 
 const Field: React.FC<{ label: string; required?: boolean; children: React.ReactNode; error?: string }> = ({ label, required, children, error }) => (
   <div>
@@ -140,23 +133,12 @@ const AgentRegisterPage: React.FC = () => {
               <input className={inputCls} value={form.nationalId} onChange={set('nationalId')} placeholder="16-digit National ID" maxLength={16} autoComplete="off" />
             </Field>
 
-            <div className="grid grid-cols-2 gap-4">
-              <Field label="District" required error={errors.district}>
-                <select className={inputCls} value={form.district} onChange={set('district')}>
-                  <option value="">Select district</option>
-                  {RWANDAN_DISTRICTS.map((d) => <option key={d} value={d}>{d}</option>)}
-                </select>
-              </Field>
-              <Field label="Sector" required error={errors.sector}>
-                <input className={inputCls} value={form.sector} onChange={set('sector')} autoComplete="off" />
-              </Field>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <Field label="Cell" required error={errors.cell}>
-                <input className={inputCls} value={form.cell} onChange={set('cell')} autoComplete="off" />
-              </Field>
-              <Field label="Village" required error={errors.village}>
-                <input className={inputCls} value={form.village} onChange={set('village')} autoComplete="off" />
+            <div className="grid grid-cols-1">
+              <Field label="Address (District, Sector, Cell, Village)" required error={errors.district || errors.sector || errors.cell || errors.village}>
+                <CascadingLocationSelect
+                  value={{ district: form.district, sector: form.sector, cell: form.cell, village: form.village }}
+                  onChange={(loc) => setForm((f) => ({ ...f, ...loc }))}
+                />
               </Field>
             </div>
 

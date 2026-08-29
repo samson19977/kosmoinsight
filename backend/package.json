@@ -10,6 +10,7 @@
     "db:push": "drizzle-kit push",
     "db:seed": "ts-node src/db/seed.ts",
     "encrypt-national-ids": "ts-node src/scripts/encrypt-existing-national-ids.ts",
+    "db:seed-locations": "ts-node src/db/seedLocations.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio"
