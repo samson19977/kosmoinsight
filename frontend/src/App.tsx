@@ -13,6 +13,7 @@ import ProductDetailPage from './pages/ProductDetailPage';
 import CheckoutPage from './pages/CheckoutPage';
 import OrderConfirmationPage from './pages/OrderConfirmationPage';
 import OrderStatusPage from './pages/OrderStatusPage';
+import MyLoanPage from './pages/MyLoanPage';
 import NotFoundPage from './pages/NotFoundPage';
 import BecomeAgentPage from './pages/agent/BecomeAgentPage';
 import AgentRegisterPage from './pages/agent/AgentRegisterPage';
@@ -63,6 +64,7 @@ function App() {
                       <Route path="order-confirmation/:orderNumber" element={<OrderConfirmationPage />} />
                       <Route path="order-status" element={<OrderStatusPage />} />
                       <Route path="order-status/:orderNumber" element={<OrderStatusPage />} />
+                      <Route path="my-loan" element={<MyLoanPage />} />
                       <Route path="become-an-agent" element={<BecomeAgentPage />} />
                       <Route path="*" element={<NotFoundPage />} />
                     </Routes>
