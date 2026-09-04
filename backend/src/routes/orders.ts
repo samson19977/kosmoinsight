@@ -5,7 +5,7 @@ import { validate } from '../middleware/validate';
 import { orderSchema } from '../lib/validation/schemas';
 import { EmailService } from '../services/email.service';
 import { MomoService } from '../services/momo.service';
-import { LoanService } from '../services/loan.service';
+import { LoanService, PayGoSequencingBlockError } from '../services/loan.service';
 import { AgentService } from '../services/agent.service';
 import { PaymentReconciliationService } from '../services/paymentReconciliation.service';
 import { requireAdmin } from '../middleware/auth';
@@ -315,7 +315,7 @@ export async function createOrderCore(input: {
     // sequencing/identity rule — not for other failures (insufficient
     // stock, validation errors, etc.), which don't need this framing and
     // whose messages aren't written for a customer to read.
-    const isPayGoBlock = /installment plan/i.test(error?.message || '');
+    const isPayGoBlock = error instanceof PayGoSequencingBlockError;
     if (isPayGoBlock && notify.snapshot?.phone) {
       await SmsService.send(
         notify.snapshot!.phone,

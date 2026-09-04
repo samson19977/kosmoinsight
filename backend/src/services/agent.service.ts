@@ -281,40 +281,105 @@ export class AgentService {
     };
   }
 
+  // Lightweight agent detail — summary numbers only. Customers, orders,
+  // loans, and commissions are now separate PAGINATED endpoints (see
+  // getAgentCustomersPaginated etc. below) — an agent with a large
+  // customer book used to mean this single call dumped every one of
+  // their customers/orders/loans/commissions in one unbounded response,
+  // which doesn't scale and gives no way to search within them.
   static async getAgentDetail(id: number) {
     const [agent] = await db.select().from(agents).where(eq(agents.id, id));
     if (!agent) return null;
     const { passwordHash, ...safeAgent } = agent;
 
-    const commissions = await db
-      .select()
-      .from(agentCommissions)
-      .where(eq(agentCommissions.agentId, id))
-      .orderBy(desc(agentCommissions.createdAt));
-
-    const agentCustomers = await db.select().from(customers).where(eq(customers.agentId, id));
-    const agentOrders = await db.select().from(orders).where(eq(orders.agentId, id)).orderBy(desc(orders.createdAt));
-
-    const agentLoans = await db
-      .select({ loan: loans })
-      .from(loans)
-      .innerJoin(customers, eq(loans.customerId, customers.id))
-      .where(eq(customers.agentId, id));
-
+    const commissions = await db.select().from(agentCommissions).where(eq(agentCommissions.agentId, id));
     const pendingRwf = commissions.filter((c) => c.status === 'pending').reduce((s, c) => s + c.commissionRwf, 0);
     const paidRwf = commissions.filter((c) => c.status === 'paid').reduce((s, c) => s + c.commissionRwf, 0);
     const totalSalesRwf = commissions.reduce((s, c) => s + c.saleAmountRwf, 0);
 
+    const [{ customerCount }] = await db.select({ customerCount: sql<number>`count(*)::int` }).from(customers).where(eq(customers.agentId, id));
+    const [{ orderCount }] = await db.select({ orderCount: sql<number>`count(*)::int` }).from(orders).where(eq(orders.agentId, id));
+    const [{ loanCount }] = await db
+      .select({ loanCount: sql<number>`count(*)::int` })
+      .from(loans)
+      .innerJoin(customers, eq(loans.customerId, customers.id))
+      .where(eq(customers.agentId, id));
+
     return {
       agent: safeAgent,
-      commissions,
-      customers: agentCustomers,
-      orders: agentOrders,
-      loans: agentLoans.map((l) => l.loan),
       pendingRwf,
       paidRwf,
       totalSalesRwf,
+      customerCount,
+      orderCount,
+      loanCount,
+      commissionCount: commissions.length,
     };
+  }
+
+  // ---- Paginated/searchable sub-lists for one agent (admin agent-detail view) ----
+
+  static async getAgentCustomersPaginated(agentId: number, opts: { page: number; pageSize: number; search?: string }) {
+    const clauses = [eq(customers.agentId, agentId)];
+    if (opts.search) {
+      const like = `%${opts.search}%`;
+      clauses.push(or(ilike(customers.firstName, like), ilike(customers.lastName, like), ilike(customers.phone, like), ilike(customers.email, like))!);
+    }
+    const where = and(...clauses);
+    const offset = (opts.page - 1) * opts.pageSize;
+    const [rows, [{ count }]] = await Promise.all([
+      db.select().from(customers).where(where).orderBy(desc(customers.createdAt)).limit(opts.pageSize).offset(offset),
+      db.select({ count: sql<number>`count(*)::int` }).from(customers).where(where),
+    ]);
+    return { rows, total: count };
+  }
+
+  static async getAgentOrdersPaginated(agentId: number, opts: { page: number; pageSize: number; search?: string }) {
+    const clauses = [eq(orders.agentId, agentId)];
+    if (opts.search) {
+      const like = `%${opts.search}%`;
+      clauses.push(or(ilike(orders.orderNumber, like), ilike(orders.customerName, like), ilike(orders.customerPhone, like))!);
+    }
+    const where = and(...clauses);
+    const offset = (opts.page - 1) * opts.pageSize;
+    const [rows, [{ count }]] = await Promise.all([
+      db.select().from(orders).where(where).orderBy(desc(orders.createdAt)).limit(opts.pageSize).offset(offset),
+      db.select({ count: sql<number>`count(*)::int` }).from(orders).where(where),
+    ]);
+    return { rows, total: count };
+  }
+
+  static async getAgentLoansPaginated(agentId: number, opts: { page: number; pageSize: number; search?: string }) {
+    const clauses = [eq(customers.agentId, agentId)];
+    if (opts.search) {
+      const like = `%${opts.search}%`;
+      clauses.push(ilike(loans.loanNumber, like)!);
+    }
+    const where = and(...clauses);
+    const offset = (opts.page - 1) * opts.pageSize;
+    const baseQuery = () =>
+      db
+        .select({ loan: loans, customerName: sql<string>`${customers.firstName} || ' ' || ${customers.lastName}` })
+        .from(loans)
+        .innerJoin(customers, eq(loans.customerId, customers.id))
+        .where(where);
+    const [rows, countRows] = await Promise.all([
+      baseQuery().orderBy(desc(loans.createdAt)).limit(opts.pageSize).offset(offset),
+      db.select({ count: sql<number>`count(*)::int` }).from(loans).innerJoin(customers, eq(loans.customerId, customers.id)).where(where),
+    ]);
+    return { rows: rows.map((r) => ({ ...r.loan, customerName: r.customerName })), total: countRows[0].count };
+  }
+
+  static async getAgentCommissionsPaginated(agentId: number, opts: { page: number; pageSize: number; status?: string }) {
+    const clauses = [eq(agentCommissions.agentId, agentId)];
+    if (opts.status) clauses.push(eq(agentCommissions.status, opts.status));
+    const where = and(...clauses);
+    const offset = (opts.page - 1) * opts.pageSize;
+    const [rows, [{ count }]] = await Promise.all([
+      db.select().from(agentCommissions).where(where).orderBy(desc(agentCommissions.createdAt)).limit(opts.pageSize).offset(offset),
+      db.select({ count: sql<number>`count(*)::int` }).from(agentCommissions).where(where),
+    ]);
+    return { rows, total: count };
   }
 
   static async getAgentByCode(code: string) {

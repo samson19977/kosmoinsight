@@ -83,6 +83,11 @@
   .kv:last-child{border-bottom:none;}
   .kv span{color:var(--muted);}
 
+  /* ── Agent detail modal tabs ── */
+  .agent-tab{background:none;border:none;padding:8px 14px;font-size:13px;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;}
+  .agent-tab.active{color:var(--teal-dark);border-bottom-color:var(--teal-dark);font-weight:600;}
+  .agent-tab:hover{color:var(--ink);}
+
   /* ── Pager ── */
   .pager{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:14px;padding-top:12px;border-top:1px solid var(--line);flex-wrap:wrap;}
   .pager .pager-info{font-size:12px;color:var(--muted);}
@@ -677,26 +682,62 @@
 
 <!-- Agent Detail Modal -->
 <div class="modal-overlay" id="agentDetailModal">
-  <div class="modal" style="max-width:760px;max-height:85vh;overflow-y:auto;">
+  <div class="modal" style="max-width:800px;max-height:85vh;overflow-y:auto;">
     <h3 id="agentDetailTitle">Agent detail</h3>
     <div id="agentDetailSummary" style="margin-bottom:14px;"></div>
 
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;" id="agentDetailActions"></div>
 
-    <h4 style="margin:14px 0 6px;font-size:13px;color:#8a8f9c;text-transform:uppercase;">Customers (<span id="agentDetailCustCount">0</span>)</h4>
-    <div id="agentDetailCustomers"></div>
+    <!-- Tabs, each with its own search + pager — an agent with a large
+         customer/order book needs the same search+pagination every other
+         list in this dashboard has, not one giant unbounded dump. -->
+    <div style="display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:14px;" id="agentDetailTabs">
+      <button class="agent-tab active" data-tab="customers" onclick="switchAgentDetailTab('customers')">Customers (<span id="agentDetailCustCount">0</span>)</button>
+      <button class="agent-tab" data-tab="orders" onclick="switchAgentDetailTab('orders')">Orders (<span id="agentDetailOrderCount">0</span>)</button>
+      <button class="agent-tab" data-tab="loans" onclick="switchAgentDetailTab('loans')">PayGo Loans (<span id="agentDetailLoanCount">0</span>)</button>
+      <button class="agent-tab" data-tab="commissions" onclick="switchAgentDetailTab('commissions')">Commissions (<span id="agentDetailCommCount">0</span>)</button>
+      <button class="agent-tab" data-tab="audit" onclick="switchAgentDetailTab('audit')">Activity</button>
+    </div>
 
-    <h4 style="margin:14px 0 6px;font-size:13px;color:#8a8f9c;text-transform:uppercase;">Orders (<span id="agentDetailOrderCount">0</span>)</h4>
-    <div id="agentDetailOrders"></div>
+    <div id="agentDetailPane-customers" class="agent-detail-pane">
+      <div class="toolbar">
+        <input type="text" class="toolbar-search" id="agentDetailCustomersSearch" placeholder="Search name, phone, email…" autocomplete="off" />
+      </div>
+      <div id="agentDetailCustomers"></div>
+      <div class="pager" id="agentDetailCustomersPager"></div>
+    </div>
 
-    <h4 style="margin:14px 0 6px;font-size:13px;color:#8a8f9c;text-transform:uppercase;">PayGo Loans</h4>
-    <div id="agentDetailLoans"></div>
+    <div id="agentDetailPane-orders" class="agent-detail-pane" style="display:none;">
+      <div class="toolbar">
+        <input type="text" class="toolbar-search" id="agentDetailOrdersSearch" placeholder="Search order #, customer, phone…" autocomplete="off" />
+      </div>
+      <div id="agentDetailOrders"></div>
+      <div class="pager" id="agentDetailOrdersPager"></div>
+    </div>
 
-    <h4 style="margin:14px 0 6px;font-size:13px;color:#8a8f9c;text-transform:uppercase;">Commissions</h4>
-    <div id="agentDetailCommissions"></div>
+    <div id="agentDetailPane-loans" class="agent-detail-pane" style="display:none;">
+      <div class="toolbar">
+        <input type="text" class="toolbar-search" id="agentDetailLoansSearch" placeholder="Search loan #…" autocomplete="off" />
+      </div>
+      <div id="agentDetailLoans"></div>
+      <div class="pager" id="agentDetailLoansPager"></div>
+    </div>
 
-    <h4 style="margin:14px 0 6px;font-size:13px;color:#8a8f9c;text-transform:uppercase;">Activity / Audit Trail</h4>
-    <div id="agentDetailAudit"></div>
+    <div id="agentDetailPane-commissions" class="agent-detail-pane" style="display:none;">
+      <div class="toolbar">
+        <select id="agentDetailCommissionsStatusFilter">
+          <option value="">All statuses</option>
+          <option value="pending">Pending</option>
+          <option value="paid">Paid</option>
+        </select>
+      </div>
+      <div id="agentDetailCommissions"></div>
+      <div class="pager" id="agentDetailCommissionsPager"></div>
+    </div>
+
+    <div id="agentDetailPane-audit" class="agent-detail-pane" style="display:none;">
+      <div id="agentDetailAudit"></div>
+    </div>
 
     <div class="modal-btns">
       <button class="btn btn-ghost" onclick="closeAgentDetailModal()">Close</button>
@@ -1231,12 +1272,16 @@ function statusSelect(o) {
 // SHARED: pagination/search/filter/CSV-export helpers used by the
 // Orders, PayGo, Agents, and Customers tabs.
 // ============================================================
+// One consistent page size across every admin list (orders, loans, agents,
+// customers, ledger) — a mix of different page sizes made the dashboard
+// feel inconsistent depending on which tab you were on.
+const ADMIN_PAGE_SIZE = 10;
 const listState = {
-  orders: { page: 1, pageSize: 20 },
-  loans: { page: 1, pageSize: 20 },
-  agents: { page: 1, pageSize: 20 },
-  customers: { page: 1, pageSize: 20 },
-  ledger: { page: 1, pageSize: 25 },
+  orders: { page: 1, pageSize: ADMIN_PAGE_SIZE },
+  loans: { page: 1, pageSize: ADMIN_PAGE_SIZE },
+  agents: { page: 1, pageSize: ADMIN_PAGE_SIZE },
+  customers: { page: 1, pageSize: ADMIN_PAGE_SIZE },
+  ledger: { page: 1, pageSize: ADMIN_PAGE_SIZE },
 };
 
 let searchDebounceTimers = {};
@@ -1744,11 +1789,14 @@ async function checkDuplicateNationalIds() {
     const urgent = groups.filter((g) => g.hasActiveLoan).length;
     const rows = groups.map((g) => {
       const names = g.customers.map((c) => `${c.firstName} ${c.lastName} (#${c.id})`).join(', ');
-      return `<div style="margin-top:6px;">${g.hasActiveLoan ? '🔴' : '⚪'} ID ending ${g.maskedNationalId || '—'} — ${names}${g.hasActiveLoan ? ' <strong>— has an active/defaulted PayGo loan</strong>' : ''}</div>`;
+      const badge = g.hasActiveLoan
+        ? '<span style="display:inline-block;background:#c8394f;color:#fff;font-size:10px;font-weight:600;padding:1px 6px;border-radius:4px;margin-right:6px;">URGENT</span>'
+        : '<span style="display:inline-block;background:#e4e4e7;color:#5b5f6b;font-size:10px;font-weight:600;padding:1px 6px;border-radius:4px;margin-right:6px;">REVIEW</span>';
+      return `<div style="margin-top:6px;">${badge}ID ending ${g.maskedNationalId || '—'} — ${names}${g.hasActiveLoan ? ' <strong>— has an active/defaulted PayGo loan</strong>' : ''}</div>`;
     }).join('');
 
     banner.innerHTML = `
-      <strong>⚠️ ${groups.length} national ID${groups.length > 1 ? 's' : ''} shared across multiple customer records${urgent ? ` — ${urgent} with an active loan, review urgently` : ''}.</strong>
+      <strong>${groups.length} national ID${groups.length > 1 ? 's' : ''} shared across multiple customer records${urgent ? ` — ${urgent} with an active loan, review urgently` : ''}.</strong>
       This could be an innocent duplicate registration, or someone opening a second customer profile to work around the one-loan-at-a-time rule.
       ${rows}
     `;
@@ -2091,20 +2139,154 @@ async function saveNewAgent() {
   }
 }
 
-// ---- Agent detail modal ----
+// ---- Agent detail modal (tabbed, paginated, searchable sub-lists) ----
+const agentDetailState = {
+  customers: { page: 1, pageSize: 10 },
+  orders: { page: 1, pageSize: 10 },
+  loans: { page: 1, pageSize: 10 },
+  commissions: { page: 1, pageSize: 10 },
+};
+let agentDetailActiveTab = 'customers';
+
 async function openAgentDetail(id) {
   currentAgentId = id;
+  agentDetailActiveTab = 'customers';
+  Object.values(agentDetailState).forEach((s) => { s.page = 1; });
+  ['agentDetailCustomersSearch', 'agentDetailOrdersSearch', 'agentDetailLoansSearch'].forEach((elId) => {
+    const el = document.getElementById(elId);
+    if (el) el.value = '';
+  });
+  const statusFilter = document.getElementById('agentDetailCommissionsStatusFilter');
+  if (statusFilter) statusFilter.value = '';
+
   try {
     const res = await fetch(`${API_BASE}/admin/agents/${id}`, { headers: { Authorization: `Bearer ${token}` } });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Failed to load agent');
-    renderAgentDetail(data);
+    renderAgentDetailSummary(data);
+    switchAgentDetailTab('customers');
     document.getElementById('agentDetailModal').classList.add('show');
   } catch (e) {
     showToast('⚠️ ' + e.message, true);
   }
 }
 function closeAgentDetailModal() { document.getElementById('agentDetailModal').classList.remove('show'); currentAgentId = null; }
+
+function switchAgentDetailTab(tab) {
+  agentDetailActiveTab = tab;
+  document.querySelectorAll('.agent-tab').forEach((btn) => btn.classList.toggle('active', btn.dataset.tab === tab));
+  document.querySelectorAll('.agent-detail-pane').forEach((pane) => { pane.style.display = pane.id === `agentDetailPane-${tab}` ? 'block' : 'none'; });
+  loadAgentDetailTab(tab);
+}
+
+async function loadAgentDetailTab(tab) {
+  if (!currentAgentId) return;
+  const state = agentDetailState[tab];
+  try {
+    if (tab === 'customers') {
+      const search = document.getElementById('agentDetailCustomersSearch').value.trim();
+      const qs = new URLSearchParams({ page: state.page, pageSize: state.pageSize, ...(search ? { search } : {}) });
+      const res = await fetch(`${API_BASE}/admin/agents/${currentAgentId}/customers?${qs}`, { headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      document.getElementById('agentDetailCustCount').textContent = data.pagination.total;
+      const rows = data.data;
+      document.getElementById('agentDetailCustomers').innerHTML = !rows.length ? '<p class="empty">No customers found.</p>' :
+        `<table><thead><tr><th>Name</th><th>Phone</th><th>Location</th></tr></thead><tbody>` +
+        rows.map(c => `<tr><td>${c.firstName} ${c.lastName}</td><td>${c.phone}</td><td>${[c.district, c.sector].filter(Boolean).join(', ')}</td></tr>`).join('') + `</tbody></table>`;
+      renderPager('agentDetailCustomersPager', 'agentDetailCustomers_internal', data.pagination, () => loadAgentDetailTab('customers'));
+      overridePagerGoTo('agentDetailCustomersPager', (p) => { state.page = p; loadAgentDetailTab('customers'); });
+    } else if (tab === 'orders') {
+      const search = document.getElementById('agentDetailOrdersSearch').value.trim();
+      const qs = new URLSearchParams({ page: state.page, pageSize: state.pageSize, ...(search ? { search } : {}) });
+      const res = await fetch(`${API_BASE}/admin/agents/${currentAgentId}/orders?${qs}`, { headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      document.getElementById('agentDetailOrderCount').textContent = data.pagination.total;
+      const rows = data.data;
+      document.getElementById('agentDetailOrders').innerHTML = !rows.length ? '<p class="empty">No orders found.</p>' :
+        `<table><thead><tr><th>Order #</th><th>Total</th><th>Method</th><th>Payment</th><th>Date</th></tr></thead><tbody>` +
+        rows.map(o => `<tr><td><strong>${o.orderNumber}</strong></td><td>${fmt(o.totalRwf)}</td><td>${o.paymentMethod}</td><td><span class="badge ${o.paymentStatus}">${o.paymentStatus}</span></td><td>${new Date(o.createdAt).toLocaleDateString()}</td></tr>`).join('') + `</tbody></table>`;
+      renderPager('agentDetailOrdersPager', 'agentDetailOrders_internal', data.pagination, () => loadAgentDetailTab('orders'));
+      overridePagerGoTo('agentDetailOrdersPager', (p) => { state.page = p; loadAgentDetailTab('orders'); });
+    } else if (tab === 'loans') {
+      const search = document.getElementById('agentDetailLoansSearch').value.trim();
+      const qs = new URLSearchParams({ page: state.page, pageSize: state.pageSize, ...(search ? { search } : {}) });
+      const res = await fetch(`${API_BASE}/admin/agents/${currentAgentId}/loans?${qs}`, { headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      document.getElementById('agentDetailLoanCount').textContent = data.pagination.total;
+      const rows = data.data;
+      document.getElementById('agentDetailLoans').innerHTML = !rows.length ? '<p class="empty">No PayGo loans found.</p>' :
+        `<table><thead><tr><th>Loan #</th><th>Customer</th><th>Total payable</th><th>Status</th></tr></thead><tbody>` +
+        rows.map(l => `<tr><td><strong>${l.loanNumber}</strong></td><td>${l.customerName || '—'}</td><td>${fmt(l.totalPayableRwf)}</td><td>${loanStatusBadge(l.status)}</td></tr>`).join('') + `</tbody></table>`;
+      renderPager('agentDetailLoansPager', 'agentDetailLoans_internal', data.pagination, () => loadAgentDetailTab('loans'));
+      overridePagerGoTo('agentDetailLoansPager', (p) => { state.page = p; loadAgentDetailTab('loans'); });
+    } else if (tab === 'commissions') {
+      const status = document.getElementById('agentDetailCommissionsStatusFilter').value;
+      const qs = new URLSearchParams({ page: state.page, pageSize: state.pageSize, ...(status ? { status } : {}) });
+      const res = await fetch(`${API_BASE}/admin/agents/${currentAgentId}/commissions?${qs}`, { headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      document.getElementById('agentDetailCommCount').textContent = data.pagination.total;
+      const rows = data.data;
+      document.getElementById('agentDetailCommissions').innerHTML = !rows.length ? '<p class="empty">No commissions found.</p>' :
+        `<table><thead><tr><th>Order</th><th>Sale amount</th><th>Commission</th><th>Status</th><th>Date</th></tr></thead><tbody>` +
+        rows.map(c => `<tr><td>#${c.orderId}</td><td>${fmt(c.saleAmountRwf)}</td><td>${fmt(c.commissionRwf)}</td><td><span class="badge ${c.status === 'paid' ? 'success' : 'pending'}">${c.status}</span></td><td>${new Date(c.createdAt).toLocaleDateString()}</td></tr>`).join('') + `</tbody></table>`;
+      renderPager('agentDetailCommissionsPager', 'agentDetailCommissions_internal', data.pagination, () => loadAgentDetailTab('commissions'));
+      overridePagerGoTo('agentDetailCommissionsPager', (p) => { state.page = p; loadAgentDetailTab('commissions'); });
+    } else if (tab === 'audit') {
+      const res = await fetch(`${API_BASE}/admin/agents/${currentAgentId}`, { headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      const auditLog = data.auditLog;
+      document.getElementById('agentDetailAudit').innerHTML = !auditLog || !auditLog.length ? '<p class="empty">No admin actions logged yet.</p>' :
+        `<table><thead><tr><th>Action</th><th>By</th><th>Date</th></tr></thead><tbody>` +
+        auditLog.map(l => `<tr><td>${l.action}</td><td>${l.adminName || '—'}</td><td>${new Date(l.createdAt).toLocaleString()}</td></tr>`).join('') + `</tbody></table>`;
+    }
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
+  }
+}
+
+// renderPager() (shared helper) registers its "go to page" callback under
+// a key in window[`__load_${key}`] — since these agent sub-lists use
+// their own local page state rather than the global listState object,
+// this swaps that callback for one that updates the RIGHT local state
+// before reloading, so Prev/Next/page-number buttons work correctly here too.
+function overridePagerGoTo(containerId, onPageChange) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  el.querySelectorAll('button[onclick^="goToPage"]').forEach((btn) => {
+    const match = btn.getAttribute('onclick').match(/goToPage\('([^']+)',\s*(\d+)\)/);
+    if (!match) return;
+    const page = Number(match[2]);
+    btn.onclick = () => onPageChange(page);
+    btn.removeAttribute('onclick');
+  });
+}
+
+// Search boxes / status filter inside the agent detail modal — debounced,
+// resets to page 1 on change, same pattern as every other list.
+let agentDetailSearchDebounce = null;
+['agentDetailCustomersSearch', 'agentDetailOrdersSearch', 'agentDetailLoansSearch'].forEach((elId) => {
+  document.addEventListener('DOMContentLoaded', () => {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    el.addEventListener('input', () => {
+      clearTimeout(agentDetailSearchDebounce);
+      agentDetailSearchDebounce = setTimeout(() => {
+        const tab = elId.replace('agentDetail', '').replace('Search', '').toLowerCase();
+        agentDetailState[tab].page = 1;
+        loadAgentDetailTab(tab);
+      }, 350);
+    });
+  });
+});
+document.addEventListener('DOMContentLoaded', () => {
+  const statusFilter = document.getElementById('agentDetailCommissionsStatusFilter');
+  if (statusFilter) statusFilter.addEventListener('change', () => { agentDetailState.commissions.page = 1; loadAgentDetailTab('commissions'); });
+});
 
 // Saving a new commission rate for this agent has two steps: PATCH the
 // agent's own rate (used for all their FUTURE orders), then immediately
@@ -2140,8 +2322,8 @@ async function saveAgentCommissionRate(id) {
   }
 }
 
-function renderAgentDetail(data) {
-  const { agent, customers: custs, orders: ords, loans: lns, commissions, pendingRwf, paidRwf, auditLog } = data;
+function renderAgentDetailSummary(data) {
+  const { agent, pendingRwf, paidRwf } = data;
   document.getElementById('agentDetailTitle').textContent = `${agent.name} — ${agent.code}`;
   document.getElementById('agentDetailSummary').innerHTML = `
     <div>${agentStatusBadge(agent.status)} · ${agent.phone} ${agent.email ? '· ' + agent.email : ''}</div>
@@ -2165,23 +2347,6 @@ function renderAgentDetail(data) {
   actions.push(`<button class="btn btn-ghost btn-sm" onclick="openResetAgentPasswordModal(${agent.id})">Reset password</button>`);
   if (pendingRwf > 0) actions.push(`<button class="btn btn-teal btn-sm" onclick="payAgentCommission(${agent.id})">Pay pending commission (${fmt(pendingRwf)})</button>`);
   document.getElementById('agentDetailActions').innerHTML = actions.join('');
-
-  document.getElementById('agentDetailCustCount').textContent = custs.length;
-  document.getElementById('agentDetailCustomers').innerHTML = !custs.length ? '<p class="empty">No customers yet.</p>' : `<table><thead><tr><th>Name</th><th>Phone</th><th>Location</th></tr></thead><tbody>` +
-    custs.map(c => `<tr><td>${c.firstName} ${c.lastName}</td><td>${c.phone}</td><td>${[c.district, c.sector].filter(Boolean).join(', ')}</td></tr>`).join('') + `</tbody></table>`;
-
-  document.getElementById('agentDetailOrderCount').textContent = ords.length;
-  document.getElementById('agentDetailOrders').innerHTML = !ords.length ? '<p class="empty">No orders yet.</p>' : `<table><thead><tr><th>Order #</th><th>Total</th><th>Method</th><th>Payment</th><th>Date</th></tr></thead><tbody>` +
-    ords.map(o => `<tr><td><strong>${o.orderNumber}</strong></td><td>${fmt(o.totalRwf)}</td><td>${o.paymentMethod}</td><td><span class="badge ${o.paymentStatus}">${o.paymentStatus}</span></td><td>${new Date(o.createdAt).toLocaleDateString()}</td></tr>`).join('') + `</tbody></table>`;
-
-  document.getElementById('agentDetailLoans').innerHTML = !lns.length ? '<p class="empty">No PayGo loans yet.</p>' : `<table><thead><tr><th>Loan #</th><th>Total payable</th><th>Status</th></tr></thead><tbody>` +
-    lns.map(l => `<tr><td><strong>${l.loanNumber}</strong></td><td>${fmt(l.totalPayableRwf)}</td><td>${loanStatusBadge(l.status)}</td></tr>`).join('') + `</tbody></table>`;
-
-  document.getElementById('agentDetailCommissions').innerHTML = !commissions.length ? '<p class="empty">No commissions yet.</p>' : `<table><thead><tr><th>Order</th><th>Sale amount</th><th>Commission</th><th>Status</th><th>Date</th></tr></thead><tbody>` +
-    commissions.map(c => `<tr><td>#${c.orderId}</td><td>${fmt(c.saleAmountRwf)}</td><td>${fmt(c.commissionRwf)}</td><td><span class="badge ${c.status === 'paid' ? 'success' : 'pending'}">${c.status}</span></td><td>${new Date(c.createdAt).toLocaleDateString()}</td></tr>`).join('') + `</tbody></table>`;
-
-  document.getElementById('agentDetailAudit').innerHTML = !auditLog || !auditLog.length ? '<p class="empty">No admin actions logged yet.</p>' : `<table><thead><tr><th>Action</th><th>By</th><th>Date</th></tr></thead><tbody>` +
-    auditLog.map(l => `<tr><td>${l.action}</td><td>${l.adminName || '—'}</td><td>${new Date(l.createdAt).toLocaleString()}</td></tr>`).join('') + `</tbody></table>`;
 }
 
 // ---- Default commission rate ----

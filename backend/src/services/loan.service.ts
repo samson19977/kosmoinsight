@@ -6,6 +6,18 @@ import { MomoService } from './momo.service';
 import { LedgerService } from './ledger.service';
 import { SmsService } from './sms.service';
 
+// A dedicated error type for both PayGo blocking rules (own-loan and
+// identity-based) — lets callers detect "this failed because of the
+// sequencing rule" reliably via instanceof, instead of pattern-matching
+// on the error message text (which is fragile and breaks silently the
+// next time the message wording changes for clarity or security reasons).
+export class PayGoSequencingBlockError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PayGoSequencingBlockError';
+  }
+}
+
 // ============================================
 // Business rules — tunable via env vars so ops can adjust policy without
 // a code deploy. Defaults reflect common PayGo microfinance practice.
@@ -111,7 +123,7 @@ export class LoanService {
         .for('update');
       const blockingLoan = openLoans.find((l) => l.status === 'active' || l.status === 'defaulted');
       if (blockingLoan) {
-        throw new Error(
+        throw new PayGoSequencingBlockError(
           `This customer already has an installment plan (${blockingLoan.loanNumber}) that hasn't been fully paid off yet. They need to finish paying it before starting a new one.`
         );
       }
@@ -144,8 +156,25 @@ export class LoanService {
             .for('update');
           const identityBlockingLoan = loansUnderSameIdentity.find((l) => l.status === 'active' || l.status === 'defaulted');
           if (identityBlockingLoan) {
-            throw new Error(
-              `This national ID already has an unpaid installment plan (${identityBlockingLoan.loanNumber}) open under a different customer record (#${identityBlockingLoan.customerId}). This looks like the same person registered twice — resolve the duplicate record before opening a new loan.`
+            // Deliberately vague to whoever triggered this (an agent, via
+            // the order/checkout flow) — the full detail (which loan,
+            // which other customer record) is logged server-side for an
+            // admin to review instead of being returned in the error.
+            // Revealing "this exact national ID already exists in our
+            // system under record #X" to whoever submitted it is an
+            // information leak: a bad actor probing the system with
+            // National ID numbers could use a specific, confirming error
+            // message to figure out which real people are already
+            // Kosmotive customers, even without ever being able to log
+            // in as them. A generic block message gives a legitimate
+            // agent enough to know something needs admin attention,
+            // without confirming anything about a stranger's identity to
+            // anyone testing the system.
+            console.warn(
+              `[loan-block] Identity-based PayGo block: national ID hash ${thisCustomer.nationalIdHash} — new attempt for customer #${input.customerId}, blocked by existing ${identityBlockingLoan.status} loan ${identityBlockingLoan.loanNumber} under customer #${identityBlockingLoan.customerId}. Review in the admin Customers tab.`
+            );
+            throw new PayGoSequencingBlockError(
+              'This customer cannot open a new PayGo loan right now. Please contact KosmoPads admin support for assistance.'
             );
           }
         }

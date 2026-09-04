@@ -13,7 +13,7 @@ const statusPill: Record<string, string> = {
   failed: 'bg-red-50 text-red-600',
 };
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 10; // consistent with the admin dashboard's page size
 
 const AgentOrdersPage: React.FC = () => {
   const [search, setSearch] = useState('');

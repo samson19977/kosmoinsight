@@ -17,6 +17,10 @@ interface CascadingLocationSelectProps {
   value: LocationValue;
   onChange: (value: LocationValue) => void;
   disabled?: boolean;
+  // Some contexts (e.g. storefront checkout, where only a district/sector
+  // is needed for delivery routing) don't need the full 4-level cascade
+  // down to Cell and Village. Defaults to the full hierarchy.
+  maxLevel?: 'district' | 'sector' | 'cell' | 'village';
 }
 
 const selectCls =
@@ -38,7 +42,10 @@ const selectCls =
 // these as text fields. This is deliberately just a better, validated
 // way of filling in the same fields, not a new data model.
 // ============================================
-const CascadingLocationSelect: React.FC<CascadingLocationSelectProps> = ({ value, onChange, disabled }) => {
+const CascadingLocationSelect: React.FC<CascadingLocationSelectProps> = ({ value, onChange, disabled, maxLevel = 'village' }) => {
+  const showSector = maxLevel !== 'district';
+  const showCell = maxLevel === 'cell' || maxLevel === 'village';
+  const showVillage = maxLevel === 'village';
   const [districts, setDistricts] = useState<LocationOption[]>([]);
   const [sectors, setSectors] = useState<LocationOption[]>([]);
   const [cells, setCells] = useState<LocationOption[]>([]);
@@ -116,26 +123,32 @@ const CascadingLocationSelect: React.FC<CascadingLocationSelectProps> = ({ value
         ))}
       </select>
 
-      <select className={selectCls} value={value.sector} onChange={(e) => handleSector(e.target.value)} disabled={disabled || !value.district || loading.sectors}>
-        <option value="">{loading.sectors ? 'Loading sectors…' : 'Sector'}</option>
-        {sectors.map((s) => (
-          <option key={s.id} value={s.name}>{s.name}</option>
-        ))}
-      </select>
+      {showSector && (
+        <select className={selectCls} value={value.sector} onChange={(e) => handleSector(e.target.value)} disabled={disabled || !value.district || loading.sectors}>
+          <option value="">{loading.sectors ? 'Loading sectors…' : 'Sector'}</option>
+          {sectors.map((s) => (
+            <option key={s.id} value={s.name}>{s.name}</option>
+          ))}
+        </select>
+      )}
 
-      <select className={selectCls} value={value.cell} onChange={(e) => handleCell(e.target.value)} disabled={disabled || !value.sector || loading.cells}>
-        <option value="">{loading.cells ? 'Loading cells…' : 'Cell'}</option>
-        {cells.map((c) => (
-          <option key={c.id} value={c.name}>{c.name}</option>
-        ))}
-      </select>
+      {showCell && (
+        <select className={selectCls} value={value.cell} onChange={(e) => handleCell(e.target.value)} disabled={disabled || !value.sector || loading.cells}>
+          <option value="">{loading.cells ? 'Loading cells…' : 'Cell'}</option>
+          {cells.map((c) => (
+            <option key={c.id} value={c.name}>{c.name}</option>
+          ))}
+        </select>
+      )}
 
-      <select className={selectCls} value={value.village} onChange={(e) => handleVillage(e.target.value)} disabled={disabled || !value.cell || loading.villages}>
-        <option value="">{loading.villages ? 'Loading villages…' : 'Village'}</option>
-        {villages.map((v) => (
-          <option key={v.id} value={v.name}>{v.name}</option>
-        ))}
-      </select>
+      {showVillage && (
+        <select className={selectCls} value={value.village} onChange={(e) => handleVillage(e.target.value)} disabled={disabled || !value.cell || loading.villages}>
+          <option value="">{loading.villages ? 'Loading villages…' : 'Village'}</option>
+          {villages.map((v) => (
+            <option key={v.id} value={v.name}>{v.name}</option>
+          ))}
+        </select>
+      )}
     </div>
   );
 };

@@ -74,7 +74,7 @@ const NewCustomerModal: React.FC<{ onClose: () => void; onCreated: () => void }>
   );
 };
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 10; // consistent with the admin dashboard's page size
 
 const AgentCustomersPage: React.FC = () => {
   const queryClient = useQueryClient();

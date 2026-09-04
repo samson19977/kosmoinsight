@@ -138,12 +138,15 @@ const CheckoutPage: React.FC = () => {
               {errors.phone && <p className="text-xs text-red-500 mt-1">{errors.phone}</p>}
             </Field>
 
-            {/* District, Sector, Cell, Village — cascading, from Rwanda's
-                official administrative hierarchy, not free text. District
-                is required (delivery needs at least that much); the rest
-                help narrow down delivery but aren't required to check out. */}
+            {/* District and Sector only for online checkout — enough for
+                delivery routing without asking a web customer to know
+                their exact Cell/Village upfront (unlike the agent
+                portal, where the agent is with the customer in person and
+                can get the full address). Both cascading, from Rwanda's
+                official administrative hierarchy, not free text. */}
             <Field label="Delivery Location" required>
               <CascadingLocationSelect
+                maxLevel="sector"
                 value={{ district: form.district, sector: form.sector, cell: form.cell, village: form.village }}
                 onChange={(loc) => { setForm((f) => ({ ...f, ...loc })); setErrors((er) => ({ ...er, district: '' })); }}
               />

@@ -165,7 +165,61 @@ router.get('/export', async (_req: Request, res: Response): Promise<void> => {
 });
 
 // ============================================
-// GET /api/admin/agents/:id — full detail: agent + customers + commission ledger
+// Paginated/searchable sub-lists for one agent's detail view — an agent
+// with a large customer/order book needs the same search+pagination as
+// every other list in this dashboard, not one giant unbounded dump.
+// ============================================
+router.get('/:id/customers', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const id = Number(req.params.id);
+    const params = parsePageParams(req.query);
+    const { rows, total } = await AgentService.getAgentCustomersPaginated(id, { page: params.page, pageSize: params.pageSize, search: params.search });
+    res.json(paginatedResponse(rows, total, params));
+  } catch (error) {
+    console.error('Agent customers (paginated) error:', error);
+    res.status(500).json({ error: 'Failed to load agent customers' });
+  }
+});
+
+router.get('/:id/orders', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const id = Number(req.params.id);
+    const params = parsePageParams(req.query);
+    const { rows, total } = await AgentService.getAgentOrdersPaginated(id, { page: params.page, pageSize: params.pageSize, search: params.search });
+    res.json(paginatedResponse(rows, total, params));
+  } catch (error) {
+    console.error('Agent orders (paginated) error:', error);
+    res.status(500).json({ error: 'Failed to load agent orders' });
+  }
+});
+
+router.get('/:id/loans', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const id = Number(req.params.id);
+    const params = parsePageParams(req.query);
+    const { rows, total } = await AgentService.getAgentLoansPaginated(id, { page: params.page, pageSize: params.pageSize, search: params.search });
+    res.json(paginatedResponse(rows, total, params));
+  } catch (error) {
+    console.error('Agent loans (paginated) error:', error);
+    res.status(500).json({ error: 'Failed to load agent loans' });
+  }
+});
+
+router.get('/:id/commissions', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const id = Number(req.params.id);
+    const params = parsePageParams(req.query);
+    const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+    const { rows, total } = await AgentService.getAgentCommissionsPaginated(id, { page: params.page, pageSize: params.pageSize, status });
+    res.json(paginatedResponse(rows, total, params));
+  } catch (error) {
+    console.error('Agent commissions (paginated) error:', error);
+    res.status(500).json({ error: 'Failed to load agent commissions' });
+  }
+});
+
+// ============================================
+// GET /api/admin/agents/:id — lightweight detail: agent + summary counts
 // ============================================
 router.get('/:id', async (req: Request, res: Response): Promise<void> => {
   try {
