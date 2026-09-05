@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CheckCircle, Copy, Phone, MapPin, Clock, Printer, ArrowRight, Home, RefreshCw, Wallet } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -194,9 +194,7 @@ const OrderConfirmationPage: React.FC = () => {
             {/* Contact */}
             <div className="text-center text-sm text-gray-500 py-2">
               Need help?{' '}
-              <a href="mailto:digital@kosmotive.rw" className="text-primary-600 hover:underline font-medium">digital@kosmotive.rw</a>
-              {' · '}
-              <a href="tel:+250788536350" className="text-primary-600 hover:underline font-medium">+250 788 536 350</a>
+              <Link to="/contact" className="text-primary-600 hover:underline font-medium">Contact us</Link>
             </div>
 
             {/* Actions */}

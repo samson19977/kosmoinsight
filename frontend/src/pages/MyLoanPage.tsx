@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { Search, Loader2, CheckCircle2, Smartphone, Calendar, TrendingUp } from 'lucide-react';
 import { fetchLoanStatus, payInstallmentMomo, type LoanStatus } from '../services/loans.service';
+import BackButton from '../components/common/BackButton';
 
 const statusPill: Record<string, string> = {
   paid: 'bg-emerald-50 text-emerald-600',
@@ -115,6 +116,7 @@ const MyLoanPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50 py-10 px-4">
       <div className="max-w-2xl mx-auto">
+        <BackButton />
         <div className="text-center mb-8">
           <h1 className="text-2xl font-display font-bold text-gray-900">My PayGo Loan</h1>
           <p className="text-gray-500 mt-1 text-sm">Check your balance and pay your next installment — no need to visit an agent.</p>

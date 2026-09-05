@@ -14,6 +14,8 @@ import CheckoutPage from './pages/CheckoutPage';
 import OrderConfirmationPage from './pages/OrderConfirmationPage';
 import OrderStatusPage from './pages/OrderStatusPage';
 import MyLoanPage from './pages/MyLoanPage';
+import ContactPage from './pages/ContactPage';
+import PayGoInfoPage from './pages/PayGoInfoPage';
 import NotFoundPage from './pages/NotFoundPage';
 import BecomeAgentPage from './pages/agent/BecomeAgentPage';
 import AgentRegisterPage from './pages/agent/AgentRegisterPage';
@@ -65,6 +67,8 @@ function App() {
                       <Route path="order-status" element={<OrderStatusPage />} />
                       <Route path="order-status/:orderNumber" element={<OrderStatusPage />} />
                       <Route path="my-loan" element={<MyLoanPage />} />
+                      <Route path="contact" element={<ContactPage />} />
+                      <Route path="paygo-info" element={<PayGoInfoPage />} />
                       <Route path="become-an-agent" element={<BecomeAgentPage />} />
                       <Route path="*" element={<NotFoundPage />} />
                     </Routes>

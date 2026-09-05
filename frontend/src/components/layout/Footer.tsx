@@ -37,7 +37,7 @@ const Footer: React.FC = () => (
         <div>
           <h4 className="text-white font-semibold mb-4">Quick Links</h4>
           <ul className="space-y-2 text-sm">
-            {[['/', 'Home'], ['/products', 'Products'], ['/checkout', 'Checkout'], ['/order-status', 'Track Order'], ['/become-an-agent', 'Become an Agent']].map(([to, label]) => (
+            {[['/', 'Home'], ['/products', 'Products'], ['/checkout', 'Checkout'], ['/order-status', 'Track Order'], ['/my-loan', 'My PayGo Loan'], ['/become-an-agent', 'Become an Agent'], ['/contact', 'Contact']].map(([to, label]) => (
               <li key={to}><Link to={to} className="text-gray-400 hover:text-primary-400 transition-colors">{label}</Link></li>
             ))}
           </ul>

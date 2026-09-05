@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Search, CheckCircle, Clock, XCircle, Package, Loader2, ArrowRight } from 'lucide-react';
 import { getOrderStatus } from '../services/orders.service';
+import BackButton from '../components/common/BackButton';
 import toast from 'react-hot-toast';
 
 const statusConfig: Record<string, { label: string; icon: React.FC<any>; color: string; bg: string; desc: string }> = {
@@ -43,6 +44,7 @@ const OrderStatusPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50 py-12">
       <div className="container mx-auto px-4 max-w-xl">
+        <BackButton />
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
           {/* Header */}
           <div className="text-center mb-8">
@@ -78,7 +80,7 @@ const OrderStatusPage: React.FC = () => {
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-red-50 border border-red-200 rounded-2xl p-6 text-center">
               <XCircle size={40} className="text-red-400 mx-auto mb-3" />
               <p className="font-semibold text-red-800 mb-1">Order Not Found</p>
-              <p className="text-sm text-red-600">Double-check the order number or contact us at <a href="mailto:digital@kosmotive.rw" className="underline">digital@kosmotive.rw</a></p>
+              <p className="text-sm text-red-600">Double-check the order number or <Link to="/contact" className="underline font-medium">contact us</Link></p>
             </motion.div>
           )}
 

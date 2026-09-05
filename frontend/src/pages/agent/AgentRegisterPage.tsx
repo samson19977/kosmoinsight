@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import { UserPlus, Loader2, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import { registerAgent } from '../../services/agent.service';
 import CascadingLocationSelect from '../../components/common/CascadingLocationSelect';
+import BackButton from '../../components/common/BackButton';
 
 const Field: React.FC<{ label: string; required?: boolean; children: React.ReactNode; error?: string }> = ({ label, required, children, error }) => (
   <div>
@@ -98,6 +99,7 @@ const AgentRegisterPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50 py-12">
       <div className="container mx-auto px-4 max-w-xl">
+        <BackButton fallback="/" label="Back to KosmoPads" />
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
           <div className="text-center mb-8">
             <div className="w-16 h-16 bg-primary-100 rounded-2xl flex items-center justify-center mx-auto mb-4">

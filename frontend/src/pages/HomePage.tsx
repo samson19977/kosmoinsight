@@ -206,12 +206,12 @@ const HomePage: React.FC = () => {
                 select KosmoPads products through our team and agents — no hidden fees, clear terms upfront.
               </p>
               <div className="flex flex-wrap gap-3">
-                <Link to="/order-status" className="inline-flex items-center gap-2 bg-accent-400 hover:bg-accent-300 text-primary-900 px-7 py-3.5 rounded-xl font-bold transition-all hover:scale-105 shadow-xl shadow-accent-900/30">
+                <Link to="/my-loan" className="inline-flex items-center gap-2 bg-accent-400 hover:bg-accent-300 text-primary-900 px-7 py-3.5 rounded-xl font-bold transition-all hover:scale-105 shadow-xl shadow-accent-900/30">
                   Check My PayGo Status <ArrowRight size={18} />
                 </Link>
-                <a href="mailto:digital@kosmotive.rw" className="inline-flex items-center gap-2 bg-white/15 hover:bg-white/25 text-white px-7 py-3.5 rounded-xl font-semibold transition-all border border-white/30">
+                <Link to="/paygo-info" className="inline-flex items-center gap-2 bg-white/15 hover:bg-white/25 text-white px-7 py-3.5 rounded-xl font-semibold transition-all border border-white/30">
                   Ask About PayGo
-                </a>
+                </Link>
               </div>
             </motion.div>
             <motion.div {...fadeUp(0.15)} className="grid grid-cols-2 gap-4">
@@ -359,9 +359,9 @@ const HomePage: React.FC = () => {
               <Link to="/products" className="bg-accent-400 hover:bg-accent-300 text-primary-900 px-8 py-4 rounded-xl font-bold transition-all hover:scale-105 shadow-xl shadow-accent-900/30">
                 Shop Now
               </Link>
-              <a href="mailto:digital@kosmotive.rw" className="bg-white/15 hover:bg-white/25 text-white px-8 py-4 rounded-xl font-semibold transition-all border border-white/30">
+              <Link to="/contact" className="bg-white/15 hover:bg-white/25 text-white px-8 py-4 rounded-xl font-semibold transition-all border border-white/30">
                 Contact Us
-              </a>
+              </Link>
             </div>
           </motion.div>
         </div>

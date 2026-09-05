@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { LogIn, Loader2, Leaf, Eye, EyeOff } from 'lucide-react';
+import BackButton from '../../components/common/BackButton';
 import { useAgentAuth } from '../../context/AgentAuthContext';
 
 const inputCls = 'w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-transparent bg-white transition-all';
@@ -33,6 +34,7 @@ const AgentLoginPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4 py-12">
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-sm">
+        <BackButton fallback="/" label="Back to KosmoPads" />
         <div className="text-center mb-8">
           <div className="w-14 h-14 bg-gradient-to-br from-primary-500 to-primary-700 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-primary-200">
             <Leaf size={24} className="text-white" />
