@@ -241,6 +241,10 @@ export async function createOrderCore(input: {
       // ----------------------------------------
       let loanResult: Awaited<ReturnType<typeof LoanService.createLoan>> | null = null;
       if (isInstallment && installmentPlan) {
+        // National ID requirement is enforced inside LoanService.createLoan
+        // itself (the one chokepoint every loan-creation path funnels
+        // through — storefront/agent/USSD here, and the admin's own
+        // direct "New Loan" form), not duplicated here.
         loanResult = await LoanService.createLoan({
           orderId: order.id,
           customerId,

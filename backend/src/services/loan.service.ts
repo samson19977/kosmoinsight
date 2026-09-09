@@ -115,6 +115,21 @@ export class LoanService {
     //    with no audit trail entry — exactly the kind of half-written
     //    financial state this rewrite is meant to eliminate everywhere.
     const runInTransaction = async (tx: DbClient) => {
+      // ---- National ID required to open any PayGo plan ----
+      // This is the ONE place every loan-creation path funnels through
+      // (storefront/agent/USSD via createOrderCore, and the admin's own
+      // direct "New Loan" form) — so it's the correct single chokepoint
+      // for this rule, rather than checking it separately in each
+      // caller. A previous version of this check lived only in
+      // createOrderCore, which meant the admin's direct loan-creation
+      // route (POST /api/admin/loans, which calls this method directly
+      // and never goes through createOrderCore) could still open a
+      // PayGo plan for a customer with no ID on file at all.
+      const [customerRow] = await tx.select({ nationalId: customers.nationalId }).from(customers).where(eq(customers.id, input.customerId));
+      if (!customerRow?.nationalId) {
+        throw new Error('A national ID (16 digits) is required to open a PayGo installment plan. Please add one to this customer\'s profile first.');
+      }
+
       // ---- Installment sequencing rule (row-locked) ----
       const openLoans = await tx
         .select({ id: loans.id, loanNumber: loans.loanNumber, status: loans.status })

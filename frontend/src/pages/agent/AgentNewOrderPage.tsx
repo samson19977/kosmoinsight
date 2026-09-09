@@ -75,19 +75,37 @@ const AgentNewOrderPage: React.FC = () => {
   const [result, setResult] = useState<OrderResult | null>(null);
 
   const RWANDA_PHONE_REGEX = /^(\+250|0)[78][0-9]{8}$/;
+  const NATIONAL_ID_REGEX = /^\d{16}$/;
   const newCustomerPhoneValid = !newCustomer.phone || RWANDA_PHONE_REGEX.test(newCustomer.phone.trim());
+  const isPayGo = paymentMethod === 'PayGo Installments';
+  // National ID is required to open a PayGo plan — checked client-side
+  // here so an agent finds out immediately instead of filling the whole
+  // form and only hearing about it from a server error at the end. The
+  // backend enforces this too (the authoritative check, since it has to
+  // cover every entry point — this is just faster feedback for the agent
+  // filling in a NEW customer's details right now.
+  const newCustomerNationalIdValid = !isPayGo || NATIONAL_ID_REGEX.test((newCustomer.nationalId || '').trim());
+  const existingCustomerHasNationalId = !isPayGo || customerMode !== 'existing' || Boolean(selectedCustomer?.nationalId);
 
   const canSubmit =
     cart.length > 0 &&
     (customerMode === 'existing'
-      ? !!selectedCustomer
-      : (newCustomer.firstName && newCustomer.lastName && newCustomer.phone && RWANDA_PHONE_REGEX.test(newCustomer.phone.trim()))) &&
+      ? !!selectedCustomer && existingCustomerHasNationalId
+      : (newCustomer.firstName && newCustomer.lastName && newCustomer.phone && RWANDA_PHONE_REGEX.test(newCustomer.phone.trim()) && newCustomerNationalIdValid)) &&
     (paymentMethod !== 'PayGo Installments' || (allEligibleForPayGo && downPayment > 0 && downPayment < cartTotal && agreementAccepted));
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
     if (customerMode === 'new' && !RWANDA_PHONE_REGEX.test(newCustomer.phone.trim())) {
       toast.error('Enter a valid Rwandan phone number (e.g. 0788123456)');
+      return;
+    }
+    if (customerMode === 'new' && isPayGo && !NATIONAL_ID_REGEX.test((newCustomer.nationalId || '').trim())) {
+      toast.error('National ID (16 digits) is required to open a PayGo plan');
+      return;
+    }
+    if (customerMode === 'existing' && isPayGo && !selectedCustomer?.nationalId) {
+      toast.error('This customer has no national ID on file — add one to their profile before opening a PayGo plan');
       return;
     }
     setSubmitting(true);
@@ -164,9 +182,14 @@ const AgentNewOrderPage: React.FC = () => {
                 {loadingCustomers ? (
                   <Loader2 className="animate-spin text-primary-600 mx-auto" size={20} />
                 ) : selectedCustomer ? (
-                  <div className="flex items-center justify-between bg-primary-50 rounded-lg px-3.5 py-2.5">
-                    <span className="text-sm font-medium text-gray-800">{selectedCustomer.firstName} {selectedCustomer.lastName} · {selectedCustomer.phone}</span>
-                    <button onClick={() => setSelectedCustomer(null)} className="text-xs text-gray-500 hover:text-red-500">Change</button>
+                  <div>
+                    <div className="flex items-center justify-between bg-primary-50 rounded-lg px-3.5 py-2.5">
+                      <span className="text-sm font-medium text-gray-800">{selectedCustomer.firstName} {selectedCustomer.lastName} · {selectedCustomer.phone}</span>
+                      <button onClick={() => setSelectedCustomer(null)} className="text-xs text-gray-500 hover:text-red-500">Change</button>
+                    </div>
+                    {isPayGo && !selectedCustomer.nationalId && (
+                      <p className="text-xs text-amber-600 mt-1.5">This customer has no national ID on file — add one to their profile before opening a PayGo plan for them.</p>
+                    )}
                   </div>
                 ) : (
                   <div className="space-y-1 max-h-52 overflow-y-auto">
@@ -189,7 +212,13 @@ const AgentNewOrderPage: React.FC = () => {
                   <p className="text-xs text-red-500 col-span-2 -mt-2">Enter a valid Rwandan phone number, e.g. 0788123456</p>
                 )}
                 <input className={inputCls} placeholder="Email" value={newCustomer.email} onChange={(e) => setNewCustomer((f) => ({ ...f, email: e.target.value }))} autoComplete="off" />
-                <input className={inputCls} placeholder="National ID (for PayGo)" value={newCustomer.nationalId} onChange={(e) => setNewCustomer((f) => ({ ...f, nationalId: e.target.value }))} maxLength={16} autoComplete="off" />
+                <input className={inputCls} placeholder={isPayGo ? 'National ID (16 digits) — required for PayGo *' : 'National ID (for PayGo)'} value={newCustomer.nationalId} onChange={(e) => setNewCustomer((f) => ({ ...f, nationalId: e.target.value }))} maxLength={16} autoComplete="off" />
+                {isPayGo && !newCustomerNationalIdValid && newCustomer.nationalId && (
+                  <p className="text-xs text-red-500 col-span-2 -mt-2">National ID must be exactly 16 digits.</p>
+                )}
+                {isPayGo && !newCustomer.nationalId && (
+                  <p className="text-xs text-amber-600 col-span-2 -mt-2">A national ID is required to open a PayGo plan for this customer.</p>
+                )}
                 <div className="col-span-2">
                   <CascadingLocationSelect
                     value={{ district: newCustomer.district || '', sector: newCustomer.sector || '', cell: newCustomer.cell || '', village: newCustomer.village || '' }}
