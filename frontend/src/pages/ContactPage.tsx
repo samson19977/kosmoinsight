@@ -12,7 +12,7 @@ import BackButton from '../components/common/BackButton';
 // on every device, and doesn't assume the visitor has email set up.
 // ============================================
 const contactMethods = [
-  { icon: Mail, label: 'Email', value: 'digital@kosmotive.example', href: 'mailto:digital@kosmotive.example' },
+  { icon: Mail, label: 'Email', value: 'digital@example.com', href: 'mailto:digital@example.com' },
   { icon: Phone, label: 'Phone', value: '+250 788 536 350', href: 'tel:+250788536350' },
   { icon: MapPin, label: 'Location', value: 'Kigali, Rwanda', href: null as string | null },
 ];
