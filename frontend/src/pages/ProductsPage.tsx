@@ -35,7 +35,7 @@ const ProductsPage: React.FC = () => {
   if (error) return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="text-center max-w-sm mx-auto">
-        <div className="text-5xl mb-4">😕</div>
+        <div className="text-5xl mb-4"></div>
         <h2 className="text-xl font-bold text-gray-900 mb-2">Could not load products</h2>
         <p className="text-gray-500 text-sm mb-4">Make sure your backend is running at <code className="bg-gray-100 px-1.5 py-0.5 rounded text-xs">{import.meta.env.VITE_API_URL}</code></p>
         <button onClick={() => window.location.reload()} className="bg-primary-600 text-white px-5 py-2.5 rounded-xl font-semibold text-sm">Try Again</button>
