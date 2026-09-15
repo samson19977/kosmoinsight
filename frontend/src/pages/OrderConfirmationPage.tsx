@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { CheckCircle, Copy, Phone, MapPin, Clock, Printer, ArrowRight, Home, RefreshCw, Wallet } from 'lucide-react';
+import { CheckCircle, Copy, Phone, MapPin, Clock, Printer, ArrowRight, RefreshCw, Wallet } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { getOrderStatus } from '../services/orders.service';
 

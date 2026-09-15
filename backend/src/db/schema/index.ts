@@ -1,4 +1,4 @@
-import { pgTable, serial, varchar, text, integer, boolean, timestamp, numeric } from 'drizzle-orm/pg-core';
+import { pgTable, serial, varchar, text, integer, boolean, timestamp, numeric, index } from 'drizzle-orm/pg-core';
 
 // ============================================
 // ENUMS (kept as varchar to avoid enum migration issues)
@@ -61,7 +61,13 @@ export const customers = pgTable('customers', {
   source: varchar('source', { length: 30 }).default('order'), // order | ussd | import | admin
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),
-});
+}, (table) => ({
+  // Powers the identity-based PayGo fraud check (loan.service.ts): "does
+  // this national ID already exist under a different customer record?"
+  // Without this, that check is a full table scan on every loan request.
+  nationalIdHashIdx: index('customers_national_id_hash_idx').on(table.nationalIdHash),
+  agentIdIdx: index('customers_agent_id_idx').on(table.agentId),
+}));
 
 // ============================================
 // ORDERS TABLE
@@ -87,7 +93,14 @@ export const orders = pgTable('orders', {
   notes: text('notes'),
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),
-});
+}, (table) => ({
+  // Admin order lists filter by status and by agent constantly — these
+  // were previously unindexed full-table scans as the orders table grows.
+  orderStatusIdx: index('orders_order_status_idx').on(table.orderStatus),
+  paymentStatusIdx: index('orders_payment_status_idx').on(table.paymentStatus),
+  customerIdIdx: index('orders_customer_id_idx').on(table.customerId),
+  agentIdIdx: index('orders_agent_id_idx').on(table.agentId),
+}));
 
 // ============================================
 // ORDER ITEMS TABLE
@@ -148,7 +161,12 @@ export const loans = pgTable('loans', {
   notes: text('notes'),
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),
-});
+}, (table) => ({
+  // The portfolio-metrics and automation sweeps (loan.service.ts) both
+  // filter loans by status and by customer constantly.
+  statusIdx: index('loans_status_idx').on(table.status),
+  customerIdIdx: index('loans_customer_id_idx').on(table.customerId),
+}));
 
 // ============================================
 // INSTALLMENTS TABLE
@@ -178,7 +196,14 @@ export const installments = pgTable('installments', {
   pendingMomoInitiatedAt: timestamp('pending_momo_initiated_at'),
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),
-});
+}, (table) => ({
+  // The daily automation sweep (reminders -> overdue -> default) queries
+  // by status and by due date every run; loanId speeds up loading a
+  // single loan's full schedule.
+  statusIdx: index('installments_status_idx').on(table.status),
+  dueDateIdx: index('installments_due_date_idx').on(table.dueDate),
+  loanIdIdx: index('installments_loan_id_idx').on(table.loanId),
+}));
 
 // ============================================
 // LOAN TRANSACTIONS TABLE (audit trail)
@@ -272,7 +297,11 @@ export const agents = pgTable('agents', {
   lastLoginAt: timestamp('last_login_at'),
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),
-});
+}, (table) => ({
+  // Login and the admin agents list both filter/check status constantly.
+  statusIdx: index('agents_status_idx').on(table.status),
+  nationalIdHashIdx: index('agents_national_id_hash_idx').on(table.nationalIdHash),
+}));
 
 // ============================================
 // AGENT COMMISSIONS TABLE (append-only ledger)

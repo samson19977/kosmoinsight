@@ -35,7 +35,13 @@ const OrderStatusPage: React.FC = () => {
     } finally { setLoading(false); }
   };
 
-  // Auto-lookup if coming from URL param
+  // Auto-lookup once on mount if the order number arrived via the URL
+  // (e.g. from the order-confirmation page's "track your order" link).
+  // Deliberately NOT depending on `lookup`/`paramOrder`: `lookup` is a new
+  // function reference every render (it closes over `orderNum`), so
+  // including it would re-run this on every keystroke in the search box
+  // rather than once on initial load.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   React.useEffect(() => { if (paramOrder) lookup(); }, []);
 
   const status = result ? (statusConfig[result.orderStatus] ?? statusConfig['pending']) : null;

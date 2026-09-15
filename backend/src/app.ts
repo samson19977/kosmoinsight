@@ -9,6 +9,9 @@ import { testDatabaseConnection, db } from './config/database';
 import { EmailService } from './services/email.service';
 import { PaymentReconciliationService } from './services/paymentReconciliation.service';
 import { payments } from './db/schema';
+import { createLogger } from './lib/logger';
+
+const logger = createLogger('app');
 
 import productsRouter from './routes/products';
 import ordersRouter from './routes/orders';
@@ -142,13 +145,13 @@ app.post('/api/webhooks/momo', async (req, res) => {
 
   try {
     const payload = req.body;
-    console.log('📲 MoMo Webhook received:', JSON.stringify(payload, null, 2));
+    logger.info('MoMo webhook received', { referenceId: payload.referenceId, status: payload.status });
 
     const referenceId: string | undefined = payload.referenceId;
     const rawStatus: string = (payload.status || '').toUpperCase();
 
     if (!referenceId) {
-      console.warn('Webhook: missing referenceId — ignoring');
+      logger.warn('Webhook missing referenceId — ignoring');
       return;
     }
 
@@ -165,13 +168,11 @@ app.post('/api/webhooks/momo', async (req, res) => {
       if (outcome) {
         const result = await LoanService.resolveMomoReference(referenceId, outcome);
         if (result.resolved) {
-          console.log(
-            `✅ Webhook: PayGo installment ${result.installmentId} resolved via MoMo (${outcome})${result.allPaid ? ' — loan fully paid off' : ''}`
-          );
+          logger.info('PayGo installment resolved via MoMo webhook', { installmentId: result.installmentId, outcome, allPaid: result.allPaid });
           return;
         }
       }
-      console.warn(`Webhook: no payment or pending installment found for referenceId=${referenceId}`);
+      logger.warn('Webhook: no payment or pending installment found', { referenceId });
       return;
     }
 
@@ -182,7 +183,7 @@ app.post('/api/webhooks/momo', async (req, res) => {
     // confirm — all four entry points that can independently observe a
     // payment outcome now go through that single atomic transition.)
     if (payment.status === 'paid' || payment.status === 'failed') {
-      console.log(`Webhook: payment ${payment.id} already in terminal state "${payment.status}" — skipping`);
+      logger.info('Webhook: payment already in terminal state — skipping', { paymentId: payment.id, status: payment.status });
       return;
     }
 
@@ -194,7 +195,7 @@ app.post('/api/webhooks/momo', async (req, res) => {
         note: `Confirmed via MoMo webhook. financialTransactionId: ${payload.financialTransactionId || 'n/a'}`,
       });
       if (!result.alreadyPaid) {
-        console.log(`✅ Webhook: order ${result.order!.orderNumber} marked PAID`);
+        logger.info('Webhook: order marked PAID', { orderNumber: result.order!.orderNumber });
       }
     }
 
@@ -203,12 +204,12 @@ app.post('/api/webhooks/momo', async (req, res) => {
     // ----------------------------------------
     else if (rawStatus === 'FAILED') {
       await PaymentReconciliationService.markOrderFailed(payment.orderId, payload.reason || 'unspecified');
-      console.log(`❌ Webhook: payment for order ${payment.orderId} FAILED — reason: ${payload.reason || 'unspecified'}`);
+      logger.warn('Webhook: payment FAILED', { orderId: payment.orderId, reason: payload.reason || 'unspecified' });
     } else {
-      console.log(`Webhook: unhandled status "${rawStatus}" for payment ${payment.id} — no action taken`);
+      logger.info('Webhook: unhandled status — no action taken', { status: rawStatus, paymentId: payment.id });
     }
   } catch (error) {
-    console.error('Webhook processing error:', error);
+    logger.error('Webhook processing error', error);
     // Response already sent above; just log
   }
 });
@@ -242,7 +243,7 @@ app.use((_req, res) => {
 // Global Error Handler
 // ============================================
 app.use((err: any, _req: any, res: any, _next: any) => {
-  console.error('Unhandled error:', err);
+  logger.error('Unhandled error', err);
   res.status(500).json({
     error: 'Internal server error',
     message: process.env.NODE_ENV === 'development' ? err.message : undefined,
@@ -329,11 +330,11 @@ async function startServer() {
     // ever needs to run more than once a day or survive across instances.
     // ============================================
     LoanService.runDailyAutomation().catch((err) =>
-      console.error('Initial loan automation run failed (non-fatal):', err)
+      logger.error('Initial loan automation run failed (non-fatal)', err)
     );
     setInterval(() => {
       LoanService.runDailyAutomation().catch((err) =>
-        console.error('Scheduled loan automation run failed (non-fatal):', err)
+        logger.error('Scheduled loan automation run failed (non-fatal)', err)
       );
     }, 24 * 60 * 60 * 1000);
 
@@ -348,19 +349,19 @@ async function startServer() {
     setTimeout(() => {
       LoanService.reconcilePendingMomoTransactions()
         .then((summary) => {
-          if (summary.checked > 0) console.log('💳 MoMo reconciliation:', JSON.stringify(summary));
+          if (summary.checked > 0) logger.info('MoMo reconciliation', summary);
         })
-        .catch((err) => console.error('Initial MoMo reconciliation failed (non-fatal):', err));
+        .catch((err) => logger.error('Initial MoMo reconciliation failed (non-fatal)', err));
     }, 30_000);
     setInterval(() => {
       LoanService.reconcilePendingMomoTransactions()
         .then((summary) => {
-          if (summary.checked > 0) console.log('💳 MoMo reconciliation:', JSON.stringify(summary));
+          if (summary.checked > 0) logger.info('MoMo reconciliation', summary);
         })
-        .catch((err) => console.error('Scheduled MoMo reconciliation failed (non-fatal):', err));
+        .catch((err) => logger.error('Scheduled MoMo reconciliation failed (non-fatal)', err));
     }, 3 * 60 * 1000);
   } catch (error) {
-    console.error('❌ Server startup failed:', error);
+    logger.error('Server startup failed', error);
     process.exit(1);
   }
 }

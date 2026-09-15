@@ -44,7 +44,6 @@ export const AgentAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   useEffect(() => {
     refreshAgent();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const login = async (identifier: string, password: string) => {

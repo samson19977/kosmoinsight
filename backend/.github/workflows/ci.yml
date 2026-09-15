@@ -1,0 +1,35 @@
+name: CI
+
+# Runs on every push and PR against main so a broken build or a failing
+# test is caught before it reaches Render, not after. This was previously
+# the biggest gap in the audit-readiness review: commits went straight to
+# production with no automated gate at all.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check
+        run: npx tsc --noEmit
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build
+        run: npm run build

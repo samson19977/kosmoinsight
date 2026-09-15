@@ -64,7 +64,7 @@ async function seedProducts() {
 }
 
 async function seedAdmin() {
-  const email = (process.env.SEED_ADMIN_EMAIL || 'admin@kosmotive.rw').toLowerCase().trim();
+  const email = (process.env.SEED_ADMIN_EMAIL || 'admin@kosmotive.example').toLowerCase().trim();
   const password = process.env.SEED_ADMIN_PASSWORD || 'ChangeMe123!';
   const name = process.env.SEED_ADMIN_NAME || 'Kosmotive Admin';
 

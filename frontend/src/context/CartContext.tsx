@@ -3,14 +3,15 @@ import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { X, Minus, Plus, ShoppingCart, Trash2 } from 'lucide-react';
 import ProductImage from '../components/ui/ProductImage';
+import {
+  type CartItem,
+  addToCart as addToCartPure,
+  updateQuantity as updateQuantityPure,
+  removeFromCart as removeFromCartPure,
+  calculateTotals,
+} from '../utils/cart';
 
-export interface CartItem {
-  id: number;
-  name: string;
-  price: number;
-  quantity: number;
-  packageType?: string;
-}
+export type { CartItem };
 
 interface CartContextType {
   items: CartItem[];
@@ -112,23 +113,23 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const addToCart = (product: any, quantity = 1) => {
     setItems((prev) => {
-      const ex = prev.find((i) => i.id === product.id);
-      if (ex) {
-        if (ex.quantity + quantity > 100) { toast.error('Maximum 100 per item'); return prev; }
-        return prev.map((i) => i.id === product.id ? { ...i, quantity: i.quantity + quantity } : i);
-      }
-      return [...prev, { id: product.id, name: product.name, price: product.priceRwf ?? product.price, quantity, packageType: product.packageType }];
+      const result = addToCartPure(prev, product, quantity);
+      if (result.capped) toast.error('Maximum 100 per item');
+      return result.items;
     });
   };
 
-  const removeFromCart = (id: number) => { setItems((p) => p.filter((i) => i.id !== id)); toast.success('Removed from cart'); };
+  const removeFromCart = (id: number) => { setItems((p) => removeFromCartPure(p, id)); toast.success('Removed from cart'); };
   const updateQuantity = (id: number, qty: number) => {
-    if (qty <= 0) { removeFromCart(id); return; }
-    setItems((p) => p.map((i) => i.id === id ? { ...i, quantity: qty } : i));
+    setItems((prev) => {
+      const result = updateQuantityPure(prev, id, qty);
+      if (result.capped) toast.error('Maximum 100 per item');
+      if (result.items.length < prev.length) toast.success('Removed from cart');
+      return result.items;
+    });
   };
   const clearCart = () => { setItems([]); };
-  const totalItems = items.reduce((s, i) => s + i.quantity, 0);
-  const totalPrice = items.reduce((s, i) => s + i.price * i.quantity, 0);
+  const { totalItems, totalPrice } = calculateTotals(items);
 
   return (
     <CartContext.Provider value={{ items, addToCart, removeFromCart, updateQuantity, clearCart, totalItems, totalPrice, isOpen, openCart: () => setIsOpen(true), closeCart: () => setIsOpen(false) }}>

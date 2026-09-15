@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { UserPlus, Loader2, CheckCircle2, Eye, EyeOff } from 'lucide-react';
@@ -23,7 +23,6 @@ const initialForm = {
 };
 
 const AgentRegisterPage: React.FC = () => {
-  const navigate = useNavigate();
   const [form, setForm] = useState(initialForm);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
@@ -37,8 +36,8 @@ const AgentRegisterPage: React.FC = () => {
 
   const validate = () => {
     const errs: Record<string, string> = {};
-    if (!/^[A-Za-z\s\-]{2,}$/.test(form.firstName.trim())) errs.firstName = 'Letters only, at least 2 characters';
-    if (!/^[A-Za-z\s\-]{2,}$/.test(form.lastName.trim())) errs.lastName = 'Letters only, at least 2 characters';
+    if (!/^[A-Za-z\s-]{2,}$/.test(form.firstName.trim())) errs.firstName = 'Letters only, at least 2 characters';
+    if (!/^[A-Za-z\s-]{2,}$/.test(form.lastName.trim())) errs.lastName = 'Letters only, at least 2 characters';
     if (!/^(\+250|0)[78][0-9]{8}$/.test(form.phone.trim())) errs.phone = 'Enter a valid Rwandan phone number';
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) errs.email = 'Invalid email address';
     if (!/^[0-9]{16}$/.test(form.nationalId.trim())) errs.nationalId = 'National ID must be 16 digits';

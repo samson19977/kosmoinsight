@@ -36,8 +36,8 @@ const CheckoutPage: React.FC = () => {
 
   const validate = () => {
     const errs: Record<string, string> = {};
-    if (!/^[A-Za-z\s\-]{2,}$/.test(form.firstName.trim())) errs.firstName = 'First name must be at least 2 letters only';
-    if (!/^[A-Za-z\s\-]{2,}$/.test(form.lastName.trim())) errs.lastName = 'Last name must be at least 2 letters only';
+    if (!/^[A-Za-z\s-]{2,}$/.test(form.firstName.trim())) errs.firstName = 'First name must be at least 2 letters only';
+    if (!/^[A-Za-z\s-]{2,}$/.test(form.lastName.trim())) errs.lastName = 'Last name must be at least 2 letters only';
     if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) errs.email = 'Invalid email address';
     if (!/^(\+250|0)[78][0-9]{8}$/.test(form.phone.trim())) errs.phone = 'Enter a valid Rwandan phone number';
     if (!form.district) errs.district = 'Please select a district';

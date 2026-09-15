@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import {
   Loader2, Search, Plus, Minus, Trash2, ShoppingBag, User, CreditCard,
-  Banknote, Smartphone, Landmark, CheckCircle2, ArrowRight, ArrowLeft,
+  Banknote, Smartphone, Landmark, CheckCircle2, ArrowRight,
 } from 'lucide-react';
 import { fetchProducts, type Product } from '../../services/products.service';
 import {

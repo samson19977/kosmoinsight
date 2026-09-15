@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Filter, X, ShoppingCart, Package, ArrowRight } from 'lucide-react';
+import { Search, Filter, X, ShoppingCart } from 'lucide-react';
 import { useProducts } from '../hooks/useProducts';
 import { useCart } from '../context/CartContext';
 import ProductImage, { packageEmoji } from '../components/ui/ProductImage';

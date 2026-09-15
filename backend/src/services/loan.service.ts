@@ -5,6 +5,7 @@ import { EmailService } from './email.service';
 import { MomoService } from './momo.service';
 import { LedgerService } from './ledger.service';
 import { SmsService } from './sms.service';
+import { calculateLoanTerms, generateInstallmentSchedule, calculatePenalty, addMonths } from '../lib/loanMath';
 
 // A dedicated error type for both PayGo blocking rules (own-loan and
 // identity-based) — lets callers detect "this failed because of the
@@ -27,12 +28,6 @@ const PENALTY_RATE_BPS = Number(process.env.LOAN_PENALTY_RATE_BPS || 300); // 3%
 const REMINDER_DAYS_BEFORE = Number(process.env.LOAN_REMINDER_DAYS_BEFORE || 3); // send a reminder this many days before due date
 const DEFAULT_THRESHOLD_CONSECUTIVE_MISSED = Number(process.env.LOAN_DEFAULT_THRESHOLD || 3); // consecutive unpaid overdue installments before a loan is flagged defaulted
 const MOMO_PENDING_TIMEOUT_MINUTES = Number(process.env.MOMO_PENDING_TIMEOUT_MINUTES || 20); // how long a Request-to-Pay can sit unresolved before we let the customer retry
-
-function addMonths(date: Date, months: number): Date {
-  const d = new Date(date);
-  d.setMonth(d.getMonth() + months);
-  return d;
-}
 
 function generateLoanNumber(): string {
   const d = new Date();
@@ -84,16 +79,18 @@ export class LoanService {
     // self-contained-transaction behavior.
     client?: DbClient;
   }) {
-    const financedRwf = input.principalRwf - input.downPaymentRwf;
-    if (financedRwf <= 0) {
-      throw new Error('Down payment must be less than the principal — nothing left to finance.');
-    }
+    // Guard + math both now live in calculateLoanTerms (src/lib/loanMath.ts)
+    // so they're covered by unit tests instead of only being exercised
+    // end-to-end through a live database call.
+    const { financedRwf, interestRwf, totalPayableRwf } = calculateLoanTerms({
+      principalRwf: input.principalRwf,
+      downPaymentRwf: input.downPaymentRwf,
+      interestRateBps: input.interestRateBps,
+    });
 
     const loanNumber = generateLoanNumber();
     const disbursedAt = new Date();
     const expectedPayoffDate = addMonths(disbursedAt, input.termMonths);
-    const interestRwf = Math.round((financedRwf * input.interestRateBps) / 10000);
-    const totalPayableRwf = financedRwf + interestRwf;
 
     // Everything below runs as ONE transaction, for two reasons:
     //
@@ -217,21 +214,18 @@ export class LoanService {
         .returning();
 
       // ---- Generate equal-installment schedule ----
-      const baseAmount = Math.floor(totalPayableRwf / input.termMonths);
-      const remainder = totalPayableRwf - baseAmount * input.termMonths;
-
-      const schedule = [];
-      for (let i = 1; i <= input.termMonths; i++) {
-        const amountDueRwf = i === input.termMonths ? baseAmount + remainder : baseAmount;
-        schedule.push({
-          loanId: loan.id,
-          installmentNumber: i,
-          dueDate: addMonths(disbursedAt, i),
-          amountDueRwf,
-          amountPaidRwf: 0,
-          status: 'upcoming' as const,
-        });
-      }
+      const schedule = generateInstallmentSchedule({
+        totalPayableRwf,
+        termMonths: input.termMonths,
+        disbursedAt,
+      }).map((s) => ({
+        loanId: loan.id,
+        installmentNumber: s.installmentNumber,
+        dueDate: s.dueDate,
+        amountDueRwf: s.amountDueRwf,
+        amountPaidRwf: 0,
+        status: 'upcoming' as const,
+      }));
       await tx.insert(installments).values(schedule);
 
       // ---- Record disbursement in the audit trail ----
@@ -761,7 +755,7 @@ export class LoanService {
 
       // ---- One-time grace-period penalty ----
       if (daysOverdue > GRACE_PERIOD_DAYS && (inst.penaltyRwf || 0) === 0) {
-        const penaltyRwf = Math.round((inst.amountDueRwf * PENALTY_RATE_BPS) / 10000);
+        const penaltyRwf = calculatePenalty({ amountDueRwf: inst.amountDueRwf, penaltyRateBps: PENALTY_RATE_BPS });
         await this.applyPenalty(inst.id, penaltyRwf, `Auto-applied late penalty (${daysOverdue}d overdue, grace period ${GRACE_PERIOD_DAYS}d)`);
         penalized++;
       }

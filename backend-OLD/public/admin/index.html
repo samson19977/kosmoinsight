@@ -1,0 +1,2393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>KosmoPads Admin Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+  :root{
+    --teal:#0f7a72; --teal-dark:#0a5c56; --teal-light:#e6f4f2;
+    --ink:#1b2a2a; --muted:#5c6f6d; --line:#dfe8e6; --bg:#f6f9f8;
+    --pink:#e8557a; --amber:#c98a1d; --danger:#c0392b; --success:#1e8e4e;
+    font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);}
+
+  /* ── Header ── */
+  header{background:linear-gradient(120deg,var(--teal-dark),var(--teal));color:#fff;padding:16px 24px;display:flex;align-items:center;justify-content:space-between;gap:10px;}
+  header h1{font-size:17px;margin:0;font-weight:600;letter-spacing:.3px;}
+  header .sub{font-size:11px;opacity:.8;}
+  .header-right{display:flex;align-items:center;gap:10px;}
+  #adminName{font-size:13px;opacity:.9;}
+  #logoutBtn{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.35);color:#fff;padding:5px 13px;border-radius:6px;cursor:pointer;font-size:12px;}
+  #logoutBtn:hover{background:rgba(255,255,255,.28);}
+  nav{background:var(--teal-dark);display:flex;gap:0;overflow-x:auto;}
+  nav button{background:none;border:none;color:rgba(255,255,255,.75);padding:10px 18px;cursor:pointer;font-size:13px;white-space:nowrap;border-bottom:2px solid transparent;transition:.15s;}
+  nav button:hover{color:#fff;background:rgba(255,255,255,.08);}
+  nav button.active{color:#fff;border-bottom-color:#fff;}
+
+  /* ── Login screen ── */
+  #loginScreen{max-width:380px;margin:10vh auto 0;background:#fff;padding:36px 32px;border-radius:16px;box-shadow:0 12px 36px rgba(15,122,114,.13);}
+  #loginScreen .logo{text-align:center;margin-bottom:22px;}
+  #loginScreen .logo img{height:44px;}
+  #loginScreen .logo h2{margin:8px 0 0;color:var(--teal-dark);font-size:20px;}
+  #loginScreen label{display:block;font-size:13px;color:var(--muted);margin:14px 0 5px;font-weight:500;}
+  #loginScreen .pw-wrap{position:relative;}
+  #loginScreen .pw-wrap input{width:100%;padding:10px 38px 10px 12px;border:1px solid var(--line);border-radius:8px;font-size:14px;outline:none;transition:.15s;}
+  #loginScreen .pw-wrap input:focus{border-color:var(--teal);}
+  #loginScreen input[type=email]{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;font-size:14px;outline:none;transition:.15s;}
+  #loginScreen input[type=email]:focus{border-color:var(--teal);}
+  #eyeBtn{position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;padding:2px;color:var(--muted);font-size:17px;line-height:1;display:flex;align-items:center;}
+  #eyeBtn:hover{color:var(--teal);}
+  #loginBtn{width:100%;margin-top:20px;padding:11px;border:none;border-radius:8px;background:var(--teal);color:#fff;font-size:14px;font-weight:600;cursor:pointer;transition:.15s;}
+  #loginBtn:hover:not(:disabled){background:var(--teal-dark);}
+  #loginBtn:disabled{opacity:.6;cursor:not-allowed;}
+  #loginError{font-size:13px;margin-top:10px;min-height:16px;border-radius:6px;padding:0;}
+  #loginError.show{padding:9px 12px;background:#fbe6e4;color:var(--danger);}
+  #loginError.warning{padding:9px 12px;background:#fdf1dd;color:#744210;}
+  .attempts-bar{height:4px;background:#e2e8f0;border-radius:2px;margin-top:12px;overflow:hidden;display:none;}
+  .attempts-bar.show{display:block;}
+  .attempts-fill{height:100%;border-radius:2px;transition:width .3s,background .3s;}
+
+  /* ── Main shell ── */
+  #shell{display:none;}
+  .page{display:none;max-width:1200px;margin:0 auto;padding:24px 24px 60px;}
+  .page.active{display:block;}
+
+  /* ── KPIs ── */
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:20px;}
+  .kpi{background:#fff;border:1px solid var(--line);border-radius:12px;padding:15px 17px;}
+  .kpi .label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;}
+  .kpi .value{font-size:22px;font-weight:700;color:var(--teal-dark);margin-top:5px;}
+  .kpi .value.pink{color:var(--pink);}
+  .kpi .value.amber{color:var(--amber);}
+  .kpi .value.danger{color:var(--danger);}
+
+  /* ── Cards & layout ── */
+  .grid2{display:grid;grid-template-columns:2fr 1fr;gap:16px;}
+  .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin-bottom:16px;}
+  .card h3{margin:0 0 14px;font-size:14px;color:var(--ink);display:flex;align-items:center;justify-content:space-between;}
+  .card-actions{display:flex;gap:8px;align-items:center;}
+  canvas{max-height:220px;}
+
+  /* ── Toolbar (search + filters + CSV export) ── */
+  .toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px;}
+  .toolbar-search{flex:1;min-width:220px;padding:9px 12px;border:1px solid var(--line);border-radius:10px;font-size:13px;outline:none;}
+  .toolbar-search:focus{border-color:var(--teal-dark);}
+  .toolbar select{padding:9px 10px;border:1px solid var(--line);border-radius:10px;font-size:13px;background:#fff;outline:none;}
+
+  /* ── Key/value rows (customer & agent detail panels) ── */
+  .kv{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #eee;}
+  .kv:last-child{border-bottom:none;}
+  .kv span{color:var(--muted);}
+
+  /* ── Agent detail modal tabs ── */
+  .agent-tab{background:none;border:none;padding:8px 14px;font-size:13px;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;}
+  .agent-tab.active{color:var(--teal-dark);border-bottom-color:var(--teal-dark);font-weight:600;}
+  .agent-tab:hover{color:var(--ink);}
+
+  /* ── Pager ── */
+  .pager{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:14px;padding-top:12px;border-top:1px solid var(--line);flex-wrap:wrap;}
+  .pager .pager-info{font-size:12px;color:var(--muted);}
+  .pager .pager-controls{display:flex;gap:6px;align-items:center;}
+  .pager button{border:1px solid var(--line);background:#fff;border-radius:8px;padding:6px 11px;font-size:12px;cursor:pointer;}
+  .pager button:disabled{opacity:.4;cursor:not-allowed;}
+  .pager button.active{background:var(--teal-dark);border-color:var(--teal-dark);color:#fff;}
+
+  /* ── Tables ── */
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th{text-align:left;color:var(--muted);font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line);}
+  td{padding:8px;border-bottom:1px solid #f0f4f3;vertical-align:middle;}
+  tr:last-child td{border-bottom:none;}
+
+  /* ── Badges ── */
+  .badge{padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600;white-space:nowrap;}
+  .badge.paid,.badge.success{background:#e5f6ec;color:var(--success);}
+  .badge.pending{background:#fdf1dd;color:var(--amber);}
+  .badge.failed,.badge.danger{background:#fbe6e4;color:var(--danger);}
+  .badge.confirmed,.badge.delivered,.badge.shipped,.badge.processing{background:var(--teal-light);color:var(--teal-dark);}
+  .badge.cancelled,.badge.inactive{background:#f1f1f1;color:#777;}
+  .badge.low{background:#fff3cd;color:#856404;}
+  .badge.out{background:#fbe6e4;color:var(--danger);}
+
+  /* ── Buttons ── */
+  .btn{border:none;border-radius:6px;padding:5px 11px;font-size:12px;cursor:pointer;font-weight:500;transition:.15s;}
+  .btn-teal{background:var(--teal);color:#fff;}
+  .btn-teal:hover{background:var(--teal-dark);}
+  .btn-ghost{background:none;border:1px solid var(--line);color:var(--muted);}
+  .btn-ghost:hover{border-color:var(--teal);color:var(--teal);}
+  .btn-danger{background:#fbe6e4;color:var(--danger);border:1px solid #f5c6c3;}
+  .btn-danger:hover{background:#f5c6c3;}
+  .btn-sm{padding:4px 9px;font-size:11px;}
+  .btn:disabled{opacity:.55;cursor:not-allowed;}
+
+  /* ── Payment method chip ── */
+  .method-chip{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;white-space:nowrap;}
+  .method-chip.cash{background:#fdf1dd;color:#8a5a10;}
+  .method-chip.momo{background:#e9f0fb;color:#1d4ed8;}
+
+  /* ── Orders table action cell ── */
+  .order-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+  .status-select{border:1px solid var(--line);border-radius:6px;padding:4px 6px;font-size:11px;color:var(--ink);background:#fff;cursor:pointer;}
+  .status-select:disabled{opacity:.5;cursor:not-allowed;}
+  .paid-check{color:var(--success);font-size:12px;font-weight:600;display:inline-flex;align-items:center;gap:4px;}
+
+  /* ── Stock input ── */
+  .stock-edit{display:flex;align-items:center;gap:6px;}
+  .stock-edit input{width:70px;padding:4px 7px;border:1px solid var(--line);border-radius:6px;font-size:13px;text-align:right;}
+  .stock-edit input:focus{outline:none;border-color:var(--teal);}
+  .stock-bar{height:5px;border-radius:3px;background:#e2e8f0;overflow:hidden;margin-top:3px;}
+  .stock-bar-fill{height:100%;border-radius:3px;transition:width .4s;}
+
+  /* ── Misc ── */
+  .empty{color:var(--muted);font-size:13px;padding:10px 0;text-align:center;}
+  #refreshBtn{background:none;border:1px solid var(--line);border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;color:var(--muted);}
+  #refreshBtn:hover{border-color:var(--teal);color:var(--teal);}
+  .toast{position:fixed;bottom:24px;right:24px;background:#1b2a2a;color:#fff;padding:11px 18px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .25s;z-index:9999;}
+  .toast.show{opacity:1;}
+  .section-title{font-size:15px;font-weight:600;color:var(--ink);margin:0 0 14px;}
+  .inv-summary{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;}
+  .inv-chip{background:#fff;border:1px solid var(--line);border-radius:8px;padding:8px 14px;font-size:12px;color:var(--muted);}
+  .inv-chip span{font-weight:700;font-size:15px;display:block;margin-bottom:1px;}
+  .inv-chip span.red{color:var(--danger);}
+  .inv-chip span.amber{color:var(--amber);}
+  .inv-chip span.teal{color:var(--teal-dark);}
+  .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:1000;display:none;align-items:center;justify-content:center;}
+  .modal-overlay.show{display:flex;}
+  .modal{background:#fff;border-radius:14px;padding:28px 26px;width:100%;max-width:420px;box-shadow:0 20px 60px rgba(0,0,0,.2);}
+  .modal h3{margin-top:0;color:var(--ink);font-size:16px;}
+  .modal label{display:block;font-size:13px;color:var(--muted);margin:12px 0 5px;}
+  .modal input,.modal select,.modal textarea{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:7px;font-size:13px;outline:none;}
+  .modal input:focus,.modal select:focus{border-color:var(--teal);}
+  .modal-btns{display:flex;gap:8px;justify-content:flex-end;margin-top:20px;}
+  @media(max-width:860px){.grid2{grid-template-columns:1fr;}}
+</style>
+</head>
+<body>
+
+<!-- ======================================================
+  LOGIN SCREEN
+====================================================== -->
+<div id="loginScreen">
+  <div class="logo">
+    <h2>🩸 KosmoPads Admin</h2>
+    <p style="margin:4px 0 0;font-size:13px;color:var(--muted);">Sign in to your dashboard</p>
+  </div>
+
+  <label for="emailInput">Email address</label>
+  <input type="email" id="emailInput" placeholder="Enter your email" autocomplete="username" />
+
+  <label for="passwordInput">Password</label>
+  <div class="pw-wrap">
+    <input type="password" id="passwordInput" placeholder="Enter your password" autocomplete="current-password" />
+    <button id="eyeBtn" type="button" title="Toggle password visibility" aria-label="Show or hide password">
+      <!-- eye icon -->
+      <svg id="eyeIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+        <circle cx="12" cy="12" r="3"/>
+      </svg>
+      <svg id="eyeOffIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;">
+        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
+        <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
+        <line x1="1" y1="1" x2="23" y2="23"/>
+      </svg>
+    </button>
+  </div>
+
+  <div id="loginError"></div>
+  <div class="attempts-bar" id="attemptsBar">
+    <div class="attempts-fill" id="attemptsFill"></div>
+  </div>
+
+  <button id="loginBtn">Sign in</button>
+</div>
+
+<!-- ======================================================
+  MAIN SHELL (shown after login)
+====================================================== -->
+<div id="shell">
+  <header>
+    <div>
+      <h1>KosmoPads Admin</h1>
+      <span class="sub">Kosmotive Business Dashboard</span>
+    </div>
+    <div class="header-right">
+      <span id="adminName"></span>
+      <button id="logoutBtn">Sign out</button>
+    </div>
+  </header>
+  <nav>
+    <button class="active" data-page="dashPage">📊 Dashboard</button>
+    <button data-page="inventoryPage">📦 Inventory</button>
+    <button data-page="ordersPage">🛒 Orders</button>
+    <button data-page="loansPage">💳 PayGo</button>
+    <button data-page="agentsPage">🧑‍💼 Agents</button>
+    <button data-page="customersPage">👥 Customers</button>
+    <button data-page="ledgerPage">📒 Ledger</button>
+  </nav>
+
+  <!-- DASHBOARD PAGE -->
+  <div class="page active" id="dashPage">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin:20px 0 14px;">
+      <span class="section-title">Business Overview</span>
+      <button id="refreshBtn" onclick="loadDashboard()">⟳ Refresh</button>
+    </div>
+    <div class="kpis" id="kpis"></div>
+
+    <div style="display:flex;align-items:center;justify-content:space-between;margin:24px 0 14px;">
+      <span class="section-title">PayGo Installment Portfolio</span>
+    </div>
+    <div class="kpis" id="loanKpis"></div>
+
+    <div style="display:flex;align-items:center;justify-content:space-between;margin:24px 0 14px;">
+      <span class="section-title">Agent Sales Channel</span>
+      <button class="btn btn-ghost btn-sm" onclick="document.querySelector('nav button[data-page=agentsPage]').click()">Manage agents →</button>
+    </div>
+    <div class="kpis" id="agentKpis"></div>
+
+    <div class="grid2">
+      <div>
+        <div class="card">
+          <h3>Revenue Trend (14 days)</h3>
+          <canvas id="trendChart"></canvas>
+        </div>
+      </div>
+      <div>
+        <div class="card">
+          <h3>Top Products by Revenue</h3>
+          <canvas id="productsChart"></canvas>
+        </div>
+        <div class="card">
+          <h3>Pending Confirmation <span id="pendingCount" class="badge amber"></span></h3>
+          <div id="pendingOrders"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- INVENTORY PAGE -->
+  <div class="page" id="inventoryPage">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin:20px 0 14px;">
+      <span class="section-title">Stock Management</span>
+      <button class="btn btn-ghost" onclick="loadInventory()">⟳ Refresh</button>
+    </div>
+    <div class="inv-summary" id="invSummary"></div>
+    <div class="card">
+      <table>
+        <thead>
+          <tr>
+            <th>Product</th>
+            <th>Price</th>
+            <th>Stock</th>
+            <th>Status</th>
+            <th>Listing</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="inventoryBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ORDERS PAGE -->
+  <div class="page" id="ordersPage">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin:20px 0 14px;">
+      <span class="section-title">All Orders</span>
+      <button class="btn btn-ghost" onclick="loadOrders()">⟳ Refresh</button>
+    </div>
+    <div class="toolbar">
+      <input type="text" class="toolbar-search" id="ordersSearch" placeholder="Search order #, customer, phone…" autocomplete="off" />
+      <select id="ordersStatusFilter">
+        <option value="">All order statuses</option>
+        <option value="pending">Pending</option>
+        <option value="confirmed">Confirmed</option>
+        <option value="shipped">Shipped</option>
+        <option value="delivered">Delivered</option>
+        <option value="cancelled">Cancelled</option>
+      </select>
+      <select id="ordersPaymentFilter">
+        <option value="">All payment statuses</option>
+        <option value="pending">Pending</option>
+        <option value="paid">Paid</option>
+        <option value="failed">Failed</option>
+      </select>
+      <select id="ordersChannelFilter">
+        <option value="">All channels</option>
+        <option value="web">Web</option>
+        <option value="ussd">USSD</option>
+        <option value="agent">Agent</option>
+      </select>
+      <button class="btn btn-ghost btn-sm" onclick="exportCsv('orders')">⬇ Export CSV</button>
+    </div>
+    <div class="card">
+      <table>
+        <thead>
+          <tr>
+            <th>Order #</th>
+            <th>Customer</th>
+            <th>Total</th>
+            <th>Method</th>
+            <th>Payment</th>
+            <th>Order status</th>
+            <th>Date</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="ordersBody"></tbody>
+      </table>
+      <div class="pager" id="ordersPager"></div>
+    </div>
+  </div>
+  <!-- PAYGO PAGE -->
+  <div class="page" id="loansPage">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin:20px 0 14px;">
+      <span class="section-title">PayGo Installment Plans</span>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-ghost" onclick="runLoanAutomation()">⚙ Run automation now</button>
+        <button class="btn btn-teal" onclick="openNewLoanModal()">+ New loan</button>
+      </div>
+    </div>
+    <div class="toolbar">
+      <input type="text" class="toolbar-search" id="loansSearch" placeholder="Search loan #, customer, phone…" autocomplete="off" />
+      <select id="loansStatusFilter">
+        <option value="">All statuses</option>
+        <option value="active">Active</option>
+        <option value="completed">Completed</option>
+        <option value="defaulted">Defaulted</option>
+        <option value="cancelled">Cancelled</option>
+      </select>
+      <button class="btn btn-ghost btn-sm" onclick="exportCsv('loans')">⬇ Export CSV</button>
+    </div>
+    <div class="card">
+      <table>
+        <thead>
+          <tr>
+            <th>Loan #</th>
+            <th>Customer</th>
+            <th>Total payable</th>
+            <th>Repayment</th>
+            <th>Status</th>
+            <th>Overdue</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="loansBody"></tbody>
+      </table>
+      <div class="pager" id="loansPager"></div>
+    </div>
+  </div>
+
+  <!-- AGENTS PAGE -->
+  <div class="page" id="agentsPage">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin:20px 0 14px;">
+      <span class="section-title">Agents</span>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <div style="display:flex;align-items:center;gap:6px;background:#fff;border:1px solid #e4e4e7;border-radius:10px;padding:6px 10px;">
+          <label style="font-size:12px;color:#8a8f9c;">Default commission</label>
+          <input id="defaultCommissionPct" type="number" min="0" max="50" step="0.5" style="width:56px;border:none;font-size:13px;outline:none;" autocomplete="off" />
+          <span style="font-size:12px;color:#8a8f9c;">%</span>
+          <button class="btn btn-ghost btn-sm" onclick="saveDefaultCommission()">Save</button>
+        </div>
+        <button class="btn btn-ghost" onclick="loadAgents()">⟳ Refresh</button>
+        <button class="btn btn-teal" onclick="openNewAgentModal()">+ Add agent</button>
+      </div>
+    </div>
+    <div class="kpis" id="agentsPageKpis"></div>
+    <div class="toolbar">
+      <input type="text" class="toolbar-search" id="agentsSearch" placeholder="Search name, code, phone, email…" autocomplete="off" />
+      <select id="agentsStatusFilter">
+        <option value="">All statuses</option>
+        <option value="pending">Pending</option>
+        <option value="approved">Approved</option>
+        <option value="active">Active</option>
+        <option value="suspended">Suspended</option>
+        <option value="rejected">Rejected</option>
+      </select>
+      <button class="btn btn-ghost btn-sm" onclick="exportCsv('agents')">⬇ Export CSV</button>
+    </div>
+    <div class="card">
+      <table>
+        <thead>
+          <tr>
+            <th>Agent</th>
+            <th>Code</th>
+            <th>Phone</th>
+            <th>Status</th>
+            <th>Customers</th>
+            <th>Orders</th>
+            <th>Active PayGo</th>
+            <th>Commission (pending / paid)</th>
+            <th>Joined</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="agentsBody"></tbody>
+      </table>
+      <div class="pager" id="agentsPager"></div>
+    </div>
+  </div>
+
+  <!-- CUSTOMERS PAGE -->
+  <div class="page" id="customersPage">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin:20px 0 14px;">
+      <span class="section-title">Customers</span>
+      <button class="btn btn-ghost" onclick="loadCustomers()">⟳ Refresh</button>
+    </div>
+    <!-- Duplicate national ID review banner — hidden by default, only
+         shown when loadCustomers() finds duplicates. This is a fraud
+         review surface, not a blocker: a duplicate could be an innocent
+         re-registration or a deliberate attempt to open a second PayGo
+         loan under a different customer profile (which LoanService now
+         blocks automatically at the point of loan creation — this just
+         lets an admin catch and resolve it proactively). -->
+    <div id="duplicateIdBanner" style="display:none;background:#fff4e5;border:1px solid #f5c26b;border-radius:10px;padding:12px 16px;margin-bottom:14px;font-size:13px;color:#8a5a00;"></div>
+    <div class="toolbar">
+      <input type="text" class="toolbar-search" id="customersSearch" placeholder="Search name, phone, email, national ID…" autocomplete="off" />
+      <button class="btn btn-ghost btn-sm" onclick="exportCsv('customers')">⬇ Export CSV</button>
+    </div>
+    <div class="card">
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Phone</th>
+            <th>Email</th>
+            <th>Location</th>
+            <th>Agent</th>
+            <th>Source</th>
+            <th>Joined</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="customersBody"></tbody>
+      </table>
+      <div class="pager" id="customersPager"></div>
+    </div>
+  </div>
+
+  <!-- LEDGER PAGE -->
+  <div class="page" id="ledgerPage">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin:20px 0 14px;">
+      <span class="section-title">Ledger</span>
+      <button class="btn btn-ghost" onclick="loadLedger()">⟳ Refresh</button>
+    </div>
+    <p style="font-size:12px;color:var(--muted);margin:-8px 0 14px;">
+      A complete, append-only record of every event that moved money — order payments, agent commission accruals and payouts, and PayGo installment repayments. Balances are always calculated live from these entries, never stored separately, so they can't drift out of sync.
+    </p>
+    <div class="kpis" id="ledgerBalancesKpis"></div>
+    <div class="toolbar">
+      <select id="ledgerAccountTypeFilter">
+        <option value="">All accounts</option>
+        <option value="business">Kosmotive (business)</option>
+        <option value="agent">Agents</option>
+      </select>
+      <select id="ledgerCategoryFilter">
+        <option value="">All categories</option>
+        <option value="order_payment">Order payment</option>
+        <option value="commission_accrued">Commission accrued</option>
+        <option value="commission_paid">Commission paid</option>
+        <option value="loan_repayment">PayGo repayment</option>
+        <option value="manual_adjustment">Manual adjustment</option>
+      </select>
+      <!-- autocomplete="off": Firefox was remembering/pre-filling a
+           previously-typed date here across sessions, silently filtering
+           out today's entries without the user ever touching these
+           fields. See the explicit reset in the nav click handler below
+           too — that's the real fix; this is defense-in-depth. -->
+      <input type="date" id="ledgerFromDate" title="From date" autocomplete="off" />
+      <input type="date" id="ledgerToDate" title="To date" autocomplete="off" />
+      <button class="btn btn-ghost btn-sm" onclick="exportCsv('ledger')">⬇ Export CSV</button>
+    </div>
+    <div class="card">
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Account</th>
+            <th>Category</th>
+            <th>Amount</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody id="ledgerBody"></tbody>
+      </table>
+      <div class="pager" id="ledgerPager"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Delete Customer Confirm Modal -->
+<div class="modal-overlay" id="deleteCustomerModal">
+  <div class="modal">
+    <h3>Delete customer?</h3>
+    <p id="deleteCustomerText" style="color:#5b5f6b;font-size:14px;margin:8px 0 18px;"></p>
+    <div style="display:flex;justify-content:flex-end;gap:8px;">
+      <button class="btn btn-ghost" onclick="closeModal('deleteCustomerModal')">Cancel</button>
+      <button class="btn" style="background:#c8394f;color:#fff;" id="confirmDeleteCustomerBtn">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- Customer Detail Modal -->
+<div class="modal-overlay" id="customerDetailModal">
+  <div class="modal" style="max-width:600px;max-height:85vh;overflow-y:auto;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+      <h3 id="customerDetailTitle" style="margin:0;">Customer detail</h3>
+      <button class="btn btn-ghost btn-sm" onclick="closeModal('customerDetailModal')">✕</button>
+    </div>
+    <!-- The full, unmasked national ID is shown ONLY here — on a single,
+         specifically-requested customer record — never in the list view
+         or CSV export, which show only the last 4 digits. This is the
+         intended "reveal on legitimate need" design: an admin opening one
+         customer's file for a real reason (e.g. verifying identity for a
+         PayGo application) sees the full ID; browsing a list of many
+         customers never exposes it in bulk. -->
+    <div id="customerDetailBody"></div>
+  </div>
+</div>
+
+<!-- New Loan Modal -->
+<div class="modal-overlay" id="newLoanModal">
+  <div class="modal">
+    <h3>New PayGo Installment Plan</h3>
+    <label>Customer ID</label>
+    <div style="display:flex;gap:6px;">
+      <input type="number" id="loanCustomerId" min="1" placeholder="e.g. 12 — from the customer's order" autocomplete="off" style="flex:1;" />
+      <button type="button" class="btn btn-ghost btn-sm" onclick="checkLoanCustomerCredit()">Check credit</button>
+    </div>
+    <!-- Populated by checkLoanCustomerCredit() — a suggestion only, never
+         auto-applied to the fields below. The admin reads it and decides
+         whether to adjust the interest rate / term themselves. -->
+    <div id="loanCreditProfileBox" style="display:none;font-size:12px;padding:8px 10px;border-radius:8px;margin:4px 0 10px;"></div>
+    <label>Order ID (optional)</label>
+    <input type="number" id="loanOrderId" min="1" placeholder="Links this plan to an existing order" autocomplete="off" />
+    <label>Principal (RWF)</label>
+    <input type="number" id="loanPrincipal" min="1000" placeholder="e.g. 30000" autocomplete="off" />
+    <label>Down payment (RWF)</label>
+    <input type="number" id="loanDownPayment" min="0" value="0" autocomplete="off" />
+    <label>Interest rate (%)</label>
+    <input type="number" id="loanInterestPct" min="0" max="50" step="0.5" value="5" autocomplete="off" />
+    <label>Term (months)</label>
+    <input type="number" id="loanTermMonths" min="1" max="24" value="6" autocomplete="off" />
+    <label>Guarantor type</label>
+    <select id="loanGuarantorType">
+      <option value="none">None</option>
+      <option value="school">School</option>
+      <option value="ngo">NGO</option>
+      <option value="individual">Individual</option>
+    </select>
+    <label>Guarantor name (optional)</label>
+    <input type="text" id="loanGuarantorName" placeholder="e.g. GS Kigali Parents' Association" autocomplete="off" />
+    <label>Guarantor phone (optional)</label>
+    <input type="text" id="loanGuarantorPhone" placeholder="0788123456" autocomplete="off" />
+    <div class="modal-btns">
+      <button class="btn btn-ghost" onclick="closeNewLoanModal()">Cancel</button>
+      <button class="btn btn-teal" id="saveLoanBtn" onclick="saveNewLoan()">Create loan</button>
+    </div>
+  </div>
+</div>
+
+<!-- Loan Detail Modal -->
+<div class="modal-overlay" id="loanDetailModal">
+  <div class="modal" style="max-width:640px;">
+    <h3 id="loanDetailTitle">Loan detail</h3>
+    <div id="loanDetailSummary" style="margin-bottom:12px;"></div>
+    <table>
+      <thead><tr><th>#</th><th>Due</th><th>Due amt</th><th>Paid</th><th>Penalty</th><th>Status</th><th>Action</th></tr></thead>
+      <tbody id="loanScheduleBody"></tbody>
+    </table>
+    <div class="modal-btns">
+      <button class="btn btn-ghost" onclick="closeLoanDetailModal()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Record Payment Modal -->
+<div class="modal-overlay" id="payInstallmentModal">
+  <div class="modal">
+    <h3>Record Installment Payment</h3>
+    <label>Amount (RWF)</label>
+    <input type="number" id="payAmount" min="1" autocomplete="off" />
+    <label>Method</label>
+    <select id="payMethod">
+      <option value="momo">Mobile Money</option>
+      <option value="cash">Cash</option>
+      <option value="bank">Bank</option>
+      <option value="agent">Field agent</option>
+    </select>
+    <label>Phone (optional)</label>
+    <input type="text" id="payPhone" placeholder="0788123456" autocomplete="off" />
+    <label>Note (optional)</label>
+    <input type="text" id="payNote" placeholder="e.g. Paid at kiosk" autocomplete="off" />
+    <div class="modal-btns">
+      <button class="btn btn-ghost" onclick="closePayInstallmentModal()">Cancel</button>
+      <button class="btn btn-teal" id="savePayBtn" onclick="savePayInstallment()">Save payment</button>
+    </div>
+  </div>
+</div>
+<div class="modal-overlay" id="stockModal">
+  <div class="modal">
+    <h3 id="modalProductName">Update Stock</h3>
+    <label>Current stock</label>
+    <input type="number" id="currentStockInput" disabled autocomplete="off" />
+    <label>New stock level</label>
+    <input type="number" id="newStockInput" min="0" placeholder="e.g. 50" autocomplete="off" />
+    <label>Reason</label>
+    <select id="stockReason">
+      <option value="restock">Restock (received new inventory)</option>
+      <option value="adjustment">Adjustment (stock count)</option>
+      <option value="correction">Correction (data error fix)</option>
+      <option value="return">Return (customer return)</option>
+    </select>
+    <label>Note (optional)</label>
+    <input type="text" id="stockNote" placeholder="e.g. Batch #12 received" autocomplete="off" />
+    <div class="modal-btns">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-teal" id="saveStockBtn" onclick="saveStock()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- New Agent Modal (admin-created — skips the approval queue) -->
+<div class="modal-overlay" id="newAgentModal">
+  <div class="modal">
+    <h3>Add Agent</h3>
+    <!-- autocomplete="off" throughout: this modal is used on a shared admin
+         device to register different agents one after another, so we don't
+         want the browser suggesting a previously-typed agent's name/phone/
+         email here. -->
+    <label>Full name</label>
+    <input type="text" id="newAgentName" autocomplete="off" placeholder="e.g. Jean Bosco Habimana" />
+    <label>Reseller code</label>
+    <input type="text" id="newAgentCode" autocomplete="off" placeholder="e.g. KIG-JB01 — letters, numbers, hyphens only" />
+    <label>Phone</label>
+    <input type="text" id="newAgentPhone" autocomplete="off" placeholder="0788123456" />
+    <label>Email (optional)</label>
+    <input type="text" id="newAgentEmail" autocomplete="off" placeholder="agent@example.com" />
+    <label>District</label>
+    <input type="text" id="newAgentDistrict" autocomplete="off" placeholder="e.g. Gasabo" />
+    <label>Region (optional)</label>
+    <input type="text" id="newAgentRegion" autocomplete="off" placeholder="e.g. Kigali" />
+    <label>Commission rate (%)</label>
+    <input type="number" id="newAgentCommissionPct" min="0" max="50" step="0.5" value="15" autocomplete="off" />
+    <p style="font-size:12px;color:#8a8f9c;margin:2px 0 0;">This agent is created active with no password set — use "Reset Password" on their row afterwards to give them login credentials.</p>
+    <div class="modal-btns">
+      <button class="btn btn-ghost" onclick="closeNewAgentModal()">Cancel</button>
+      <button class="btn btn-teal" id="saveNewAgentBtn" onclick="saveNewAgent()">Create agent</button>
+    </div>
+  </div>
+</div>
+
+<!-- Agent Detail Modal -->
+<div class="modal-overlay" id="agentDetailModal">
+  <div class="modal" style="max-width:800px;max-height:85vh;overflow-y:auto;">
+    <h3 id="agentDetailTitle">Agent detail</h3>
+    <div id="agentDetailSummary" style="margin-bottom:14px;"></div>
+
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;" id="agentDetailActions"></div>
+
+    <!-- Tabs, each with its own search + pager — an agent with a large
+         customer/order book needs the same search+pagination every other
+         list in this dashboard has, not one giant unbounded dump. -->
+    <div style="display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:14px;" id="agentDetailTabs">
+      <button class="agent-tab active" data-tab="customers" onclick="switchAgentDetailTab('customers')">Customers (<span id="agentDetailCustCount">0</span>)</button>
+      <button class="agent-tab" data-tab="orders" onclick="switchAgentDetailTab('orders')">Orders (<span id="agentDetailOrderCount">0</span>)</button>
+      <button class="agent-tab" data-tab="loans" onclick="switchAgentDetailTab('loans')">PayGo Loans (<span id="agentDetailLoanCount">0</span>)</button>
+      <button class="agent-tab" data-tab="commissions" onclick="switchAgentDetailTab('commissions')">Commissions (<span id="agentDetailCommCount">0</span>)</button>
+      <button class="agent-tab" data-tab="audit" onclick="switchAgentDetailTab('audit')">Activity</button>
+    </div>
+
+    <div id="agentDetailPane-customers" class="agent-detail-pane">
+      <div class="toolbar">
+        <input type="text" class="toolbar-search" id="agentDetailCustomersSearch" placeholder="Search name, phone, email…" autocomplete="off" />
+      </div>
+      <div id="agentDetailCustomers"></div>
+      <div class="pager" id="agentDetailCustomersPager"></div>
+    </div>
+
+    <div id="agentDetailPane-orders" class="agent-detail-pane" style="display:none;">
+      <div class="toolbar">
+        <input type="text" class="toolbar-search" id="agentDetailOrdersSearch" placeholder="Search order #, customer, phone…" autocomplete="off" />
+      </div>
+      <div id="agentDetailOrders"></div>
+      <div class="pager" id="agentDetailOrdersPager"></div>
+    </div>
+
+    <div id="agentDetailPane-loans" class="agent-detail-pane" style="display:none;">
+      <div class="toolbar">
+        <input type="text" class="toolbar-search" id="agentDetailLoansSearch" placeholder="Search loan #…" autocomplete="off" />
+      </div>
+      <div id="agentDetailLoans"></div>
+      <div class="pager" id="agentDetailLoansPager"></div>
+    </div>
+
+    <div id="agentDetailPane-commissions" class="agent-detail-pane" style="display:none;">
+      <div class="toolbar">
+        <select id="agentDetailCommissionsStatusFilter">
+          <option value="">All statuses</option>
+          <option value="pending">Pending</option>
+          <option value="paid">Paid</option>
+        </select>
+      </div>
+      <div id="agentDetailCommissions"></div>
+      <div class="pager" id="agentDetailCommissionsPager"></div>
+    </div>
+
+    <div id="agentDetailPane-audit" class="agent-detail-pane" style="display:none;">
+      <div id="agentDetailAudit"></div>
+    </div>
+
+    <div class="modal-btns">
+      <button class="btn btn-ghost" onclick="closeAgentDetailModal()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Reason Modal (shared by Reject and Suspend) -->
+<div class="modal-overlay" id="reasonModal">
+  <div class="modal">
+    <h3 id="reasonModalTitle">Reason</h3>
+    <label>Reason (optional, shared with the agent)</label>
+    <input type="text" id="reasonInput" placeholder="e.g. Duplicate registration" autocomplete="off" />
+    <div class="modal-btns">
+      <button class="btn btn-ghost" onclick="closeReasonModal()">Cancel</button>
+      <button class="btn btn-teal" id="submitReasonBtn" onclick="submitReasonModal()">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- Reset Agent Password Modal -->
+<div class="modal-overlay" id="resetAgentPasswordModal">
+  <div class="modal">
+    <h3>Reset Agent Password</h3>
+    <label>New password</label>
+    <input type="text" id="resetAgentPasswordInput" placeholder="At least 8 characters" autocomplete="new-password" />
+    <div class="modal-btns">
+      <button class="btn btn-ghost" onclick="closeResetAgentPasswordModal()">Cancel</button>
+      <button class="btn btn-teal" id="saveResetAgentPasswordBtn" onclick="saveResetAgentPassword()">Reset password</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ============================================================
+// CONFIG
+// ============================================================
+const API_BASE = '/api';
+let token = localStorage.getItem('kos_token') || '';
+let trendChart = null, productsChart = null;
+let editingProductId = null;
+const MAX_ATTEMPTS = 5;
+
+// ============================================================
+// BOOT
+// ============================================================
+(function init() {
+  if (token) {
+    showShell();
+    loadDashboard();
+  }
+
+  // Nav tabs
+  document.querySelectorAll('nav button[data-page]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      const page = document.getElementById(btn.dataset.page);
+      if (page) page.classList.add('active');
+      if (btn.dataset.page === 'inventoryPage') loadInventory();
+      if (btn.dataset.page === 'ordersPage') loadOrders();
+      if (btn.dataset.page === 'loansPage') loadLoans();
+      if (btn.dataset.page === 'agentsPage') loadAgents();
+      if (btn.dataset.page === 'customersPage') loadCustomers();
+      if (btn.dataset.page === 'ledgerPage') {
+        // Explicitly blank these before loading — a browser can silently
+        // pre-fill a date input from a previous visit (same autofill
+        // behavior we fixed on the agent registration form), and if we
+        // trusted whatever's already in the DOM, that stale date would
+        // quietly filter out everything without the user ever touching
+        // the field. Every fresh visit to this tab starts unfiltered.
+        document.getElementById('ledgerFromDate').value = '';
+        document.getElementById('ledgerToDate').value = '';
+        loadLedger();
+      }
+    });
+  });
+
+  // Toolbar search/filter listeners — debounced search, instant filter change
+  bindListToolbar('orders', ['ordersStatusFilter', 'ordersPaymentFilter', 'ordersChannelFilter'], loadOrders);
+  bindListToolbar('loans', ['loansStatusFilter'], loadLoans);
+  bindListToolbar('agents', ['agentsStatusFilter'], loadAgents);
+  bindListToolbar('customers', [], loadCustomers);
+  bindListToolbar('ledger', ['ledgerAccountTypeFilter', 'ledgerCategoryFilter', 'ledgerFromDate', 'ledgerToDate'], loadLedger);
+
+  // Login button
+  document.getElementById('loginBtn').addEventListener('click', doLogin);
+  document.getElementById('passwordInput').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+  document.getElementById('emailInput').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('passwordInput').focus(); });
+  document.getElementById('logoutBtn').addEventListener('click', logout);
+
+  // Password eye toggle
+  document.getElementById('eyeBtn').addEventListener('click', () => {
+    const input = document.getElementById('passwordInput');
+    const isPassword = input.type === 'password';
+    input.type = isPassword ? 'text' : 'password';
+    document.getElementById('eyeIcon').style.display = isPassword ? 'none' : '';
+    document.getElementById('eyeOffIcon').style.display = isPassword ? '' : 'none';
+  });
+})();
+
+// ============================================================
+// LOGIN
+// ============================================================
+async function doLogin() {
+  const email = document.getElementById('emailInput').value.trim();
+  const password = document.getElementById('passwordInput').value;
+  const errEl = document.getElementById('loginError');
+  const btn = document.getElementById('loginBtn');
+
+  clearLoginError();
+
+  if (!email || !password) {
+    showLoginError('Please enter your email and password.', false);
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Signing in…';
+
+  try {
+    const res = await fetch(`${API_BASE}/admin/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    const data = await res.json();
+
+    if (res.status === 429 || data.locked) {
+      // Hard lockout
+      const secs = data.retryAfterSeconds || 900;
+      showLockout(secs);
+      return;
+    }
+
+    if (!res.ok) {
+      const remaining = typeof data.attemptsRemaining === 'number' ? data.attemptsRemaining : null;
+      showLoginError(data.error || 'Login failed.', remaining !== null && remaining <= 2);
+      if (remaining !== null) updateAttemptsBar(remaining);
+      return;
+    }
+
+    // Success
+    token = data.token;
+    localStorage.setItem('kos_token', token);
+    document.getElementById('adminName').textContent = data.admin?.name || 'Admin';
+    clearLoginError();
+    showShell();
+    loadDashboard();
+  } catch (err) {
+    showLoginError('Network error — please check your connection.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Sign in';
+  }
+}
+
+function showLoginError(msg, isWarning = false) {
+  const el = document.getElementById('loginError');
+  el.textContent = msg;
+  el.className = isWarning ? 'warning show' : 'show';
+}
+
+function clearLoginError() {
+  const el = document.getElementById('loginError');
+  el.textContent = '';
+  el.className = '';
+  document.getElementById('attemptsBar').classList.remove('show');
+}
+
+function updateAttemptsBar(remaining) {
+  const bar = document.getElementById('attemptsBar');
+  const fill = document.getElementById('attemptsFill');
+  const pct = Math.round((remaining / MAX_ATTEMPTS) * 100);
+  bar.classList.add('show');
+  fill.style.width = pct + '%';
+  fill.style.background = remaining <= 1 ? 'var(--danger)' : remaining <= 2 ? 'var(--amber)' : 'var(--teal)';
+}
+
+let lockoutTimer = null;
+function showLockout(seconds) {
+  if (lockoutTimer) clearInterval(lockoutTimer);
+  let s = seconds;
+  const btn = document.getElementById('loginBtn');
+  btn.disabled = true;
+
+  function tick() {
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    const label = m > 0 ? `${m}m ${sec}s` : `${sec}s`;
+    showLoginError(`Too many failed attempts. Try again in ${label}.`, false);
+    btn.textContent = `Locked (${label})`;
+    if (s <= 0) {
+      clearInterval(lockoutTimer);
+      btn.disabled = false;
+      btn.textContent = 'Sign in';
+      clearLoginError();
+    }
+    s--;
+  }
+  tick();
+  lockoutTimer = setInterval(tick, 1000);
+}
+
+function logout() {
+  token = '';
+  localStorage.removeItem('kos_token');
+  document.getElementById('shell').style.display = 'none';
+  document.getElementById('loginScreen').style.display = '';
+  document.getElementById('emailInput').value = '';
+  document.getElementById('passwordInput').value = '';
+  document.getElementById('passwordInput').type = 'password';
+  document.getElementById('eyeIcon').style.display = '';
+  document.getElementById('eyeOffIcon').style.display = 'none';
+  clearLoginError();
+  document.getElementById('attemptsBar').classList.remove('show');
+}
+
+function showShell() {
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('shell').style.display = 'block';
+}
+
+// ============================================================
+// DASHBOARD
+// ============================================================
+async function loadDashboard() {
+  try {
+    const res = await fetch(`${API_BASE}/admin/dashboard`, { headers: { Authorization: `Bearer ${token}` } });
+    if (res.status === 401) { logout(); return; }
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to load dashboard');
+    renderDashboard(data);
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
+  }
+}
+
+function fmt(n) { return (n || 0).toLocaleString() + ' FRW'; }
+// Compact FRW formatter for chart axes: 1,200 -> 1.2K, 54,000 -> 54K, 1,250,000 -> 1.3M
+function compactRwf(v) {
+  if (v >= 1000000) return (v / 1000000).toFixed(v % 1000000 === 0 ? 0 : 1) + 'M';
+  if (v >= 1000) return (v / 1000).toFixed(v % 1000 === 0 ? 0 : 1) + 'K';
+  return String(v);
+}
+
+function renderDashboard(d) {
+  // KPI money tiles: show compact (K/M) with the exact figure on hover, so
+  // big revenue numbers don't overflow their boxes as the business grows.
+  const money = (v) => `<span title="${fmt(v)}">${compactRwf(v)} FRW</span>`;
+  document.getElementById('kpis').innerHTML = `
+    <div class="kpi"><div class="label">Revenue today</div><div class="value">${money(d.revenue.today)}</div></div>
+    <div class="kpi"><div class="label">Last 7 days</div><div class="value">${money(d.revenue.last7Days)}</div></div>
+    <div class="kpi"><div class="label">Last 30 days</div><div class="value">${money(d.revenue.last30Days)}</div></div>
+    <div class="kpi"><div class="label">All-time revenue</div><div class="value pink">${money(d.revenue.allTime)}</div></div>
+    <div class="kpi"><div class="label">Avg. order value</div><div class="value">${money(d.revenue.averageOrderValueRwf)}</div></div>
+    <div class="kpi"><div class="label">Total orders</div><div class="value">${d.counts.totalOrders}</div></div>
+    <div class="kpi"><div class="label">Customers</div><div class="value">${d.counts.totalCustomers}</div></div>
+    <div class="kpi" title="Orders placed but not yet confirmed as paid — confirm them below to move this into revenue">
+      <div class="label">Pending revenue (${d.counts.pendingPaymentConfirmations} orders)</div>
+      <div class="value amber">${money(d.revenue.pending)}</div>
+    </div>
+  `;
+
+  // PayGo loan portfolio KPIs (repayment rate, risk, CAC/LTV) — computed
+  // server-side in LoanService.getPortfolioMetrics / getCacLtvMetrics.
+  const lp = d.loanPortfolio || {};
+  const cl = d.cacLtv || {};
+  const counts = lp.loanCounts || {};
+  document.getElementById('loanKpis').innerHTML = `
+    <div class="kpi"><div class="label">Repayment rate</div><div class="value pink">${lp.repaymentRatePercent ?? 0}%</div></div>
+    <div class="kpi"><div class="label">Active loans</div><div class="value">${counts.active ?? 0}</div></div>
+    <div class="kpi"><div class="label">Completed loans</div><div class="value">${counts.completed ?? 0}</div></div>
+    <div class="kpi" title="Active loans with at least one currently overdue installment">
+      <div class="label">At-risk loans</div><div class="value amber">${counts.atRisk ?? 0}</div>
+    </div>
+    <div class="kpi" title="Loans flagged defaulted after ${'consecutive missed installments crossing the policy threshold'}">
+      <div class="label">Defaulted loans</div><div class="value">${counts.defaulted ?? 0}</div>
+    </div>
+    <div class="kpi"><div class="label">Overdue amount</div><div class="value amber">${money(lp.overdueAmountRwf)}</div></div>
+    <div class="kpi" title="Average acquisition cost per customer where tagged">
+      <div class="label">Avg. CAC</div><div class="value">${cl.avgCacRwf != null ? money(cl.avgCacRwf) : '—'}</div>
+    </div>
+    <div class="kpi" title="Average lifetime value from installment payments">
+      <div class="label">Avg. LTV</div><div class="value">${money(cl.avgLtvRwf)}</div>
+    </div>
+    <div class="kpi" title="LTV ÷ CAC — above 3 is generally considered healthy">
+      <div class="label">LTV : CAC</div><div class="value pink">${cl.ltvToCacRatio != null ? cl.ltvToCacRatio + '×' : '—'}</div>
+    </div>
+  `;
+
+  // Agent sales channel KPIs
+  const ags = d.agentStats || {};
+  document.getElementById('agentKpis').innerHTML = `
+    <div class="kpi"><div class="label">Active agents</div><div class="value">${ags.activeAgents ?? 0}</div></div>
+    <div class="kpi" title="Awaiting admin review"><div class="label">Pending approvals</div><div class="value amber">${ags.pendingApprovals ?? 0}</div></div>
+    <div class="kpi"><div class="label">Agent-generated orders</div><div class="value">${ags.agentGeneratedOrders ?? 0}</div></div>
+    <div class="kpi"><div class="label">Agent-generated revenue</div><div class="value pink">${money(ags.agentGeneratedRevenueRwf)}</div></div>
+    <div class="kpi"><div class="label">Pending commission payouts</div><div class="value amber">${money(ags.pendingCommissionRwf)}</div></div>
+    <div class="kpi"><div class="label">Paid commission</div><div class="value">${money(ags.paidCommissionRwf)}</div></div>
+  `;
+
+  // Trend chart
+  const labels = d.revenueTrend14Days.map(t => t.date.slice(5));
+  const values = d.revenueTrend14Days.map(t => t.revenueRwf);
+  if (trendChart) trendChart.destroy();
+  trendChart = new Chart(document.getElementById('trendChart'), {
+    type: 'line',
+    data: { labels, datasets: [{ label: 'Revenue (FRW)', data: values, borderColor: '#0f7a72', backgroundColor: 'rgba(15,122,114,.1)', fill: true, tension: .35 }] },
+    options: {
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => fmt(ctx.parsed.y) } },
+      },
+      scales: { y: { ticks: { callback: v => compactRwf(v) } } },
+    }
+  });
+
+  // Products chart
+  const top = d.topProducts.slice(0, 6);
+  if (productsChart) productsChart.destroy();
+  productsChart = new Chart(document.getElementById('productsChart'), {
+    type: 'bar',
+    data: { labels: top.map(p => p.name), datasets: [{ label: 'Revenue (FRW)', data: top.map(p => p.revenueRwf), backgroundColor: '#e8557a' }] },
+    options: {
+      indexAxis: 'y',
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => fmt(ctx.parsed.x) } },
+      },
+      scales: { x: { ticks: { callback: v => compactRwf(v) } } },
+    }
+  });
+
+  // Pending confirmation
+  const pc = document.getElementById('pendingOrders');
+  const cnt = document.getElementById('pendingCount');
+  cnt.textContent = d.pendingConfirmation.length || '';
+  if (!d.pendingConfirmation.length) { pc.innerHTML = '<p class="empty">No pending confirmations.</p>'; }
+  else {
+    pc.innerHTML = `<table>
+      <thead><tr><th>Order #</th><th>Customer</th><th>Phone</th><th>Method</th><th>Total</th><th>Action</th></tr></thead>
+      <tbody>` +
+      d.pendingConfirmation.map(o => `<tr>
+        <td><strong>${o.orderNumber}</strong></td>
+        <td>${o.customerName}</td>
+        <td>${o.customerPhone}</td>
+        <td>${methodChip(o.paymentMethod)}</td>
+        <td>${fmt(o.totalRwf)}</td>
+        <td><button class="btn btn-teal btn-sm" onclick="confirmPayment('${o.orderNumber}', this, true)">✓ Confirm paid</button></td>
+      </tr>`).join('') + `</tbody></table>`;
+  }
+}
+
+// ============================================================
+// INVENTORY
+// ============================================================
+async function loadInventory() {
+  try {
+    const res = await fetch(`${API_BASE}/admin/inventory`, { headers: { Authorization: `Bearer ${token}` } });
+    if (res.status === 401) { logout(); return; }
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to load inventory');
+    renderInventory(data);
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
+  }
+}
+
+function renderInventory(data) {
+  const { inventory, summary } = data;
+
+  document.getElementById('invSummary').innerHTML = `
+    <div class="inv-chip"><span class="teal">${summary.active}</span>Active products</div>
+    <div class="inv-chip"><span class="amber">${summary.lowStock}</span>Low stock</div>
+    <div class="inv-chip"><span class="red">${summary.outOfStock}</span>Out of stock</div>
+  `;
+
+  const tbody = document.getElementById('inventoryBody');
+  if (!inventory.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty">No products found.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = inventory.map(p => {
+    const stockPct = Math.min(100, p.stock > 0 ? Math.round((p.stock / Math.max(p.stock, p.lowStockThreshold * 3)) * 100) : 0);
+    const barColor = p.isOutOfStock ? 'var(--danger)' : p.isLowStock ? 'var(--amber)' : 'var(--success)';
+    const statusBadge = p.isOutOfStock
+      ? '<span class="badge out">Out of stock</span>'
+      : p.isLowStock
+        ? '<span class="badge low">Low stock</span>'
+        : '<span class="badge paid">In stock</span>';
+
+    return `<tr>
+      <td>
+        <strong>${p.name}</strong>
+        <div style="font-size:11px;color:var(--muted);margin-top:1px;">${p.packageType}</div>
+      </td>
+      <td>${(p.priceRwf).toLocaleString()} FRW</td>
+      <td>
+        <div style="font-weight:600;">${p.stock}</div>
+        <div class="stock-bar"><div class="stock-bar-fill" style="width:${stockPct}%;background:${barColor};"></div></div>
+        <div style="font-size:10px;color:var(--muted);">alert at ${p.lowStockThreshold}</div>
+      </td>
+      <td>${statusBadge}</td>
+      <td>
+        <span class="badge ${p.isActive ? 'confirmed' : 'inactive'}">${p.isActive ? 'Active' : 'Hidden'}</span>
+      </td>
+      <td>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <button class="btn btn-teal btn-sm" onclick="openStockModal(${p.id}, '${p.name.replace(/'/g,"\\'")}', ${p.stock})">Edit stock</button>
+          <button class="btn btn-ghost btn-sm" onclick="toggleProduct(${p.id})">${p.isActive ? 'Hide' : 'Show'}</button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function openStockModal(productId, name, currentStock) {
+  editingProductId = productId;
+  document.getElementById('modalProductName').textContent = 'Update stock – ' + name;
+  document.getElementById('currentStockInput').value = currentStock;
+  document.getElementById('newStockInput').value = currentStock;
+  document.getElementById('stockReason').value = 'restock';
+  document.getElementById('stockNote').value = '';
+  document.getElementById('stockModal').classList.add('show');
+  setTimeout(() => document.getElementById('newStockInput').focus(), 50);
+}
+
+function closeModal() {
+  document.getElementById('stockModal').classList.remove('show');
+  editingProductId = null;
+}
+
+async function saveStock() {
+  if (!editingProductId) return;
+  const newStock = parseInt(document.getElementById('newStockInput').value);
+  const reason = document.getElementById('stockReason').value;
+  const note = document.getElementById('stockNote').value;
+
+  if (isNaN(newStock) || newStock < 0) {
+    showToast('Stock must be a number ≥ 0', true);
+    return;
+  }
+
+  const btn = document.getElementById('saveStockBtn');
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+
+  try {
+    const res = await fetch(`${API_BASE}/admin/inventory/${editingProductId}/stock`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ newStock, reason, note }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to update stock');
+
+    showToast(`✅ Stock updated to ${newStock}`);
+    closeModal();
+    loadInventory();
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Save';
+  }
+}
+
+async function toggleProduct(productId) {
+  try {
+    const res = await fetch(`${API_BASE}/admin/inventory/${productId}/toggle`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed');
+    showToast(`Product is now ${data.product.isActive ? 'active' : 'hidden'}`);
+    loadInventory();
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
+  }
+}
+
+// ============================================================
+// ORDERS PAGE
+// ============================================================
+const FULFILMENT_STATUSES = ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled'];
+
+function isCashMethod(method) { return /^cash/i.test(method || ''); }
+
+// Generic close helper for simple confirm-style modals (like the delete
+// customer one) that don't need any extra per-modal teardown logic.
+function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+
+// For a PayGo order, order.paymentStatus turning 'paid' only ever means
+// the DOWN PAYMENT was confirmed — the customer still owes the rest across
+// the installment schedule. Showing a bare "paid" badge for that (same as
+// a fully-settled cash/MoMo order) is misleading, so PayGo orders get a
+// distinct "Down payment" / "Fully paid" label instead, driven by the
+// linked loan's own status rather than the order's payment flag.
+function paymentBadge(o) {
+  if (o.paygoLoanStatus) {
+    if (o.paygoLoanStatus === 'completed') {
+      return '<span class="badge paid">✓ Fully paid off</span>';
+    }
+    return o.paymentStatus === 'paid'
+      ? `<span class="badge" style="background:#fff4e5;color:#8a5a00;">Down payment paid</span>`
+      : `<span class="badge pending">Down payment pending</span>`;
+  }
+  return `<span class="badge ${o.paymentStatus}">${o.paymentStatus || 'pending'}</span>`;
+}
+
+function methodChip(method) {
+  const cash = isCashMethod(method);
+  const label = cash ? 'Cash' : (method && /momo|mobile/i.test(method) ? 'MoMo' : (method || '—'));
+  return `<span class="method-chip ${cash ? 'cash' : 'momo'}">${cash ? '💵' : '📱'} ${label}</span>`;
+}
+
+function statusSelect(o) {
+  const opts = FULFILMENT_STATUSES.map(s =>
+    `<option value="${s}" ${s === o.orderStatus ? 'selected' : ''}>${s.charAt(0).toUpperCase() + s.slice(1)}</option>`
+  ).join('');
+  return `<select class="status-select" onchange="updateOrderStatus('${o.orderNumber}', this)">${opts}</select>`;
+}
+
+// ============================================================
+// SHARED: pagination/search/filter/CSV-export helpers used by the
+// Orders, PayGo, Agents, and Customers tabs.
+// ============================================================
+// One consistent page size across every admin list (orders, loans, agents,
+// customers, ledger) — a mix of different page sizes made the dashboard
+// feel inconsistent depending on which tab you were on.
+const ADMIN_PAGE_SIZE = 10;
+const listState = {
+  orders: { page: 1, pageSize: ADMIN_PAGE_SIZE },
+  loans: { page: 1, pageSize: ADMIN_PAGE_SIZE },
+  agents: { page: 1, pageSize: ADMIN_PAGE_SIZE },
+  customers: { page: 1, pageSize: ADMIN_PAGE_SIZE },
+  ledger: { page: 1, pageSize: ADMIN_PAGE_SIZE },
+};
+
+let searchDebounceTimers = {};
+
+// Wires the search box (debounced) and any filter <select>s for a tab so
+// they reset to page 1 and reload whenever changed.
+function bindListToolbar(key, filterSelectIds, loadFn) {
+  const searchEl = document.getElementById(`${key}Search`);
+  if (searchEl) {
+    searchEl.addEventListener('input', () => {
+      clearTimeout(searchDebounceTimers[key]);
+      searchDebounceTimers[key] = setTimeout(() => {
+        listState[key].page = 1;
+        loadFn();
+      }, 350);
+    });
+  }
+  filterSelectIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', () => { listState[key].page = 1; loadFn(); });
+  });
+}
+
+// Renders a compact pager (prev/next + numbered pages) into the given
+// container, wired to call loadFn again with the new page.
+function renderPager(containerId, key, pagination, loadFn) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  const { page, totalPages, total, pageSize } = pagination;
+  if (total === 0) { el.innerHTML = ''; return; }
+
+  const from = (page - 1) * pageSize + 1;
+  const to = Math.min(page * pageSize, total);
+
+  const maxButtons = 5;
+  let start = Math.max(1, page - Math.floor(maxButtons / 2));
+  let end = Math.min(totalPages, start + maxButtons - 1);
+  start = Math.max(1, end - maxButtons + 1);
+  let pageButtons = '';
+  for (let p = start; p <= end; p++) {
+    pageButtons += `<button class="${p === page ? 'active' : ''}" onclick="goToPage('${key}', ${p})">${p}</button>`;
+  }
+
+  el.innerHTML = `
+    <div class="pager-info">Showing ${from}–${to} of ${total}</div>
+    <div class="pager-controls">
+      <button ${page <= 1 ? 'disabled' : ''} onclick="goToPage('${key}', ${page - 1})">‹ Prev</button>
+      ${pageButtons}
+      <button ${page >= totalPages ? 'disabled' : ''} onclick="goToPage('${key}', ${page + 1})">Next ›</button>
+    </div>
+  `;
+  window[`__load_${key}`] = loadFn;
+}
+
+function goToPage(key, page) {
+  listState[key].page = page;
+  const loadFn = window[`__load_${key}`];
+  if (loadFn) loadFn();
+}
+
+// Builds the query string shared between a tab's paginated list fetch and
+// its CSV export, so the export always matches whatever's currently
+// searched/filtered on screen.
+function buildListQuery(key, extra) {
+  const state = listState[key];
+  const params = new URLSearchParams();
+  if (state) { params.set('page', state.page); params.set('pageSize', state.pageSize); }
+  const searchEl = document.getElementById(`${key}Search`);
+  if (searchEl && searchEl.value.trim()) params.set('search', searchEl.value.trim());
+  Object.entries(extra || {}).forEach(([k, v]) => { if (v) params.set(k, v); });
+  return params.toString();
+}
+
+const csvExportConfig = {
+  orders: { url: `${API_BASE}/orders/export/csv`, extra: () => ({ orderStatus: val('ordersStatusFilter'), paymentStatus: val('ordersPaymentFilter'), channel: val('ordersChannelFilter') }) },
+  loans: { url: `${API_BASE}/admin/loans/export/csv`, extra: () => ({ status: val('loansStatusFilter') }) },
+  agents: { url: `${API_BASE}/admin/agents/export/csv`, extra: () => ({ status: val('agentsStatusFilter') }) },
+  customers: { url: `${API_BASE}/admin/customers/export/csv`, extra: () => ({}) },
+  ledger: { url: `${API_BASE}/admin/ledger/export/csv`, extra: () => ({ accountType: val('ledgerAccountTypeFilter'), category: val('ledgerCategoryFilter'), fromDate: val('ledgerFromDate'), toDate: val('ledgerToDate') }) },
+};
+
+function val(id) { const el = document.getElementById(id); return el ? el.value : ''; }
+
+async function exportCsv(key) {
+  const cfg = csvExportConfig[key];
+  if (!cfg) return;
+  try {
+    const qs = buildListQuery(key, cfg.extra());
+    const res = await fetch(`${cfg.url}?${qs}`, { headers: { Authorization: `Bearer ${token}` } });
+    if (res.status === 401) { logout(); return; }
+    if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || 'Export failed'); }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${key}-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
+  }
+}
+
+async function loadOrders() {
+  try {
+    const qs = buildListQuery('orders', { orderStatus: val('ordersStatusFilter'), paymentStatus: val('ordersPaymentFilter'), channel: val('ordersChannelFilter') });
+    const res = await fetch(`${API_BASE}/orders?${qs}`, { headers: { Authorization: `Bearer ${token}` } });
+    if (res.status === 401) { logout(); return; }
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to load orders');
+    const tbody = document.getElementById('ordersBody');
+    const list = data.data || [];
+    if (!list.length) {
+      tbody.innerHTML = '<tr><td colspan="8" class="empty">No orders found.</td></tr>';
+    } else {
+      tbody.innerHTML = list.map(o => `<tr>
+        <td><strong>${o.orderNumber}</strong></td>
+        <td>${o.customerName}<div style="font-size:11px;color:var(--muted);">${o.customerPhone || ''}</div></td>
+        <td>${(o.totalRwf || 0).toLocaleString()} FRW</td>
+        <td>${methodChip(o.paymentMethod)}</td>
+        <td>${paymentBadge(o)}</td>
+        <td><span class="badge ${o.orderStatus}">${o.orderStatus || 'pending'}</span></td>
+        <td>${o.createdAt ? new Date(o.createdAt).toLocaleDateString() : '-'}</td>
+        <td><div class="order-actions">
+          ${o.paymentStatus === 'paid'
+            ? `<span class="paid-check">✓ ${o.paygoLoanStatus && o.paygoLoanStatus !== 'completed' ? 'Down payment confirmed' : 'Paid'}</span>`
+            : `<button class="btn btn-teal btn-sm" onclick="confirmPayment('${o.orderNumber}', this, false, ${Boolean(o.paygoLoanStatus)})">${o.paygoLoanStatus ? '✓ Confirm down payment' : '✓ Confirm paid'}</button>`}
+          ${statusSelect(o)}
+        </div></td>
+      </tr>`).join('');
+    }
+    renderPager('ordersPager', 'orders', data.pagination, loadOrders);
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
+  }
+}
+
+// Admin manually marks an order's payment as received — this is how cash
+// (pay on delivery/pickup) orders get confirmed, and also how MoMo sandbox
+// orders get confirmed since no real webhook will ever fire for those.
+async function confirmPayment(orderNumber, btnEl, fromDashboard, isPaygo) {
+  const confirmMsg = isPaygo
+    ? `Confirm that the DOWN PAYMENT has been received for order ${orderNumber}?\n\nThis marks the down payment as received and starts the installment schedule — it does NOT mean the full amount is paid. The customer notification will reflect that too.`
+    : `Confirm that payment has been received for order ${orderNumber}?\n\nThis will mark the order as paid & confirmed, and notify the customer.`;
+  if (!confirm(confirmMsg)) return;
+  const originalText = btnEl.textContent;
+  btnEl.disabled = true;
+  btnEl.textContent = 'Confirming…';
+  try {
+    const res = await fetch(`${API_BASE}/orders/${orderNumber}/confirm-payment`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({}),
+    });
+    if (res.status === 401) { logout(); return; }
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || 'Failed to confirm payment');
+    showToast(result.alreadyConfirmed ? 'Already confirmed.' : `✓ ${orderNumber} marked as paid.`);
+    if (fromDashboard) loadDashboard(); else { loadOrders(); loadDashboard(); }
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
+    btnEl.disabled = false;
+    btnEl.textContent = originalText;
+  }
+}
+
+async function updateOrderStatus(orderNumber, selectEl) {
+  const orderStatus = selectEl.value;
+  selectEl.disabled = true;
+  try {
+    const res = await fetch(`${API_BASE}/orders/${orderNumber}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ orderStatus }),
+    });
+    if (res.status === 401) { logout(); return; }
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || 'Failed to update status');
+    showToast(`✓ ${orderNumber} → ${orderStatus}`);
+    loadOrders();
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
+  } finally {
+    selectEl.disabled = false;
+  }
+}
+
+// ============================================================
+// PAYGO INSTALLMENT LOANS
+// ============================================================
+let currentLoanNumber = null;
+
+async function loadLoans() {
+  try {
+    const qs = buildListQuery('loans', { status: val('loansStatusFilter') });
+    const res = await fetch(`${API_BASE}/admin/loans?${qs}`, { headers: { Authorization: `Bearer ${token}` } });
+    if (res.status === 401) { logout(); return; }
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to load loans');
+    renderLoans(data.data || []);
+    renderPager('loansPager', 'loans', data.pagination, loadLoans);
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
+  }
+}
+
+function loanStatusBadge(status) {
+  const cls = status === 'active' ? 'pending' : status === 'completed' ? 'paid' : status === 'defaulted' ? 'failed' : 'amber';
+  return `<span class="badge ${cls}">${status}</span>`;
+}
+
+function renderLoans(loans) {
+  const body = document.getElementById('loansBody');
+  if (!loans.length) { body.innerHTML = '<tr><td colspan="7" class="empty">No PayGo loans yet — create one to get started.</td></tr>'; return; }
+  body.innerHTML = loans.map(l => `
+    <tr>
+      <td><strong>${l.loanNumber}</strong></td>
+      <td>${l.customerName || 'Customer #' + l.customerId}<br><span style="color:#8a8f9c;font-size:11px;">${l.customerPhone || ''}</span></td>
+      <td>${fmt(l.totalPayableRwf)}</td>
+      <td>${l.repaymentRatePercent}%</td>
+      <td>${loanStatusBadge(l.status)}</td>
+      <td>${l.overdueInstallments > 0 ? `<span class="badge amber">${l.overdueInstallments}</span>` : '—'}</td>
+      <td><button class="btn btn-ghost btn-sm" onclick="openLoanDetail('${l.loanNumber}')">View</button></td>
+    </tr>
+  `).join('');
+}
+
+async function runLoanAutomation() {
+  try {
+    showToast('Running reminders, overdue sweep + default check…');
+    const res = await fetch(`${API_BASE}/admin/loans/run-automation`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Automation run failed');
+    const s = data.summary;
+    showToast(`✓ Reminders: ${s.reminders.sent}, penalties: ${s.overdue.penalized}, defaults flagged: ${s.defaults.flagged}`);
+    loadLoans();
+    loadDashboard();
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
+  }
+}
+
+// ---- New loan modal ----
+function openNewLoanModal() {
+  ['loanCustomerId','loanOrderId','loanPrincipal','loanGuarantorName','loanGuarantorPhone'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('loanDownPayment').value = 0;
+  document.getElementById('loanInterestPct').value = 5;
+  document.getElementById('loanTermMonths').value = 6;
+  document.getElementById('loanGuarantorType').value = 'none';
+  // Reset every time — same explicit-reset pattern used everywhere else
+  // in this file, so a previous customer's credit check never lingers.
+  document.getElementById('loanCreditProfileBox').style.display = 'none';
+  document.getElementById('newLoanModal').classList.add('show');
+}
+function closeNewLoanModal() { document.getElementById('newLoanModal').classList.remove('show'); }
+
+// Fetches the entered customer's credit profile and shows it as a
+// suggestion — never touches the interest rate/term fields directly.
+// The admin reads the suggestion and adjusts those fields themselves if
+// they choose to.
+async function checkLoanCustomerCredit() {
+  const customerId = Number(document.getElementById('loanCustomerId').value);
+  const box = document.getElementById('loanCreditProfileBox');
+  if (!customerId) { showToast('⚠️ Enter a customer ID first', true); return; }
+  try {
+    const res = await fetch(`${API_BASE}/admin/customers/${customerId}/credit-profile`, { headers: { Authorization: `Bearer ${token}` } });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to check credit profile');
+    const p = data.profile;
+    const bg = p.tier === 'gold' ? '#fff8e1' : p.tier === 'silver' ? '#eef2f5' : p.tier === 'needs_review' ? '#fdecee' : '#f5f5f5';
+    const color = p.tier === 'gold' ? '#8a6d00' : p.tier === 'needs_review' ? '#c8394f' : '#5b6b7a';
+    box.style.background = bg;
+    box.style.color = color;
+    box.innerHTML = `<strong>${p.tierLabel}</strong><br>${p.suggestion.note}`;
+    box.style.display = 'block';
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
+  }
+}
+
+async function saveNewLoan() {
+  const btn = document.getElementById('saveLoanBtn');
+  const customerId = Number(document.getElementById('loanCustomerId').value);
+  const principalRwf = Number(document.getElementById('loanPrincipal').value);
+  if (!customerId || !principalRwf) { showToast('⚠️ Customer ID and principal are required', true); return; }
+
+  const payload = {
+    customerId,
+    orderId: document.getElementById('loanOrderId').value ? Number(document.getElementById('loanOrderId').value) : undefined,
+    principalRwf,
+    downPaymentRwf: Number(document.getElementById('loanDownPayment').value) || 0,
+    interestRateBps: Math.round(Number(document.getElementById('loanInterestPct').value) * 100),
+    termMonths: Number(document.getElementById('loanTermMonths').value),
+    guarantorType: document.getElementById('loanGuarantorType').value,
+    guarantorName: document.getElementById('loanGuarantorName').value || undefined,
+    guarantorPhone: document.getElementById('loanGuarantorPhone').value || undefined,
+  };
+
+  btn.disabled = true;
+  try {
+    const res = await fetch(`${API_BASE}/admin/loans`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || (data.details ? data.details.map(d => d.message).join(', ') : 'Failed to create loan'));
+    showToast(`✓ Loan ${data.loan.loanNumber} created`);
+    closeNewLoanModal();
+    loadLoans();
+    loadDashboard();
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ---- Loan detail modal ----
+async function openLoanDetail(loanNumber) {
+  currentLoanNumber = loanNumber;
+  try {
+    const res = await fetch(`${API_BASE}/admin/loans/${loanNumber}`, { headers: { Authorization: `Bearer ${token}` } });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to load loan');
+    renderLoanDetail(data);
+    document.getElementById('loanDetailModal').classList.add('show');
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
+  }
+}
+function closeLoanDetailModal() { document.getElementById('loanDetailModal').classList.remove('show'); currentLoanNumber = null; }
+
+function renderLoanDetail(data) {
+  const { loan, customer, schedule } = data;
+  document.getElementById('loanDetailTitle').textContent = `Loan ${loan.loanNumber} — ${loanStatusBadge(loan.status).replace(/<[^>]+>/g, '')}`;
+  document.getElementById('loanDetailSummary').innerHTML = `
+    <div>Customer: <strong>${customer ? customer.firstName + ' ' + customer.lastName : '—'}</strong> (${customer ? customer.phone : '—'})</div>
+    <div>Principal: ${fmt(loan.principalRwf)} · Total payable: ${fmt(loan.totalPayableRwf)} · Term: ${loan.termMonths} months</div>
+    ${loan.guarantorType !== 'none' ? `<div>Guarantor (${loan.guarantorType}): ${loan.guarantorName || '—'} ${loan.guarantorPhone || ''}</div>` : ''}
+  `;
+  document.getElementById('loanScheduleBody').innerHTML = schedule.map(i => `
+    <tr>
+      <td>${i.installmentNumber}</td>
+      <td>${new Date(i.dueDate).toLocaleDateString()}</td>
+      <td>${fmt(i.amountDueRwf)}</td>
+      <td>${fmt(i.amountPaidRwf)}</td>
+      <td>${i.penaltyRwf ? fmt(i.penaltyRwf) : '—'}</td>
+      <td><span class="badge ${i.status === 'paid' ? 'paid' : i.status === 'overdue' ? 'failed' : 'pending'}">${i.status}</span></td>
+      <td>${i.status !== 'paid' ? `<button class="btn btn-teal btn-sm" onclick="openPayInstallmentModal(${i.id})">Pay</button>` : '✓'}</td>
+    </tr>
+  `).join('');
+}
+
+// ---- Record payment modal ----
+let currentInstallmentId = null;
+function openPayInstallmentModal(installmentId) {
+  currentInstallmentId = installmentId;
+  document.getElementById('payAmount').value = '';
+  document.getElementById('payPhone').value = '';
+  document.getElementById('payNote').value = '';
+  document.getElementById('payMethod').value = 'momo';
+  document.getElementById('payInstallmentModal').classList.add('show');
+}
+function closePayInstallmentModal() { document.getElementById('payInstallmentModal').classList.remove('show'); currentInstallmentId = null; }
+
+async function savePayInstallment() {
+  const btn = document.getElementById('savePayBtn');
+  const amountRwf = Number(document.getElementById('payAmount').value);
+  if (!amountRwf) { showToast('⚠️ Enter an amount', true); return; }
+  btn.disabled = true;
+  try {
+    const res = await fetch(`${API_BASE}/admin/loans/installments/${currentInstallmentId}/pay`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        amountRwf,
+        method: document.getElementById('payMethod').value,
+        phone: document.getElementById('payPhone').value || undefined,
+        note: document.getElementById('payNote').value || undefined,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to record payment');
+    showToast(data.allPaid ? '🎉 Loan fully paid off!' : '✓ Payment recorded');
+    closePayInstallmentModal();
+    if (currentLoanNumber) openLoanDetail(currentLoanNumber);
+    loadLoans();
+    loadDashboard();
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ============================================================
+// AGENTS
+// ============================================================
+let currentAgentId = null;
+let currentReasonAction = null; // 'reject' | 'suspend'
+
+function agentStatusBadge(status) {
+  const cls = (status === 'active' || status === 'approved') ? 'success'
+    : status === 'pending' ? 'pending'
+    : status === 'suspended' ? 'danger'
+    : 'inactive';
+  return `<span class="badge ${cls}">${status}</span>`;
+}
+
+function referralLink(code) { return `https://kosmopads.rw/?ref=${code}`; }
+
+async function loadAgents() {
+  try {
+    const qs = buildListQuery('agents', { status: val('agentsStatusFilter') });
+    const [listRes, summaryRes, commRes] = await Promise.all([
+      fetch(`${API_BASE}/admin/agents?${qs}`, { headers: { Authorization: `Bearer ${token}` } }),
+      fetch(`${API_BASE}/admin/agents/summary`, { headers: { Authorization: `Bearer ${token}` } }),
+      fetch(`${API_BASE}/admin/agents/settings/default-commission`, { headers: { Authorization: `Bearer ${token}` } }),
+    ]);
+    if (listRes.status === 401) { logout(); return; }
+    const listData = await listRes.json();
+    const summaryData = await summaryRes.json();
+    const commData = await commRes.json();
+    if (!listRes.ok) throw new Error(listData.error || 'Failed to load agents');
+    renderAgentsPageKpis(summaryData);
+    renderAgents(listData.data || []);
+    renderPager('agentsPager', 'agents', listData.pagination, loadAgents);
+    if (commData.commissionPercent != null) document.getElementById('defaultCommissionPct').value = commData.commissionPercent;
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
+  }
+}
+
+function renderAgentsPageKpis(summary) {
+  document.getElementById('agentsPageKpis').innerHTML = `
+    <div class="kpi"><div class="label">Total agents</div><div class="value">${summary.total ?? 0}</div></div>
+    <div class="kpi"><div class="label">Pending approval</div><div class="value amber">${summary.pending ?? 0}</div></div>
+    <div class="kpi"><div class="label">Active agents</div><div class="value">${summary.active ?? 0}</div></div>
+    <div class="kpi"><div class="label">Suspended</div><div class="value">${summary.suspended ?? 0}</div></div>
+    <div class="kpi"><div class="label">Pending payouts</div><div class="value amber">${fmt(summary.pendingCommissionRwf)}</div></div>
+    <div class="kpi"><div class="label">Paid payouts</div><div class="value">${fmt(summary.paidCommissionRwf)}</div></div>
+  `;
+}
+
+function renderAgents(list) {
+  const body = document.getElementById('agentsBody');
+  if (!list.length) { body.innerHTML = '<tr><td colspan="10" class="empty">No agents yet.</td></tr>'; return; }
+  body.innerHTML = list.map(a => `
+    <tr>
+      <td><strong>${a.name}</strong></td>
+      <td>${a.code}</td>
+      <td>${a.phone}</td>
+      <td>${agentStatusBadge(a.status)}</td>
+      <td>${a.customerCount}</td>
+      <td>${a.orderCount}</td>
+      <td>${a.activePayGoLoans}</td>
+      <td>${fmt(a.pendingCommissionRwf)} / ${fmt(a.paidCommissionRwf)}</td>
+      <td>${new Date(a.createdAt).toLocaleDateString()}</td>
+      <td style="white-space:nowrap;">
+        <button class="btn btn-ghost btn-sm" onclick="openAgentDetail(${a.id})">View</button>
+        ${a.status === 'pending' ? `<button class="btn btn-teal btn-sm" onclick="approveAgent(${a.id})">Approve</button>` : ''}
+      </td>
+    </tr>
+  `).join('');
+}
+
+// ============================================================
+// CUSTOMERS
+// ============================================================
+let customerPendingDeleteId = null;
+
+async function loadCustomers() {
+  try {
+    const qs = buildListQuery('customers', {});
+    const res = await fetch(`${API_BASE}/admin/customers?${qs}`, { headers: { Authorization: `Bearer ${token}` } });
+    if (res.status === 401) { logout(); return; }
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to load customers');
+    renderCustomers(data.data || []);
+    renderPager('customersPager', 'customers', data.pagination, loadCustomers);
+    checkDuplicateNationalIds();
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
+  }
+}
+
+// Fraud-review check: any national ID shared by more than one customer
+// record. Runs alongside the normal customer list load — quiet when
+// clean, a clear banner when there's something worth an admin's attention.
+async function checkDuplicateNationalIds() {
+  const banner = document.getElementById('duplicateIdBanner');
+  try {
+    const res = await fetch(`${API_BASE}/admin/customers/duplicate-national-ids`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) { banner.style.display = 'none'; return; }
+    const data = await res.json();
+    const groups = data.groups || [];
+    if (groups.length === 0) { banner.style.display = 'none'; return; }
+
+    const urgent = groups.filter((g) => g.hasActiveLoan).length;
+    const rows = groups.map((g) => {
+      const names = g.customers.map((c) => `${c.firstName} ${c.lastName} (#${c.id})`).join(', ');
+      const badge = g.hasActiveLoan
+        ? '<span style="display:inline-block;background:#c8394f;color:#fff;font-size:10px;font-weight:600;padding:1px 6px;border-radius:4px;margin-right:6px;">URGENT</span>'
+        : '<span style="display:inline-block;background:#e4e4e7;color:#5b5f6b;font-size:10px;font-weight:600;padding:1px 6px;border-radius:4px;margin-right:6px;">REVIEW</span>';
+      return `<div style="margin-top:6px;">${badge}ID ending ${g.maskedNationalId || '—'} — ${names}${g.hasActiveLoan ? ' <strong>— has an active/defaulted PayGo loan</strong>' : ''}</div>`;
+    }).join('');
+
+    banner.innerHTML = `
+      <strong>${groups.length} national ID${groups.length > 1 ? 's' : ''} shared across multiple customer records${urgent ? ` — ${urgent} with an active loan, review urgently` : ''}.</strong>
+      This could be an innocent duplicate registration, or someone opening a second customer profile to work around the one-loan-at-a-time rule.
+      ${rows}
+    `;
+    banner.style.display = 'block';
+  } catch (e) {
+    banner.style.display = 'none';
+  }
+}
+
+function renderCustomers(list) {
+  const body = document.getElementById('customersBody');
+  if (!list.length) { body.innerHTML = '<tr><td colspan="8" class="empty">No customers found.</td></tr>'; return; }
+  body.innerHTML = list.map(c => {
+    const location = [c.district, c.sector].filter(Boolean).join(', ') || '—';
+    // Agents can view every customer's detail to help track them, but only
+    // an admin can delete one — this button never renders in the Agent
+    // Portal at all, since that app has no delete action to begin with.
+    return `<tr>
+      <td><strong>${c.firstName} ${c.lastName}</strong>${c.nationalId ? `<div style="font-size:11px;color:var(--muted);">ID: ${c.nationalId}</div>` : ''}</td>
+      <td>${c.phone}</td>
+      <td>${c.email || '—'}</td>
+      <td>${location}</td>
+      <td>${c.agentName || '—'}</td>
+      <td><span class="badge">${c.source || 'order'}</span></td>
+      <td>${c.createdAt ? new Date(c.createdAt).toLocaleDateString() : '-'}</td>
+      <td style="white-space:nowrap;">
+        <button class="btn btn-ghost btn-sm" onclick="viewCustomer(${c.id})">View</button>
+        <button class="btn btn-sm" style="background:#c8394f;color:#fff;" onclick="promptDeleteCustomer(${c.id}, '${(c.firstName + ' ' + c.lastName).replace(/'/g, "\\'")}')">Delete</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function viewCustomer(id) {
+  try {
+    const [detailRes, creditRes] = await Promise.all([
+      fetch(`${API_BASE}/admin/customers/${id}`, { headers: { Authorization: `Bearer ${token}` } }),
+      fetch(`${API_BASE}/admin/customers/${id}/credit-profile`, { headers: { Authorization: `Bearer ${token}` } }),
+    ]);
+    if (detailRes.status === 401) { logout(); return; }
+    const data = await detailRes.json();
+    if (!detailRes.ok) throw new Error(data.error || 'Failed to load customer');
+    const creditData = creditRes.ok ? await creditRes.json() : null;
+    renderCustomerDetail(data, creditData?.profile || null);
+    document.getElementById('customerDetailModal').classList.add('show');
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
+  }
+}
+
+const tierColors = {
+  new: '#8a8f9c',
+  needs_review: '#c8394f',
+  bronze: '#a9702c',
+  silver: '#5b6b7a',
+  gold: '#b8860b',
+};
+
+function renderCustomerDetail(data, credit) {
+  const c = data.customer;
+  document.getElementById('customerDetailTitle').textContent = `${c.firstName} ${c.lastName}`;
+
+  const location = [c.village, c.cell, c.sector, c.district].filter(Boolean).join(', ') || '—';
+  const idRow = c.nationalId
+    ? `<div class="kv"><span>National ID</span><strong style="font-family:monospace;letter-spacing:0.5px;">${c.nationalId}</strong></div>`
+    : `<div class="kv"><span>National ID</span><span style="color:var(--muted);">Not on file</span></div>`;
+
+  // Credit profile: a SUGGESTION for the admin manually creating this
+  // customer's next loan — never applied automatically. See
+  // creditScore.service.ts for the full reasoning.
+  const creditBlock = credit ? `
+    <div style="background:#fafafa;border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:16px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <span style="width:8px;height:8px;border-radius:50%;background:${tierColors[credit.tier] || '#8a8f9c'};display:inline-block;"></span>
+        <strong style="font-size:13px;">${credit.tierLabel}</strong>
+      </div>
+      <div style="font-size:13px;color:var(--muted);margin-bottom:6px;">
+        ${credit.completedLoans} completed loan(s)${credit.defaultedLoans ? `, ${credit.defaultedLoans} defaulted` : ''}${credit.onTimePaymentRate !== null ? ` · ${Math.round(credit.onTimePaymentRate * 100)}% on-time payment rate` : ''}
+      </div>
+      <div style="font-size:13px;color:#1a5f3f;background:#e8f5ee;border-radius:6px;padding:8px 10px;">
+        💡 ${credit.suggestion.note}
+      </div>
+    </div>
+  ` : '';
+
+  document.getElementById('customerDetailBody').innerHTML = `
+    ${creditBlock}
+    <div style="background:#fafafa;border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:16px;font-size:14px;">
+      <div class="kv"><span>Phone</span><strong>${c.phone}</strong></div>
+      <div class="kv"><span>Email</span><strong>${c.email || '—'}</strong></div>
+      <div class="kv"><span>Location</span><strong>${location}</strong></div>
+      ${idRow}
+      <div class="kv"><span>Agent</span><strong>${c.agentName || '—'}</strong></div>
+      <div class="kv"><span>Source</span><strong>${c.source || 'order'}</strong></div>
+      <div class="kv"><span>Customer since</span><strong>${c.createdAt ? new Date(c.createdAt).toLocaleDateString() : '-'}</strong></div>
+    </div>
+    <h4 style="margin:14px 0 6px;font-size:13px;color:#8a8f9c;text-transform:uppercase;">Orders (${data.orders.length})</h4>
+    ${data.orders.length ? `<table><tbody>${data.orders.map(o => `<tr><td>${o.orderNumber}</td><td>${fmt(o.totalRwf)}</td><td><span class="badge ${o.paymentStatus}">${o.paymentStatus}</span></td><td>${o.createdAt ? new Date(o.createdAt).toLocaleDateString() : '-'}</td></tr>`).join('')}</tbody></table>` : '<p class="empty">No orders yet.</p>'}
+    <h4 style="margin:14px 0 6px;font-size:13px;color:#8a8f9c;text-transform:uppercase;">PayGo Loans (${data.loans.length})</h4>
+    ${data.loans.length ? `<table><tbody>${data.loans.map(l => `<tr><td>${l.loanNumber}</td><td>${fmt(l.totalPayableRwf)}</td><td><span class="badge ${l.status}">${l.status}</span></td></tr>`).join('')}</tbody></table>` : '<p class="empty">No PayGo loans yet.</p>'}
+  `;
+}
+
+// Delete is admin-only (the /api/admin/customers route requires an admin
+// token) and is refused server-side for any customer with order/loan
+// history, so this confirm step is just UX — the backend is the real guard.
+function promptDeleteCustomer(id, name) {
+  customerPendingDeleteId = id;
+  document.getElementById('deleteCustomerText').textContent = `Delete ${name}? This can't be undone. Customers with any order or PayGo history can't be deleted.`;
+  document.getElementById('deleteCustomerModal').classList.add('show');
+}
+
+document.getElementById('confirmDeleteCustomerBtn')?.addEventListener('click', async () => {
+  if (!customerPendingDeleteId) return;
+  const btn = document.getElementById('confirmDeleteCustomerBtn');
+  btn.disabled = true;
+  try {
+    const res = await fetch(`${API_BASE}/admin/customers/${customerPendingDeleteId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to delete customer');
+    showToast('✓ Customer deleted');
+    closeModal('deleteCustomerModal');
+    loadCustomers();
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// ============================================================
+// LEDGER
+// ============================================================
+const ledgerCategoryLabels = {
+  order_payment: 'Order payment',
+  commission_accrued: 'Commission accrued',
+  commission_paid: 'Commission paid',
+  loan_repayment: 'PayGo repayment',
+  manual_adjustment: 'Manual adjustment',
+};
+
+async function loadLedger() {
+  try {
+    const qs = buildListQuery('ledger', {
+      accountType: val('ledgerAccountTypeFilter'),
+      category: val('ledgerCategoryFilter'),
+      fromDate: val('ledgerFromDate'),
+      toDate: val('ledgerToDate'),
+    });
+    const [listRes, balancesRes] = await Promise.all([
+      fetch(`${API_BASE}/admin/ledger?${qs}`, { headers: { Authorization: `Bearer ${token}` } }),
+      fetch(`${API_BASE}/admin/ledger/balances`, { headers: { Authorization: `Bearer ${token}` } }),
+    ]);
+    if (listRes.status === 401) { logout(); return; }
+    const listData = await listRes.json();
+    const balancesData = await balancesRes.json();
+    if (!listRes.ok) throw new Error(listData.error || 'Failed to load ledger');
+
+    renderLedgerBalances(balancesData);
+    renderLedger(listData.data || [], listData.netRwf);
+    renderPager('ledgerPager', 'ledger', listData.pagination, loadLedger);
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
+  }
+}
+
+function renderLedgerBalances(data) {
+  const topAgentRows = (data.agents || [])
+    .slice(0, 3)
+    .map((a) => `<div class="kpi"><div class="label">Owed to ${a.name}</div><div class="value ${a.balanceRwf > 0 ? 'amber' : ''}">${fmt(a.balanceRwf)}</div></div>`)
+    .join('');
+  document.getElementById('ledgerBalancesKpis').innerHTML = `
+    <div class="kpi"><div class="label">Kosmotive cash position</div><div class="value">${fmt(data.business?.balanceRwf ?? 0)}</div></div>
+    ${topAgentRows}
+  `;
+}
+
+function renderLedger(rows, netRwf) {
+  const tbody = document.getElementById('ledgerBody');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="empty">No ledger entries match these filters.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map(r => {
+    const isCredit = r.amountRwf >= 0;
+    return `<tr>
+      <td style="white-space:nowrap;">${r.createdAt ? new Date(r.createdAt).toLocaleString() : '-'}</td>
+      <td>${r.accountLabel}</td>
+      <td><span class="badge">${ledgerCategoryLabels[r.category] || r.category}</span></td>
+      <td style="color:${isCredit ? '#0f9d58' : '#c8394f'};font-weight:600;white-space:nowrap;">${isCredit ? '+' : ''}${fmt(r.amountRwf)}</td>
+      <td style="color:var(--muted);font-size:13px;">${r.description}</td>
+    </tr>`;
+  }).join('');
+}
+
+
+async function approveAgent(id) {
+  try {
+    const res = await fetch(`${API_BASE}/admin/agents/${id}/approve`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to approve agent');
+    showToast('✓ Agent approved');
+    loadAgents();
+    if (document.getElementById('agentDetailModal').classList.contains('show')) openAgentDetail(id);
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
+  }
+}
+
+function openReasonModal(action, id) {
+  currentReasonAction = action;
+  currentAgentId = id;
+  document.getElementById('reasonModalTitle').textContent = action === 'reject' ? 'Reject Agent' : 'Suspend Agent';
+  document.getElementById('reasonInput').value = '';
+  document.getElementById('reasonModal').classList.add('show');
+}
+function closeReasonModal() { document.getElementById('reasonModal').classList.remove('show'); }
+
+async function submitReasonModal() {
+  const btn = document.getElementById('submitReasonBtn');
+  const reason = document.getElementById('reasonInput').value || undefined;
+  const endpoint = currentReasonAction === 'reject' ? 'reject' : 'suspend';
+  btn.disabled = true;
+  try {
+    const res = await fetch(`${API_BASE}/admin/agents/${currentAgentId}/${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ reason }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `Failed to ${endpoint} agent`);
+    showToast(`✓ Agent ${endpoint === 'reject' ? 'rejected' : 'suspended'}`);
+    closeReasonModal();
+    loadAgents();
+    if (document.getElementById('agentDetailModal').classList.contains('show')) openAgentDetail(currentAgentId);
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function reactivateAgent(id) {
+  try {
+    const res = await fetch(`${API_BASE}/admin/agents/${id}/reactivate`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to reactivate agent');
+    showToast('✓ Agent reactivated');
+    loadAgents();
+    if (document.getElementById('agentDetailModal').classList.contains('show')) openAgentDetail(id);
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
+  }
+}
+
+function openResetAgentPasswordModal(id) {
+  currentAgentId = id;
+  document.getElementById('resetAgentPasswordInput').value = '';
+  document.getElementById('resetAgentPasswordModal').classList.add('show');
+}
+function closeResetAgentPasswordModal() { document.getElementById('resetAgentPasswordModal').classList.remove('show'); }
+
+async function saveResetAgentPassword() {
+  const btn = document.getElementById('saveResetAgentPasswordBtn');
+  const newPassword = document.getElementById('resetAgentPasswordInput').value;
+  if (!newPassword || newPassword.length < 8) { showToast('⚠️ Password must be at least 8 characters', true); return; }
+  btn.disabled = true;
+  try {
+    const res = await fetch(`${API_BASE}/admin/agents/${currentAgentId}/reset-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ newPassword }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to reset password');
+    showToast('✓ Password reset — share it with the agent through a secure channel');
+    closeResetAgentPasswordModal();
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function payAgentCommission(agentId) {
+  try {
+    const res = await fetch(`${API_BASE}/admin/agents/${agentId}/pay-commission`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to mark commissions paid');
+    showToast('✓ Pending commissions marked as paid');
+    loadAgents();
+    openAgentDetail(agentId);
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
+  }
+}
+
+// ---- New agent modal ----
+function openNewAgentModal() {
+  ['newAgentName', 'newAgentCode', 'newAgentPhone', 'newAgentEmail', 'newAgentDistrict', 'newAgentRegion'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('newAgentCommissionPct').value = 15;
+  document.getElementById('newAgentModal').classList.add('show');
+}
+function closeNewAgentModal() { document.getElementById('newAgentModal').classList.remove('show'); }
+
+async function saveNewAgent() {
+  const btn = document.getElementById('saveNewAgentBtn');
+  const name = document.getElementById('newAgentName').value;
+  const code = document.getElementById('newAgentCode').value;
+  const phone = document.getElementById('newAgentPhone').value;
+  if (!name || !code || !phone) { showToast('⚠️ Name, code, and phone are required', true); return; }
+
+  const payload = {
+    name, code, phone,
+    email: document.getElementById('newAgentEmail').value || undefined,
+    district: document.getElementById('newAgentDistrict').value || undefined,
+    region: document.getElementById('newAgentRegion').value || undefined,
+    commissionRateBps: Math.round(Number(document.getElementById('newAgentCommissionPct').value) * 100),
+  };
+
+  btn.disabled = true;
+  try {
+    const res = await fetch(`${API_BASE}/admin/agents`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || (data.details ? data.details.map(d => d.message).join(', ') : 'Failed to create agent'));
+    showToast(`✓ Agent ${data.agent.code} created — use "Reset Password" to set their login`);
+    closeNewAgentModal();
+    loadAgents();
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ---- Agent detail modal (tabbed, paginated, searchable sub-lists) ----
+const agentDetailState = {
+  customers: { page: 1, pageSize: 10 },
+  orders: { page: 1, pageSize: 10 },
+  loans: { page: 1, pageSize: 10 },
+  commissions: { page: 1, pageSize: 10 },
+};
+let agentDetailActiveTab = 'customers';
+
+async function openAgentDetail(id) {
+  currentAgentId = id;
+  agentDetailActiveTab = 'customers';
+  Object.values(agentDetailState).forEach((s) => { s.page = 1; });
+  ['agentDetailCustomersSearch', 'agentDetailOrdersSearch', 'agentDetailLoansSearch'].forEach((elId) => {
+    const el = document.getElementById(elId);
+    if (el) el.value = '';
+  });
+  const statusFilter = document.getElementById('agentDetailCommissionsStatusFilter');
+  if (statusFilter) statusFilter.value = '';
+
+  try {
+    const res = await fetch(`${API_BASE}/admin/agents/${id}`, { headers: { Authorization: `Bearer ${token}` } });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to load agent');
+    renderAgentDetailSummary(data);
+    switchAgentDetailTab('customers');
+    document.getElementById('agentDetailModal').classList.add('show');
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
+  }
+}
+function closeAgentDetailModal() { document.getElementById('agentDetailModal').classList.remove('show'); currentAgentId = null; }
+
+function switchAgentDetailTab(tab) {
+  agentDetailActiveTab = tab;
+  document.querySelectorAll('.agent-tab').forEach((btn) => btn.classList.toggle('active', btn.dataset.tab === tab));
+  document.querySelectorAll('.agent-detail-pane').forEach((pane) => { pane.style.display = pane.id === `agentDetailPane-${tab}` ? 'block' : 'none'; });
+  loadAgentDetailTab(tab);
+}
+
+async function loadAgentDetailTab(tab) {
+  if (!currentAgentId) return;
+  const state = agentDetailState[tab];
+  try {
+    if (tab === 'customers') {
+      const search = document.getElementById('agentDetailCustomersSearch').value.trim();
+      const qs = new URLSearchParams({ page: state.page, pageSize: state.pageSize, ...(search ? { search } : {}) });
+      const res = await fetch(`${API_BASE}/admin/agents/${currentAgentId}/customers?${qs}`, { headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      document.getElementById('agentDetailCustCount').textContent = data.pagination.total;
+      const rows = data.data;
+      document.getElementById('agentDetailCustomers').innerHTML = !rows.length ? '<p class="empty">No customers found.</p>' :
+        `<table><thead><tr><th>Name</th><th>Phone</th><th>Location</th></tr></thead><tbody>` +
+        rows.map(c => `<tr><td>${c.firstName} ${c.lastName}</td><td>${c.phone}</td><td>${[c.district, c.sector].filter(Boolean).join(', ')}</td></tr>`).join('') + `</tbody></table>`;
+      renderPager('agentDetailCustomersPager', 'agentDetailCustomers_internal', data.pagination, () => loadAgentDetailTab('customers'));
+      overridePagerGoTo('agentDetailCustomersPager', (p) => { state.page = p; loadAgentDetailTab('customers'); });
+    } else if (tab === 'orders') {
+      const search = document.getElementById('agentDetailOrdersSearch').value.trim();
+      const qs = new URLSearchParams({ page: state.page, pageSize: state.pageSize, ...(search ? { search } : {}) });
+      const res = await fetch(`${API_BASE}/admin/agents/${currentAgentId}/orders?${qs}`, { headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      document.getElementById('agentDetailOrderCount').textContent = data.pagination.total;
+      const rows = data.data;
+      document.getElementById('agentDetailOrders').innerHTML = !rows.length ? '<p class="empty">No orders found.</p>' :
+        `<table><thead><tr><th>Order #</th><th>Total</th><th>Method</th><th>Payment</th><th>Date</th></tr></thead><tbody>` +
+        rows.map(o => `<tr><td><strong>${o.orderNumber}</strong></td><td>${fmt(o.totalRwf)}</td><td>${o.paymentMethod}</td><td><span class="badge ${o.paymentStatus}">${o.paymentStatus}</span></td><td>${new Date(o.createdAt).toLocaleDateString()}</td></tr>`).join('') + `</tbody></table>`;
+      renderPager('agentDetailOrdersPager', 'agentDetailOrders_internal', data.pagination, () => loadAgentDetailTab('orders'));
+      overridePagerGoTo('agentDetailOrdersPager', (p) => { state.page = p; loadAgentDetailTab('orders'); });
+    } else if (tab === 'loans') {
+      const search = document.getElementById('agentDetailLoansSearch').value.trim();
+      const qs = new URLSearchParams({ page: state.page, pageSize: state.pageSize, ...(search ? { search } : {}) });
+      const res = await fetch(`${API_BASE}/admin/agents/${currentAgentId}/loans?${qs}`, { headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      document.getElementById('agentDetailLoanCount').textContent = data.pagination.total;
+      const rows = data.data;
+      document.getElementById('agentDetailLoans').innerHTML = !rows.length ? '<p class="empty">No PayGo loans found.</p>' :
+        `<table><thead><tr><th>Loan #</th><th>Customer</th><th>Total payable</th><th>Status</th></tr></thead><tbody>` +
+        rows.map(l => `<tr><td><strong>${l.loanNumber}</strong></td><td>${l.customerName || '—'}</td><td>${fmt(l.totalPayableRwf)}</td><td>${loanStatusBadge(l.status)}</td></tr>`).join('') + `</tbody></table>`;
+      renderPager('agentDetailLoansPager', 'agentDetailLoans_internal', data.pagination, () => loadAgentDetailTab('loans'));
+      overridePagerGoTo('agentDetailLoansPager', (p) => { state.page = p; loadAgentDetailTab('loans'); });
+    } else if (tab === 'commissions') {
+      const status = document.getElementById('agentDetailCommissionsStatusFilter').value;
+      const qs = new URLSearchParams({ page: state.page, pageSize: state.pageSize, ...(status ? { status } : {}) });
+      const res = await fetch(`${API_BASE}/admin/agents/${currentAgentId}/commissions?${qs}`, { headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      document.getElementById('agentDetailCommCount').textContent = data.pagination.total;
+      const rows = data.data;
+      document.getElementById('agentDetailCommissions').innerHTML = !rows.length ? '<p class="empty">No commissions found.</p>' :
+        `<table><thead><tr><th>Order</th><th>Sale amount</th><th>Commission</th><th>Status</th><th>Date</th></tr></thead><tbody>` +
+        rows.map(c => `<tr><td>#${c.orderId}</td><td>${fmt(c.saleAmountRwf)}</td><td>${fmt(c.commissionRwf)}</td><td><span class="badge ${c.status === 'paid' ? 'success' : 'pending'}">${c.status}</span></td><td>${new Date(c.createdAt).toLocaleDateString()}</td></tr>`).join('') + `</tbody></table>`;
+      renderPager('agentDetailCommissionsPager', 'agentDetailCommissions_internal', data.pagination, () => loadAgentDetailTab('commissions'));
+      overridePagerGoTo('agentDetailCommissionsPager', (p) => { state.page = p; loadAgentDetailTab('commissions'); });
+    } else if (tab === 'audit') {
+      const res = await fetch(`${API_BASE}/admin/agents/${currentAgentId}`, { headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      const auditLog = data.auditLog;
+      document.getElementById('agentDetailAudit').innerHTML = !auditLog || !auditLog.length ? '<p class="empty">No admin actions logged yet.</p>' :
+        `<table><thead><tr><th>Action</th><th>By</th><th>Date</th></tr></thead><tbody>` +
+        auditLog.map(l => `<tr><td>${l.action}</td><td>${l.adminName || '—'}</td><td>${new Date(l.createdAt).toLocaleString()}</td></tr>`).join('') + `</tbody></table>`;
+    }
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
+  }
+}
+
+// renderPager() (shared helper) registers its "go to page" callback under
+// a key in window[`__load_${key}`] — since these agent sub-lists use
+// their own local page state rather than the global listState object,
+// this swaps that callback for one that updates the RIGHT local state
+// before reloading, so Prev/Next/page-number buttons work correctly here too.
+function overridePagerGoTo(containerId, onPageChange) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  el.querySelectorAll('button[onclick^="goToPage"]').forEach((btn) => {
+    const match = btn.getAttribute('onclick').match(/goToPage\('([^']+)',\s*(\d+)\)/);
+    if (!match) return;
+    const page = Number(match[2]);
+    btn.onclick = () => onPageChange(page);
+    btn.removeAttribute('onclick');
+  });
+}
+
+// Search boxes / status filter inside the agent detail modal — debounced,
+// resets to page 1 on change, same pattern as every other list.
+let agentDetailSearchDebounce = null;
+['agentDetailCustomersSearch', 'agentDetailOrdersSearch', 'agentDetailLoansSearch'].forEach((elId) => {
+  document.addEventListener('DOMContentLoaded', () => {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    el.addEventListener('input', () => {
+      clearTimeout(agentDetailSearchDebounce);
+      agentDetailSearchDebounce = setTimeout(() => {
+        const tab = elId.replace('agentDetail', '').replace('Search', '').toLowerCase();
+        agentDetailState[tab].page = 1;
+        loadAgentDetailTab(tab);
+      }, 350);
+    });
+  });
+});
+document.addEventListener('DOMContentLoaded', () => {
+  const statusFilter = document.getElementById('agentDetailCommissionsStatusFilter');
+  if (statusFilter) statusFilter.addEventListener('change', () => { agentDetailState.commissions.page = 1; loadAgentDetailTab('commissions'); });
+});
+
+// Saving a new commission rate for this agent has two steps: PATCH the
+// agent's own rate (used for all their FUTURE orders), then immediately
+// recalculate their still-PENDING commissions to that new rate, so
+// "Pending commission" updates right away instead of only affecting
+// orders placed after today.
+async function saveAgentCommissionRate(id) {
+  const input = document.getElementById('agentCommissionRateInput');
+  const pct = parseFloat(input.value);
+  if (isNaN(pct) || pct < 0 || pct > 50) { showToast('⚠️ Enter a commission rate between 0 and 50%', true); return; }
+  const commissionRateBps = Math.round(pct * 100);
+  try {
+    const patchRes = await fetch(`${API_BASE}/admin/agents/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ commissionRateBps }),
+    });
+    const patchData = await patchRes.json();
+    if (!patchRes.ok) throw new Error(patchData.error || 'Failed to update commission rate');
+
+    const recalcRes = await fetch(`${API_BASE}/admin/agents/${id}/recalculate-commission`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const recalcData = await recalcRes.json();
+    if (!recalcRes.ok) throw new Error(recalcData.error || 'Rate saved, but failed to recalculate pending commission');
+
+    document.getElementById('agentDetailPendingRwf').textContent = fmt(recalcData.totalRwf);
+    showToast(`✓ Commission rate updated to ${pct}% — ${recalcData.count} pending commission(s) recalculated`);
+    loadAgents(); // refresh the list/KPIs behind the modal too
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
+  }
+}
+
+function renderAgentDetailSummary(data) {
+  const { agent, pendingRwf, paidRwf } = data;
+  document.getElementById('agentDetailTitle').textContent = `${agent.name} — ${agent.code}`;
+  document.getElementById('agentDetailSummary').innerHTML = `
+    <div>${agentStatusBadge(agent.status)} · ${agent.phone} ${agent.email ? '· ' + agent.email : ''}</div>
+    <div style="margin-top:4px;">${agent.district || ''} ${agent.region ? '· ' + agent.region : ''}</div>
+    <div style="margin-top:8px;display:flex;align-items:center;gap:8px;">
+      <label style="font-size:12px;color:#8a8f9c;">Commission rate</label>
+      <input id="agentCommissionRateInput" type="number" min="0" max="50" step="0.5" value="${(agent.commissionRateBps / 100).toFixed(1)}"
+        style="width:64px;border:1px solid #e4e4e7;border-radius:8px;padding:4px 8px;font-size:13px;" />
+      <span style="font-size:12px;color:#8a8f9c;">%</span>
+      <button class="btn btn-teal btn-sm" onclick="saveAgentCommissionRate(${agent.id})">Save</button>
+    </div>
+    <div style="margin-top:4px;">Referral link: <a href="${referralLink(agent.code)}" target="_blank" rel="noopener">${referralLink(agent.code)}</a></div>
+    <div style="margin-top:4px;">Pending commission: <strong id="agentDetailPendingRwf">${fmt(pendingRwf)}</strong> · Paid out: ${fmt(paidRwf)}</div>
+  `;
+
+  const actions = [];
+  if (agent.status === 'pending') actions.push(`<button class="btn btn-teal btn-sm" onclick="approveAgent(${agent.id})">Approve</button>`);
+  if (agent.status === 'pending') actions.push(`<button class="btn btn-ghost btn-sm" onclick="openReasonModal('reject', ${agent.id})">Reject</button>`);
+  if (agent.status === 'active' || agent.status === 'approved') actions.push(`<button class="btn btn-ghost btn-sm" onclick="openReasonModal('suspend', ${agent.id})">Suspend</button>`);
+  if (agent.status === 'suspended') actions.push(`<button class="btn btn-teal btn-sm" onclick="reactivateAgent(${agent.id})">Reactivate</button>`);
+  actions.push(`<button class="btn btn-ghost btn-sm" onclick="openResetAgentPasswordModal(${agent.id})">Reset password</button>`);
+  if (pendingRwf > 0) actions.push(`<button class="btn btn-teal btn-sm" onclick="payAgentCommission(${agent.id})">Pay pending commission (${fmt(pendingRwf)})</button>`);
+  document.getElementById('agentDetailActions').innerHTML = actions.join('');
+}
+
+// ---- Default commission rate ----
+async function saveDefaultCommission() {
+  const pct = Number(document.getElementById('defaultCommissionPct').value);
+  if (!(pct >= 0 && pct <= 50)) { showToast('⚠️ Enter a rate between 0 and 50', true); return; }
+  try {
+    const res = await fetch(`${API_BASE}/admin/agents/settings/default-commission`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ commissionRateBps: Math.round(pct * 100) }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to save default commission rate');
+    showToast(`✓ Default commission rate set to ${pct}%`);
+  } catch (e) {
+    showToast('⚠️ ' + e.message, true);
+  }
+}
+
+// ============================================================
+// UTILITIES
+// ============================================================
+function showToast(msg, isError = false) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.background = isError ? '#c0392b' : '#1b2a2a';
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3200);
+}
+
+// Close modal on backdrop click
+document.getElementById('stockModal').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+
+// Keyboard shortcuts
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeModal();
+});
+</script>
+</body>
+</html>
+

@@ -21,8 +21,8 @@ const Footer: React.FC = () => (
             Quality, eco-friendly menstrual pads for Rwandan women. Supporting dignity, sustainability, and women's health across Rwanda.
           </p>
           <div className="mt-5 space-y-2 text-sm">
-            <a href="mailto:digital@kosmotive.rw" className="flex items-center gap-2 text-gray-400 hover:text-primary-400 transition-colors">
-              <Mail size={14} /><span>digital@kosmotive.rw</span>
+            <a href="mailto:digital@kosmotive.example" className="flex items-center gap-2 text-gray-400 hover:text-primary-400 transition-colors">
+              <Mail size={14} /><span>digital@kosmotive.example</span>
             </a>
             <a href="tel:+250788536350" className="flex items-center gap-2 text-gray-400 hover:text-primary-400 transition-colors">
               <Phone size={14} /><span>+250 788 536 350</span>

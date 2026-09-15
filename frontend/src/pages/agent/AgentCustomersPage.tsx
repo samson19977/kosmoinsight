@@ -18,7 +18,7 @@ const NewCustomerModal: React.FC<{ onClose: () => void; onCreated: () => void }>
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!/^[A-Za-z\s\-]{2,}$/.test(form.firstName.trim()) || !/^[A-Za-z\s\-]{2,}$/.test(form.lastName.trim())) {
+    if (!/^[A-Za-z\s-]{2,}$/.test(form.firstName.trim()) || !/^[A-Za-z\s-]{2,}$/.test(form.lastName.trim())) {
       toast.error('First and last name must be letters only'); return;
     }
     if (!/^(\+250|0)[78][0-9]{8}$/.test(form.phone.trim())) { toast.error('Enter a valid Rwandan phone number'); return; }
